@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -14,9 +15,9 @@ import (
 
 	"golang.org/x/crypto/ripemd160"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/soteria-dag/soterd/soterec"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 // An opcode defines the information related to a txscript opcode.  opfunc, if
@@ -32,7 +33,7 @@ type opcode struct {
 
 // These constants are the values of the official opcodes used on the btc wiki,
 // in bitcoin core and in most if not all other references and software related
-// to handling BTC scripts.
+// to handling BTC/SOTO scripts.
 const (
 	OP_0                   = 0x00 // 0
 	OP_FALSE               = 0x00 // 0 - AKA OP_0
@@ -2111,19 +2112,19 @@ func opcodeCheckSig(op *parsedOpcode, vm *Engine) error {
 		hash = calcSignatureHash(subScript, hashType, &vm.tx, vm.txIdx)
 	}
 
-	pubKey, err := btcec.ParsePubKey(pkBytes, btcec.S256())
+	pubKey, err := soterec.ParsePubKey(pkBytes, soterec.S256())
 	if err != nil {
 		vm.dstack.PushBool(false)
 		return nil
 	}
 
-	var signature *btcec.Signature
+	var signature *soterec.Signature
 	if vm.hasFlag(ScriptVerifyStrictEncoding) ||
 		vm.hasFlag(ScriptVerifyDERSignatures) {
 
-		signature, err = btcec.ParseDERSignature(sigBytes, btcec.S256())
+		signature, err = soterec.ParseDERSignature(sigBytes, soterec.S256())
 	} else {
-		signature, err = btcec.ParseSignature(sigBytes, btcec.S256())
+		signature, err = soterec.ParseSignature(sigBytes, soterec.S256())
 	}
 	if err != nil {
 		vm.dstack.PushBool(false)
@@ -2171,7 +2172,7 @@ func opcodeCheckSigVerify(op *parsedOpcode, vm *Engine) error {
 // the same signature multiple times when verifying a multisig.
 type parsedSigInfo struct {
 	signature       []byte
-	parsedSignature *btcec.Signature
+	parsedSignature *soterec.Signature
 	parsed          bool
 }
 
@@ -2316,7 +2317,7 @@ func opcodeCheckMultiSig(op *parsedOpcode, vm *Engine) error {
 		signature := rawSig[:len(rawSig)-1]
 
 		// Only parse and check the signature encoding once.
-		var parsedSig *btcec.Signature
+		var parsedSig *soterec.Signature
 		if !sigInfo.parsed {
 			if err := vm.checkHashTypeEncoding(hashType); err != nil {
 				return err
@@ -2330,11 +2331,11 @@ func opcodeCheckMultiSig(op *parsedOpcode, vm *Engine) error {
 			if vm.hasFlag(ScriptVerifyStrictEncoding) ||
 				vm.hasFlag(ScriptVerifyDERSignatures) {
 
-				parsedSig, err = btcec.ParseDERSignature(signature,
-					btcec.S256())
+				parsedSig, err = soterec.ParseDERSignature(signature,
+					soterec.S256())
 			} else {
-				parsedSig, err = btcec.ParseSignature(signature,
-					btcec.S256())
+				parsedSig, err = soterec.ParseSignature(signature,
+					soterec.S256())
 			}
 			sigInfo.parsed = true
 			if err != nil {
@@ -2356,7 +2357,7 @@ func opcodeCheckMultiSig(op *parsedOpcode, vm *Engine) error {
 		}
 
 		// Parse the pubkey.
-		parsedPubKey, err := btcec.ParsePubKey(pubKey, btcec.S256())
+		parsedPubKey, err := soterec.ParsePubKey(pubKey, soterec.S256())
 		if err != nil {
 			continue
 		}

@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -50,9 +51,9 @@ func (n NotificationType) String() string {
 // Notification defines notification that is sent to the caller via the callback
 // function provided during the call to New and consists of a notification type
 // as well as associated data that depends on the type as follows:
-// 	- NTBlockAccepted:     *btcutil.Block
-// 	- NTBlockConnected:    *btcutil.Block
-// 	- NTBlockDisconnected: *btcutil.Block
+// 	- NTBlockAccepted:     *soterutil.Block
+// 	- NTBlockConnected:    *soterutil.Block
+// 	- NTBlockDisconnected: *soterutil.Block
 type Notification struct {
 	Type NotificationType
 	Data interface{}

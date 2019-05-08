@@ -1,5 +1,6 @@
 // Copyright (c) 2013-2017 The btcsuite developers
 // Copyright (c) 2017 The Decred developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -10,20 +11,21 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/btcsuite/btcd/addrmgr"
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/blockchain/indexers"
-	"github.com/btcsuite/btcd/connmgr"
-	"github.com/btcsuite/btcd/database"
-	"github.com/btcsuite/btcd/mempool"
-	"github.com/btcsuite/btcd/mining"
-	"github.com/btcsuite/btcd/mining/cpuminer"
-	"github.com/btcsuite/btcd/netsync"
-	"github.com/btcsuite/btcd/peer"
-	"github.com/btcsuite/btcd/txscript"
+	"github.com/soteria-dag/soterd/addrmgr"
+	"github.com/soteria-dag/soterd/blockdag"
+	"github.com/soteria-dag/soterd/blockdag/indexers"
+	"github.com/soteria-dag/soterd/connmgr"
+	"github.com/soteria-dag/soterd/database"
+	"github.com/soteria-dag/soterd/mempool"
+	"github.com/soteria-dag/soterd/metrics"
+	"github.com/soteria-dag/soterd/mining/cpuminer"
+	"github.com/soteria-dag/soterd/miningdag"
+	"github.com/soteria-dag/soterd/netsync"
+	"github.com/soteria-dag/soterd/peer"
+	"github.com/soteria-dag/soterd/txscript"
 
-	"github.com/btcsuite/btclog"
 	"github.com/jrick/logrotate/rotator"
+	"github.com/soteria-dag/soterd/soterlog"
 )
 
 // logWriter implements an io.Writer that outputs to both standard output and
@@ -48,27 +50,28 @@ var (
 	// backendLog is the logging backend used to create all subsystem loggers.
 	// The backend must not be used before the log rotator has been initialized,
 	// or data races and/or nil pointer dereferences will occur.
-	backendLog = btclog.NewBackend(logWriter{})
+	backendLog = soterlog.NewBackend(logWriter{})
 
 	// logRotator is one of the logging outputs.  It should be closed on
 	// application shutdown.
 	logRotator *rotator.Rotator
 
-	adxrLog = backendLog.Logger("ADXR")
-	amgrLog = backendLog.Logger("AMGR")
-	cmgrLog = backendLog.Logger("CMGR")
-	bcdbLog = backendLog.Logger("BCDB")
-	btcdLog = backendLog.Logger("BTCD")
-	chanLog = backendLog.Logger("CHAN")
-	discLog = backendLog.Logger("DISC")
-	indxLog = backendLog.Logger("INDX")
-	minrLog = backendLog.Logger("MINR")
-	peerLog = backendLog.Logger("PEER")
-	rpcsLog = backendLog.Logger("RPCS")
-	scrpLog = backendLog.Logger("SCRP")
-	srvrLog = backendLog.Logger("SRVR")
-	syncLog = backendLog.Logger("SYNC")
-	txmpLog = backendLog.Logger("TXMP")
+	adxrLog   = backendLog.Logger("ADXR")
+	amgrLog   = backendLog.Logger("AMGR")
+	cmgrLog   = backendLog.Logger("CMGR")
+	bcdbLog   = backendLog.Logger("BCDB")
+	soterdLog = backendLog.Logger("SOTERD")
+	chanLog   = backendLog.Logger("CHAN")
+	discLog   = backendLog.Logger("DISC")
+	indxLog   = backendLog.Logger("INDX")
+	minrLog   = backendLog.Logger("MINR")
+	metrLog   = backendLog.Logger("METR")
+	peerLog   = backendLog.Logger("PEER")
+	rpcsLog   = backendLog.Logger("RPCS")
+	scrpLog   = backendLog.Logger("SCRP")
+	srvrLog   = backendLog.Logger("SRVR")
+	syncLog   = backendLog.Logger("SYNC")
+	txmpLog   = backendLog.Logger("TXMP")
 )
 
 // Initialize package-global logger variables.
@@ -76,26 +79,28 @@ func init() {
 	addrmgr.UseLogger(amgrLog)
 	connmgr.UseLogger(cmgrLog)
 	database.UseLogger(bcdbLog)
-	blockchain.UseLogger(chanLog)
-	indexers.UseLogger(indxLog)
-	mining.UseLogger(minrLog)
+	blockdag.UseLogger(chanLog)
+	dagindexers.UseLogger(indxLog)
+	miningdag.UseLogger(minrLog)
 	cpuminer.UseLogger(minrLog)
 	peer.UseLogger(peerLog)
 	txscript.UseLogger(scrpLog)
 	netsync.UseLogger(syncLog)
 	mempool.UseLogger(txmpLog)
+	metrics.UseLogger(metrLog)
 }
 
 // subsystemLoggers maps each subsystem identifier to its associated logger.
-var subsystemLoggers = map[string]btclog.Logger{
+var subsystemLoggers = map[string]soterlog.Logger{
 	"ADXR": adxrLog,
 	"AMGR": amgrLog,
 	"CMGR": cmgrLog,
 	"BCDB": bcdbLog,
-	"BTCD": btcdLog,
+	"SOTERD": soterdLog,
 	"CHAN": chanLog,
 	"DISC": discLog,
 	"INDX": indxLog,
+	"METR": metrLog,
 	"MINR": minrLog,
 	"PEER": peerLog,
 	"RPCS": rpcsLog,
@@ -135,7 +140,7 @@ func setLogLevel(subsystemID string, logLevel string) {
 	}
 
 	// Defaults to info if the log level is invalid.
-	level, _ := btclog.LevelFromString(logLevel)
+	level, _ := soterlog.LevelFromString(logLevel)
 	logger.SetLevel(level)
 }
 

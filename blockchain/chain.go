@@ -1,5 +1,6 @@
 // Copyright (c) 2013-2018 The btcsuite developers
 // Copyright (c) 2015-2018 The Decred developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -11,12 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/database"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/database"
+	"github.com/soteria-dag/soterd/soterutil"
+	"github.com/soteria-dag/soterd/txscript"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 const (
@@ -45,7 +46,7 @@ type BlockLocator []*chainhash.Hash
 // is a normal block plus an expiration time to prevent caching the orphan
 // forever.
 type orphanBlock struct {
-	block      *btcutil.Block
+	block      *soterutil.Block
 	expiration time.Time
 }
 
@@ -93,14 +94,18 @@ type BlockChain struct {
 	// The following fields are set when the instance is created and can't
 	// be changed afterwards, so there is no need to protect them with a
 	// separate mutex.
-	checkpoints         []chaincfg.Checkpoint
-	checkpointsByHeight map[int32]*chaincfg.Checkpoint
-	db                  database.DB
-	chainParams         *chaincfg.Params
-	timeSource          MedianTimeSource
-	sigCache            *txscript.SigCache
-	indexManager        IndexManager
-	hashCache           *txscript.HashCache
+	//
+	// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+	// 
+	//
+	//checkpoints         []chaincfg.Checkpoint
+	//checkpointsByHeight map[int32]*chaincfg.Checkpoint
+	db           database.DB
+	chainParams  *chaincfg.Params
+	timeSource   MedianTimeSource
+	sigCache     *txscript.SigCache
+	indexManager IndexManager
+	hashCache    *txscript.HashCache
 
 	// The following fields are calculated based upon the provided chain
 	// parameters.  They are also set when the instance is created and
@@ -133,10 +138,13 @@ type BlockChain struct {
 	prevOrphans  map[chainhash.Hash][]*orphanBlock
 	oldestOrphan *orphanBlock
 
+	// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+	// 
+	//
 	// These fields are related to checkpoint handling.  They are protected
 	// by the chain lock.
-	nextCheckpoint *chaincfg.Checkpoint
-	checkpointNode *blockNode
+	// nextCheckpoint *chaincfg.Checkpoint
+	// checkpointNode *blockNode
 
 	// The state is used as a fairly efficient way to cache information
 	// about the current best chain state that is returned to callers when
@@ -286,7 +294,7 @@ func (b *BlockChain) removeOrphanBlock(orphan *orphanBlock) {
 // It also imposes a maximum limit on the number of outstanding orphan
 // blocks and will remove the oldest received orphan block if the limit is
 // exceeded.
-func (b *BlockChain) addOrphanBlock(block *btcutil.Block) {
+func (b *BlockChain) addOrphanBlock(block *soterutil.Block) {
 	// Remove expired orphan blocks.
 	for _, oBlock := range b.orphans {
 		if time.Now().After(oBlock.expiration) {
@@ -348,7 +356,7 @@ type SequenceLock struct {
 // the candidate transaction to be included in a block.
 //
 // This function is safe for concurrent access.
-func (b *BlockChain) CalcSequenceLock(tx *btcutil.Tx, utxoView *UtxoViewpoint, mempool bool) (*SequenceLock, error) {
+func (b *BlockChain) CalcSequenceLock(tx *soterutil.Tx, utxoView *UtxoViewpoint, mempool bool) (*SequenceLock, error) {
 	b.chainLock.Lock()
 	defer b.chainLock.Unlock()
 
@@ -359,7 +367,7 @@ func (b *BlockChain) CalcSequenceLock(tx *btcutil.Tx, utxoView *UtxoViewpoint, m
 // transaction. See the exported version, CalcSequenceLock for further details.
 //
 // This function MUST be called with the chain state lock held (for writes).
-func (b *BlockChain) calcSequenceLock(node *blockNode, tx *btcutil.Tx, utxoView *UtxoViewpoint, mempool bool) (*SequenceLock, error) {
+func (b *BlockChain) calcSequenceLock(node *blockNode, tx *soterutil.Tx, utxoView *UtxoViewpoint, mempool bool) (*SequenceLock, error) {
 	// A value of -1 for each relative lock type represents a relative time
 	// lock value that will allow a transaction to be included in a block
 	// at any given height or time. This value is returned as the relative
@@ -558,7 +566,7 @@ func (b *BlockChain) getReorganizeNodes(node *blockNode) (*list.List, *list.List
 // it would be inefficient to repeat it.
 //
 // This function MUST be called with the chain state lock held (for writes).
-func (b *BlockChain) connectBlock(node *blockNode, block *btcutil.Block,
+func (b *BlockChain) connectBlock(node *blockNode, block *soterutil.Block,
 	view *UtxoViewpoint, stxos []SpentTxOut) error {
 
 	// Make sure it's extending the end of the best chain.
@@ -683,7 +691,7 @@ func (b *BlockChain) connectBlock(node *blockNode, block *btcutil.Block,
 // the main (best) chain.
 //
 // This function MUST be called with the chain state lock held (for writes).
-func (b *BlockChain) disconnectBlock(node *blockNode, block *btcutil.Block, view *UtxoViewpoint) error {
+func (b *BlockChain) disconnectBlock(node *blockNode, block *soterutil.Block, view *UtxoViewpoint) error {
 	// Make sure the node being disconnected is the end of the best chain.
 	if !node.hash.IsEqual(&b.bestChain.Tip().hash) {
 		return AssertError("disconnectBlock must be called with the " +
@@ -692,7 +700,7 @@ func (b *BlockChain) disconnectBlock(node *blockNode, block *btcutil.Block, view
 
 	// Load the previous block since some details for it are needed below.
 	prevNode := node.parent
-	var prevBlock *btcutil.Block
+	var prevBlock *soterutil.Block
 	err := b.db.View(func(dbTx database.Tx) error {
 		var err error
 		prevBlock, err = dbFetchBlockByNode(dbTx, prevNode)
@@ -799,7 +807,7 @@ func (b *BlockChain) disconnectBlock(node *blockNode, block *btcutil.Block, view
 }
 
 // countSpentOutputs returns the number of utxos the passed block spends.
-func countSpentOutputs(block *btcutil.Block) int {
+func countSpentOutputs(block *soterutil.Block) int {
 	// Exclude the coinbase transaction since it can't spend anything.
 	var numSpent int
 	for _, tx := range block.Transactions()[1:] {
@@ -857,9 +865,9 @@ func (b *BlockChain) reorganizeChain(detachNodes, attachNodes *list.List) error 
 	// be loaded from the database during the reorg check phase below and
 	// then they are needed again when doing the actual database updates.
 	// Rather than doing two loads, cache the loaded data into these slices.
-	detachBlocks := make([]*btcutil.Block, 0, detachNodes.Len())
+	detachBlocks := make([]*soterutil.Block, 0, detachNodes.Len())
 	detachSpentTxOuts := make([][]SpentTxOut, 0, detachNodes.Len())
-	attachBlocks := make([]*btcutil.Block, 0, attachNodes.Len())
+	attachBlocks := make([]*soterutil.Block, 0, attachNodes.Len())
 
 	// Disconnect all of the blocks back to the point of the fork.  This
 	// entails loading the blocks and their associated spent txos from the
@@ -869,7 +877,7 @@ func (b *BlockChain) reorganizeChain(detachNodes, attachNodes *list.List) error 
 	view.SetBestHash(&oldBest.hash)
 	for e := detachNodes.Front(); e != nil; e = e.Next() {
 		n := e.Value.(*blockNode)
-		var block *btcutil.Block
+		var block *soterutil.Block
 		err := b.db.View(func(dbTx database.Tx) error {
 			var err error
 			block, err = dbFetchBlockByNode(dbTx, n)
@@ -936,7 +944,7 @@ func (b *BlockChain) reorganizeChain(detachNodes, attachNodes *list.List) error 
 	for e := attachNodes.Front(); e != nil; e = e.Next() {
 		n := e.Value.(*blockNode)
 
-		var block *btcutil.Block
+		var block *soterutil.Block
 		err := b.db.View(func(dbTx database.Tx) error {
 			var err error
 			block, err = dbFetchBlockByNode(dbTx, n)
@@ -1082,7 +1090,7 @@ func (b *BlockChain) reorganizeChain(detachNodes, attachNodes *list.List) error 
 //    This is useful when using checkpoints.
 //
 // This function MUST be called with the chain state lock held (for writes).
-func (b *BlockChain) connectBestChain(node *blockNode, block *btcutil.Block, flags BehaviorFlags) (bool, error) {
+func (b *BlockChain) connectBestChain(node *blockNode, block *soterutil.Block, flags BehaviorFlags) (bool, error) {
 	fastAdd := flags&BFFastAdd == BFFastAdd
 
 	flushIndexState := func() {
@@ -1218,17 +1226,23 @@ func (b *BlockChain) connectBestChain(node *blockNode, block *btcutil.Block, fla
 // isCurrent returns whether or not the chain believes it is current.  Several
 // factors are used to guess, but the key factors that allow the chain to
 // believe it is current are:
-//  - Latest block height is after the latest checkpoint (if enabled)
 //  - Latest block has a timestamp newer than 24 hours ago
+// NOTE(cedric): Checkpoint code is commented-out (JIRA DAG-3). If it weren't, this
+// would also be a factor:
+//  - Latest block height is after the latest checkpoint (if enabled)
 //
 // This function MUST be called with the chain state lock held (for reads).
 func (b *BlockChain) isCurrent() bool {
 	// Not current if the latest main (best) chain height is before the
 	// latest known good checkpoint (when checkpoints are enabled).
-	checkpoint := b.LatestCheckpoint()
-	if checkpoint != nil && b.bestChain.Tip().height < checkpoint.Height {
-		return false
-	}
+	//
+	// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+	// 
+	//
+	// checkpoint := b.LatestCheckpoint()
+	// if checkpoint != nil && b.bestChain.Tip().height < checkpoint.Height {
+	// 	return false
+	// }
 
 	// Not current if the latest best block has a timestamp before 24 hours
 	// ago.
@@ -1243,6 +1257,8 @@ func (b *BlockChain) isCurrent() bool {
 // factors are used to guess, but the key factors that allow the chain to
 // believe it is current are:
 //  - Latest block height is after the latest checkpoint (if enabled)
+// NOTE(cedric): Checkpoint code is commented-out (JIRA DAG-3). If it weren't, this
+// would also be a factor:
 //  - Latest block has a timestamp newer than 24 hours ago
 //
 // This function is safe for concurrent access.
@@ -1640,13 +1656,13 @@ type IndexManager interface {
 	// main chain. The set of output spent within a block is also passed in
 	// so indexers can access the previous output scripts input spent if
 	// required.
-	ConnectBlock(database.Tx, *btcutil.Block, []SpentTxOut) error
+	ConnectBlock(database.Tx, *soterutil.Block, []SpentTxOut) error
 
 	// DisconnectBlock is invoked when a block has been disconnected from
 	// the main chain. The set of outputs scripts that were spent within
 	// this block is also returned so indexers can clean up the prior index
 	// state for this block.
-	DisconnectBlock(database.Tx, *btcutil.Block, []SpentTxOut) error
+	DisconnectBlock(database.Tx, *soterutil.Block, []SpentTxOut) error
 }
 
 // Config is a descriptor which specifies the blockchain instance configuration.
@@ -1676,7 +1692,11 @@ type Config struct {
 	//
 	// This field can be nil if the caller does not wish to specify any
 	// checkpoints.
-	Checkpoints []chaincfg.Checkpoint
+	//
+	// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+	// 
+	//
+	//Checkpoints []chaincfg.Checkpoint
 
 	// TimeSource defines the median time source to use for things such as
 	// block processing and determining whether or not the chain is current.
@@ -1728,29 +1748,36 @@ func New(config *Config) (*BlockChain, error) {
 
 	// Generate a checkpoint by height map from the provided checkpoints
 	// and assert the provided checkpoints are sorted by height as required.
-	var checkpointsByHeight map[int32]*chaincfg.Checkpoint
-	var prevCheckpointHeight int32
-	if len(config.Checkpoints) > 0 {
-		checkpointsByHeight = make(map[int32]*chaincfg.Checkpoint)
-		for i := range config.Checkpoints {
-			checkpoint := &config.Checkpoints[i]
-			if checkpoint.Height <= prevCheckpointHeight {
-				return nil, AssertError("blockchain.New " +
-					"checkpoints are not sorted by height")
-			}
+	//
+	// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+	// 
+	//
+	// var checkpointsByHeight map[int32]*chaincfg.Checkpoint
+	// var prevCheckpointHeight int32
+	// if len(config.Checkpoints) > 0 {
+	// 	checkpointsByHeight = make(map[int32]*chaincfg.Checkpoint)
+	// 	for i := range config.Checkpoints {
+	// 		checkpoint := &config.Checkpoints[i]
+	// 		if checkpoint.Height <= prevCheckpointHeight {
+	// 			return nil, AssertError("blockchain.New " +
+	// 				"checkpoints are not sorted by height")
+	// 		}
 
-			checkpointsByHeight[checkpoint.Height] = checkpoint
-			prevCheckpointHeight = checkpoint.Height
-		}
-	}
+	// 		checkpointsByHeight[checkpoint.Height] = checkpoint
+	// 		prevCheckpointHeight = checkpoint.Height
+	// 	}
+	// }
 
 	params := config.ChainParams
 	targetTimespan := int64(params.TargetTimespan / time.Second)
 	targetTimePerBlock := int64(params.TargetTimePerBlock / time.Second)
 	adjustmentFactor := params.RetargetAdjustmentFactor
 	b := BlockChain{
-		checkpoints:         config.Checkpoints,
-		checkpointsByHeight: checkpointsByHeight,
+		// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+		// 
+		//
+		// checkpoints:         config.Checkpoints,
+		// checkpointsByHeight: checkpointsByHeight,
 		db:                  config.DB,
 		chainParams:         params,
 		timeSource:          config.TimeSource,

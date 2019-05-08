@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -11,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 	"github.com/davecgh/go-spew/spew"
 )
 
@@ -173,13 +174,13 @@ func TestBlockWire(t *testing.T) {
 	for i, test := range tests {
 		// Encode the message to wire format.
 		var buf bytes.Buffer
-		err := test.in.BtcEncode(&buf, test.pver, test.enc)
+		err := test.in.SotoEncode(&buf, test.pver, test.enc)
 		if err != nil {
-			t.Errorf("BtcEncode #%d error %v", i, err)
+			t.Errorf("SotoEncode #%d error %v", i, err)
 			continue
 		}
 		if !bytes.Equal(buf.Bytes(), test.buf) {
-			t.Errorf("BtcEncode #%d\n got: %s want: %s", i,
+			t.Errorf("SotoEncode #%d\n got: %s want: %s", i,
 				spew.Sdump(buf.Bytes()), spew.Sdump(test.buf))
 			continue
 		}
@@ -187,13 +188,13 @@ func TestBlockWire(t *testing.T) {
 		// Decode the message from wire format.
 		var msg MsgBlock
 		rbuf := bytes.NewReader(test.buf)
-		err = msg.BtcDecode(rbuf, test.pver, test.enc)
+		err = msg.SotoDecode(rbuf, test.pver, test.enc)
 		if err != nil {
-			t.Errorf("BtcDecode #%d error %v", i, err)
+			t.Errorf("SotoDecode #%d error %v", i, err)
 			continue
 		}
 		if !reflect.DeepEqual(&msg, test.out) {
-			t.Errorf("BtcDecode #%d\n got: %s want: %s", i,
+			t.Errorf("SotoDecode #%d\n got: %s want: %s", i,
 				spew.Sdump(&msg), spew.Sdump(test.out))
 			continue
 		}
@@ -229,19 +230,23 @@ func TestBlockWireErrors(t *testing.T) {
 		{&blockOne, blockOneBytes, pver, BaseEncoding, 72, io.ErrShortWrite, io.EOF},
 		// Force error in header nonce.
 		{&blockOne, blockOneBytes, pver, BaseEncoding, 76, io.ErrShortWrite, io.EOF},
-		// Force error in transaction count.
+		// Force error in parent sub-header version
 		{&blockOne, blockOneBytes, pver, BaseEncoding, 80, io.ErrShortWrite, io.EOF},
+		// Force error in parent sub-header parent count
+		{&blockOne, blockOneBytes, pver, BaseEncoding, 84, io.ErrShortWrite, io.EOF},
+		// Force error in transaction count.
+		{&blockOne, blockOneBytes, pver, BaseEncoding, 88, io.ErrShortWrite, io.EOF},
 		// Force error in transactions.
-		{&blockOne, blockOneBytes, pver, BaseEncoding, 81, io.ErrShortWrite, io.EOF},
+		{&blockOne, blockOneBytes, pver, BaseEncoding, 89, io.ErrShortWrite, io.EOF},
 	}
 
 	t.Logf("Running %d tests", len(tests))
 	for i, test := range tests {
 		// Encode to wire format.
 		w := newFixedWriter(test.max)
-		err := test.in.BtcEncode(w, test.pver, test.enc)
+		err := test.in.SotoEncode(w, test.pver, test.enc)
 		if err != test.writeErr {
-			t.Errorf("BtcEncode #%d wrong error got: %v, want: %v",
+			t.Errorf("SotoEncode #%d wrong error got: %v, want: %v",
 				i, err, test.writeErr)
 			continue
 		}
@@ -249,9 +254,9 @@ func TestBlockWireErrors(t *testing.T) {
 		// Decode from wire format.
 		var msg MsgBlock
 		r := newFixedReader(test.max, test.buf)
-		err = msg.BtcDecode(r, test.pver, test.enc)
+		err = msg.SotoDecode(r, test.pver, test.enc)
 		if err != test.readErr {
-			t.Errorf("BtcDecode #%d wrong error got: %v, want: %v",
+			t.Errorf("SotoDecode #%d wrong error got: %v, want: %v",
 				i, err, test.readErr)
 			continue
 		}
@@ -347,10 +352,14 @@ func TestBlockSerializeErrors(t *testing.T) {
 		{&blockOne, blockOneBytes, 72, io.ErrShortWrite, io.EOF},
 		// Force error in header nonce.
 		{&blockOne, blockOneBytes, 76, io.ErrShortWrite, io.EOF},
-		// Force error in transaction count.
+		// Force error in parent sub-header version
 		{&blockOne, blockOneBytes, 80, io.ErrShortWrite, io.EOF},
+		// Force error in parent sub-header parent count
+		{&blockOne, blockOneBytes, 84, io.ErrShortWrite, io.EOF},
+		// Force error in transaction count.
+		{&blockOne, blockOneBytes, 88, io.ErrShortWrite, io.EOF},
 		// Force error in transactions.
-		{&blockOne, blockOneBytes, 81, io.ErrShortWrite, io.EOF},
+		{&blockOne, blockOneBytes, 89, io.ErrShortWrite, io.EOF},
 	}
 
 	t.Logf("Running %d tests", len(tests))
@@ -416,6 +425,8 @@ func TestBlockOverflowErrors(t *testing.T) {
 				0x61, 0xbc, 0x66, 0x49, // Timestamp
 				0xff, 0xff, 0x00, 0x1d, // Bits
 				0x01, 0xe3, 0x62, 0x99, // Nonce
+				0x01, 0x00, 0x00, 0x00, // Parent sub-header version 1
+				0x00, 0x00, 0x00, 0x00, // Parent sub-header size of parents array
 				0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 				0xff, // TxnCount
 			}, pver, BaseEncoding, &MessageError{},
@@ -427,9 +438,9 @@ func TestBlockOverflowErrors(t *testing.T) {
 		// Decode from wire format.
 		var msg MsgBlock
 		r := bytes.NewReader(test.buf)
-		err := msg.BtcDecode(r, test.pver, test.enc)
+		err := msg.SotoDecode(r, test.pver, test.enc)
 		if reflect.TypeOf(err) != reflect.TypeOf(test.err) {
-			t.Errorf("BtcDecode #%d wrong error got: %v, want: %v",
+			t.Errorf("SotoDecode #%d wrong error got: %v, want: %v",
 				i, err, reflect.TypeOf(test.err))
 			continue
 		}
@@ -465,7 +476,7 @@ func TestBlockSerializeSize(t *testing.T) {
 		size int       // Expected serialized size
 	}{
 		// Block with no transactions.
-		{noTxBlock, 81},
+		{noTxBlock, 89},
 
 		// First block in the mainnet block chain.
 		{&blockOne, len(blockOneBytes)},
@@ -502,6 +513,11 @@ var blockOne = MsgBlock{
 		Timestamp: time.Unix(0x4966bc61, 0), // 2009-01-08 20:54:25 -0600 CST
 		Bits:      0x1d00ffff,               // 486604799
 		Nonce:     0x9962e301,               // 2573394689
+	},
+	Parents: ParentSubHeader{
+		Version: 1,
+		Size: 0,
+		Parents: []*Parent{},
 	},
 	Transactions: []*MsgTx{
 		{
@@ -555,6 +571,8 @@ var blockOneBytes = []byte{
 	0x61, 0xbc, 0x66, 0x49, // Timestamp
 	0xff, 0xff, 0x00, 0x1d, // Bits
 	0x01, 0xe3, 0x62, 0x99, // Nonce
+	0x01, 0x00, 0x00, 0x00, // Parent sub-header version 1
+	0x00, 0x00, 0x00, 0x00, // Parent sub-header size of parents array
 	0x01,                   // TxnCount
 	0x01, 0x00, 0x00, 0x00, // Version
 	0x01, // Varint for number of transaction inputs
@@ -585,5 +603,5 @@ var blockOneBytes = []byte{
 
 // Transaction location information for block one transactions.
 var blockOneTxLocs = []TxLoc{
-	{TxStart: 81, TxLen: 134},
+	{TxStart: 89, TxLen: 134},
 }

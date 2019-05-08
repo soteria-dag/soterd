@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -147,13 +148,13 @@ func TestBlockHeaderWire(t *testing.T) {
 		}
 
 		buf.Reset()
-		err = test.in.BtcEncode(&buf, pver, 0)
+		err = test.in.SotoEncode(&buf, pver, 0)
 		if err != nil {
-			t.Errorf("BtcEncode #%d error %v", i, err)
+			t.Errorf("SotoEncode #%d error %v", i, err)
 			continue
 		}
 		if !bytes.Equal(buf.Bytes(), test.buf) {
-			t.Errorf("BtcEncode #%d\n got: %s want: %s", i,
+			t.Errorf("SotoEncode #%d\n got: %s want: %s", i,
 				spew.Sdump(buf.Bytes()), spew.Sdump(test.buf))
 			continue
 		}
@@ -173,13 +174,13 @@ func TestBlockHeaderWire(t *testing.T) {
 		}
 
 		rbuf = bytes.NewReader(test.buf)
-		err = bh.BtcDecode(rbuf, pver, test.enc)
+		err = bh.SotoDecode(rbuf, pver, test.enc)
 		if err != nil {
-			t.Errorf("BtcDecode #%d error %v", i, err)
+			t.Errorf("SotoDecode #%d error %v", i, err)
 			continue
 		}
 		if !reflect.DeepEqual(&bh, test.out) {
-			t.Errorf("BtcDecode #%d\n got: %s want: %s", i,
+			t.Errorf("SotoDecode #%d\n got: %s want: %s", i,
 				spew.Sdump(&bh), spew.Sdump(test.out))
 			continue
 		}

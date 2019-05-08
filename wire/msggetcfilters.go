@@ -1,4 +1,5 @@
 // Copyright (c) 2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -7,14 +8,14 @@ package wire
 import (
 	"io"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 )
 
 // MaxGetCFiltersReqRange the maximum number of filters that may be requested in
 // a getcfheaders message.
 const MaxGetCFiltersReqRange = 1000
 
-// MsgGetCFilters implements the Message interface and represents a bitcoin
+// MsgGetCFilters implements the Message interface and represents a soter
 // getcfilters message. It is used to request committed filters for a range of
 // blocks.
 type MsgGetCFilters struct {
@@ -23,9 +24,9 @@ type MsgGetCFilters struct {
 	StopHash    chainhash.Hash
 }
 
-// BtcDecode decodes r using the bitcoin protocol encoding into the receiver.
+// SotoDecode decodes r using the soter protocol encoding into the receiver.
 // This is part of the Message interface implementation.
-func (msg *MsgGetCFilters) BtcDecode(r io.Reader, pver uint32, _ MessageEncoding) error {
+func (msg *MsgGetCFilters) SotoDecode(r io.Reader, pver uint32, _ MessageEncoding) error {
 	err := readElement(r, &msg.FilterType)
 	if err != nil {
 		return err
@@ -39,9 +40,9 @@ func (msg *MsgGetCFilters) BtcDecode(r io.Reader, pver uint32, _ MessageEncoding
 	return readElement(r, &msg.StopHash)
 }
 
-// BtcEncode encodes the receiver to w using the bitcoin protocol encoding.
+// SotoEncode encodes the receiver to w using the soter protocol encoding.
 // This is part of the Message interface implementation.
-func (msg *MsgGetCFilters) BtcEncode(w io.Writer, pver uint32, _ MessageEncoding) error {
+func (msg *MsgGetCFilters) SotoEncode(w io.Writer, pver uint32, _ MessageEncoding) error {
 	err := writeElement(w, msg.FilterType)
 	if err != nil {
 		return err
@@ -68,7 +69,7 @@ func (msg *MsgGetCFilters) MaxPayloadLength(pver uint32) uint32 {
 	return 1 + 4 + chainhash.HashSize
 }
 
-// NewMsgGetCFilters returns a new bitcoin getcfilters message that conforms to
+// NewMsgGetCFilters returns a new soter getcfilters message that conforms to
 // the Message interface using the passed parameters and defaults for the
 // remaining fields.
 func NewMsgGetCFilters(filterType FilterType, startHeight uint32,

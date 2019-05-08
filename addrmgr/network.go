@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2014 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -8,7 +9,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/btcsuite/btcd/wire"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 var (
@@ -110,7 +111,7 @@ func IsLocal(na *wire.NetAddress) bool {
 }
 
 // IsOnionCatTor returns whether or not the passed address is in the IPv6 range
-// used by bitcoin to support Tor (fd87:d87e:eb43::/48).  Note that this range
+// used by soter to support Tor (fd87:d87e:eb43::/48).  Note that this range
 // is the same range used by OnionCat, which is part of the RFC4193 unique local
 // IPv6 range.
 func IsOnionCatTor(na *wire.NetAddress) bool {

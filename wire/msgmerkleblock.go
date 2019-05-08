@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -8,7 +9,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 )
 
 // maxFlagsPerMerkleBlock is the maximum number of flag bytes that could
@@ -17,7 +18,7 @@ import (
 // 8 bits per byte.  Then an extra one to cover partials.
 const maxFlagsPerMerkleBlock = maxTxPerBlock / 8
 
-// MsgMerkleBlock implements the Message interface and represents a bitcoin
+// MsgMerkleBlock implements the Message interface and represents a soter
 // merkleblock message which is used to reset a Bloom filter.
 //
 // This message was not added until protocol version BIP0037Version.
@@ -40,13 +41,13 @@ func (msg *MsgMerkleBlock) AddTxHash(hash *chainhash.Hash) error {
 	return nil
 }
 
-// BtcDecode decodes r using the bitcoin protocol encoding into the receiver.
+// SotoDecode decodes r using the soter protocol encoding into the receiver.
 // This is part of the Message interface implementation.
-func (msg *MsgMerkleBlock) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
+func (msg *MsgMerkleBlock) SotoDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
 	if pver < BIP0037Version {
 		str := fmt.Sprintf("merkleblock message invalid for protocol "+
 			"version %d", pver)
-		return messageError("MsgMerkleBlock.BtcDecode", str)
+		return messageError("MsgMerkleBlock.SotoDecode", str)
 	}
 
 	err := readBlockHeader(r, pver, &msg.Header)
@@ -67,7 +68,7 @@ func (msg *MsgMerkleBlock) BtcDecode(r io.Reader, pver uint32, enc MessageEncodi
 	if count > maxTxPerBlock {
 		str := fmt.Sprintf("too many transaction hashes for message "+
 			"[count %v, max %v]", count, maxTxPerBlock)
-		return messageError("MsgMerkleBlock.BtcDecode", str)
+		return messageError("MsgMerkleBlock.SotoDecode", str)
 	}
 
 	// Create a contiguous slice of hashes to deserialize into in order to
@@ -88,13 +89,13 @@ func (msg *MsgMerkleBlock) BtcDecode(r io.Reader, pver uint32, enc MessageEncodi
 	return err
 }
 
-// BtcEncode encodes the receiver to w using the bitcoin protocol encoding.
+// SotoEncode encodes the receiver to w using the soter protocol encoding.
 // This is part of the Message interface implementation.
-func (msg *MsgMerkleBlock) BtcEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
+func (msg *MsgMerkleBlock) SotoEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
 	if pver < BIP0037Version {
 		str := fmt.Sprintf("merkleblock message invalid for protocol "+
 			"version %d", pver)
-		return messageError("MsgMerkleBlock.BtcEncode", str)
+		return messageError("MsgMerkleBlock.SotoEncode", str)
 	}
 
 	// Read num transaction hashes and limit to max.
@@ -102,13 +103,13 @@ func (msg *MsgMerkleBlock) BtcEncode(w io.Writer, pver uint32, enc MessageEncodi
 	if numHashes > maxTxPerBlock {
 		str := fmt.Sprintf("too many transaction hashes for message "+
 			"[count %v, max %v]", numHashes, maxTxPerBlock)
-		return messageError("MsgMerkleBlock.BtcDecode", str)
+		return messageError("MsgMerkleBlock.SotoDecode", str)
 	}
 	numFlagBytes := len(msg.Flags)
 	if numFlagBytes > maxFlagsPerMerkleBlock {
 		str := fmt.Sprintf("too many flag bytes for message [count %v, "+
 			"max %v]", numFlagBytes, maxFlagsPerMerkleBlock)
-		return messageError("MsgMerkleBlock.BtcDecode", str)
+		return messageError("MsgMerkleBlock.SotoDecode", str)
 	}
 
 	err := writeBlockHeader(w, pver, &msg.Header)
@@ -147,7 +148,7 @@ func (msg *MsgMerkleBlock) MaxPayloadLength(pver uint32) uint32 {
 	return MaxBlockPayload
 }
 
-// NewMsgMerkleBlock returns a new bitcoin merkleblock message that conforms to
+// NewMsgMerkleBlock returns a new soter merkleblock message that conforms to
 // the Message interface.  See MsgMerkleBlock for details.
 func NewMsgMerkleBlock(bh *BlockHeader) *MsgMerkleBlock {
 	return &MsgMerkleBlock{

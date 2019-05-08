@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -10,15 +11,15 @@ import (
 	"io"
 	"unicode/utf8"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 )
 
-// MessageHeaderSize is the number of bytes in a bitcoin message header.
-// Bitcoin network (magic) 4 bytes + command 12 bytes + payload length 4 bytes +
+// MessageHeaderSize is the number of bytes in a soter message header.
+// soter network (magic) 4 bytes + command 12 bytes + payload length 4 bytes +
 // checksum 4 bytes.
 const MessageHeaderSize = 24
 
-// CommandSize is the fixed size of all commands in the common bitcoin message
+// CommandSize is the fixed size of all commands in the common soter message
 // header.  Shorter commands must be zero padded.
 const CommandSize = 12
 
@@ -26,12 +27,14 @@ const CommandSize = 12
 // individual limits imposed by messages themselves.
 const MaxMessagePayload = (1024 * 1024 * 32) // 32MB
 
-// Commands used in bitcoin message headers which describe the type of message.
+// Commands used in soter message headers which describe the type of message.
 const (
 	CmdVersion      = "version"
 	CmdVerAck       = "verack"
 	CmdGetAddr      = "getaddr"
+	CmdGetAddrCache = "getaddrcache"
 	CmdAddr         = "addr"
+	CmdAddrCache    = "addrcache"
 	CmdGetBlocks    = "getblocks"
 	CmdInv          = "inv"
 	CmdGetData      = "getdata"
@@ -64,26 +67,26 @@ type MessageEncoding uint32
 
 const (
 	// BaseEncoding encodes all messages in the default format specified
-	// for the Bitcoin wire protocol.
+	// for the Soter wire protocol.
 	BaseEncoding MessageEncoding = 1 << iota
 
 	// WitnessEncoding encodes all messages other than transaction messages
-	// using the default Bitcoin wire protocol specification. For transaction
+	// using the default Soter wire protocol specification. For transaction
 	// messages, the new encoding format detailed in BIP0144 will be used.
 	WitnessEncoding
 )
 
-// LatestEncoding is the most recently specified encoding for the Bitcoin wire
+// LatestEncoding is the most recently specified encoding for the Soter wire
 // protocol.
 var LatestEncoding = WitnessEncoding
 
-// Message is an interface that describes a bitcoin message.  A type that
+// Message is an interface that describes a soter message.  A type that
 // implements Message has complete control over the representation of its data
 // and may therefore contain additional or fewer fields than those which
 // are used directly in the protocol encoded message.
 type Message interface {
-	BtcDecode(io.Reader, uint32, MessageEncoding) error
-	BtcEncode(io.Writer, uint32, MessageEncoding) error
+	SotoDecode(io.Reader, uint32, MessageEncoding) error
+	SotoEncode(io.Writer, uint32, MessageEncoding) error
 	Command() string
 	MaxPayloadLength(uint32) uint32
 }
@@ -102,8 +105,14 @@ func makeEmptyMessage(command string) (Message, error) {
 	case CmdGetAddr:
 		msg = &MsgGetAddr{}
 
+	case CmdGetAddrCache:
+		msg = &MsgGetAddrCache{}
+
 	case CmdAddr:
 		msg = &MsgAddr{}
+
+	case CmdAddrCache:
+		msg = &MsgAddrCache{}
 
 	case CmdGetBlocks:
 		msg = &MsgGetBlocks{}
@@ -186,15 +195,15 @@ func makeEmptyMessage(command string) (Message, error) {
 	return msg, nil
 }
 
-// messageHeader defines the header structure for all bitcoin protocol messages.
+// messageHeader defines the header structure for all soter protocol messages.
 type messageHeader struct {
-	magic    BitcoinNet // 4 bytes
-	command  string     // 12 bytes
-	length   uint32     // 4 bytes
-	checksum [4]byte    // 4 bytes
+	magic    SoterNet // 4 bytes
+	command  string   // 12 bytes
+	length   uint32   // 4 bytes
+	checksum [4]byte  // 4 bytes
 }
 
-// readMessageHeader reads a bitcoin message header from r.
+// readMessageHeader reads a soter message header from r.
 func readMessageHeader(r io.Reader) (int, *messageHeader, error) {
 	// Since readElements doesn't return the amount of bytes read, attempt
 	// to read the entire header into a buffer first in case there is a
@@ -238,30 +247,30 @@ func discardInput(r io.Reader, n uint32) {
 	}
 }
 
-// WriteMessageN writes a bitcoin Message to w including the necessary header
+// WriteMessageN writes a soter Message to w including the necessary header
 // information and returns the number of bytes written.    This function is the
 // same as WriteMessage except it also returns the number of bytes written.
-func WriteMessageN(w io.Writer, msg Message, pver uint32, btcnet BitcoinNet) (int, error) {
-	return WriteMessageWithEncodingN(w, msg, pver, btcnet, BaseEncoding)
+func WriteMessageN(w io.Writer, msg Message, pver uint32, soternet SoterNet) (int, error) {
+	return WriteMessageWithEncodingN(w, msg, pver, soternet, BaseEncoding)
 }
 
-// WriteMessage writes a bitcoin Message to w including the necessary header
+// WriteMessage writes a soter Message to w including the necessary header
 // information.  This function is the same as WriteMessageN except it doesn't
 // doesn't return the number of bytes written.  This function is mainly provided
 // for backwards compatibility with the original API, but it's also useful for
 // callers that don't care about byte counts.
-func WriteMessage(w io.Writer, msg Message, pver uint32, btcnet BitcoinNet) error {
-	_, err := WriteMessageN(w, msg, pver, btcnet)
+func WriteMessage(w io.Writer, msg Message, pver uint32, soternet SoterNet) error {
+	_, err := WriteMessageN(w, msg, pver, soternet)
 	return err
 }
 
-// WriteMessageWithEncodingN writes a bitcoin Message to w including the
+// WriteMessageWithEncodingN writes a soter Message to w including the
 // necessary header information and returns the number of bytes written.
 // This function is the same as WriteMessageN except it also allows the caller
 // to specify the message encoding format to be used when serializing wire
 // messages.
 func WriteMessageWithEncodingN(w io.Writer, msg Message, pver uint32,
-	btcnet BitcoinNet, encoding MessageEncoding) (int, error) {
+	soternet SoterNet, encoding MessageEncoding) (int, error) {
 
 	totalBytes := 0
 
@@ -277,7 +286,7 @@ func WriteMessageWithEncodingN(w io.Writer, msg Message, pver uint32,
 
 	// Encode the message payload.
 	var bw bytes.Buffer
-	err := msg.BtcEncode(&bw, pver, encoding)
+	err := msg.SotoEncode(&bw, pver, encoding)
 	if err != nil {
 		return totalBytes, err
 	}
@@ -303,7 +312,7 @@ func WriteMessageWithEncodingN(w io.Writer, msg Message, pver uint32,
 
 	// Create header for the message.
 	hdr := messageHeader{}
-	hdr.magic = btcnet
+	hdr.magic = soternet
 	hdr.command = cmd
 	hdr.length = uint32(lenp)
 	copy(hdr.checksum[:], chainhash.DoubleHashB(payload)[0:4])
@@ -327,13 +336,13 @@ func WriteMessageWithEncodingN(w io.Writer, msg Message, pver uint32,
 	return totalBytes, err
 }
 
-// ReadMessageWithEncodingN reads, validates, and parses the next bitcoin Message
-// from r for the provided protocol version and bitcoin network.  It returns the
+// ReadMessageWithEncodingN reads, validates, and parses the next soter Message
+// from r for the provided protocol version and soter network.  It returns the
 // number of bytes read in addition to the parsed Message and raw bytes which
 // comprise the message.  This function is the same as ReadMessageN except it
 // allows the caller to specify which message encoding is to to consult when
 // decoding wire messages.
-func ReadMessageWithEncodingN(r io.Reader, pver uint32, btcnet BitcoinNet,
+func ReadMessageWithEncodingN(r io.Reader, pver uint32, soternet SoterNet,
 	enc MessageEncoding) (int, Message, []byte, error) {
 
 	totalBytes := 0
@@ -352,8 +361,8 @@ func ReadMessageWithEncodingN(r io.Reader, pver uint32, btcnet BitcoinNet,
 
 	}
 
-	// Check for messages from the wrong bitcoin network.
-	if hdr.magic != btcnet {
+	// Check for messages from the wrong soter network.
+	if hdr.magic != soternet {
 		discardInput(r, hdr.length)
 		str := fmt.Sprintf("message from other network [%v]", hdr.magic)
 		return totalBytes, nil, nil, messageError("ReadMessage", str)
@@ -405,9 +414,9 @@ func ReadMessageWithEncodingN(r io.Reader, pver uint32, btcnet BitcoinNet,
 	}
 
 	// Unmarshal message.  NOTE: This must be a *bytes.Buffer since the
-	// MsgVersion BtcDecode function requires it.
+	// MsgVersion SotoDecode function requires it.
 	pr := bytes.NewBuffer(payload)
-	err = msg.BtcDecode(pr, pver, enc)
+	err = msg.SotoDecode(pr, pver, enc)
 	if err != nil {
 		return totalBytes, nil, nil, err
 	}
@@ -415,22 +424,22 @@ func ReadMessageWithEncodingN(r io.Reader, pver uint32, btcnet BitcoinNet,
 	return totalBytes, msg, payload, nil
 }
 
-// ReadMessageN reads, validates, and parses the next bitcoin Message from r for
-// the provided protocol version and bitcoin network.  It returns the number of
+// ReadMessageN reads, validates, and parses the next soter Message from r for
+// the provided protocol version and soter network.  It returns the number of
 // bytes read in addition to the parsed Message and raw bytes which comprise the
 // message.  This function is the same as ReadMessage except it also returns the
 // number of bytes read.
-func ReadMessageN(r io.Reader, pver uint32, btcnet BitcoinNet) (int, Message, []byte, error) {
-	return ReadMessageWithEncodingN(r, pver, btcnet, BaseEncoding)
+func ReadMessageN(r io.Reader, pver uint32, soternet SoterNet) (int, Message, []byte, error) {
+	return ReadMessageWithEncodingN(r, pver, soternet, BaseEncoding)
 }
 
-// ReadMessage reads, validates, and parses the next bitcoin Message from r for
-// the provided protocol version and bitcoin network.  It returns the parsed
+// ReadMessage reads, validates, and parses the next soter Message from r for
+// the provided protocol version and soter network.  It returns the parsed
 // Message and raw bytes which comprise the message.  This function only differs
 // from ReadMessageN in that it doesn't return the number of bytes read.  This
 // function is mainly provided for backwards compatibility with the original
 // API, but it's also useful for callers that don't care about byte counts.
-func ReadMessage(r io.Reader, pver uint32, btcnet BitcoinNet) (Message, []byte, error) {
-	_, msg, buf, err := ReadMessageN(r, pver, btcnet)
+func ReadMessage(r io.Reader, pver uint32, soternet SoterNet) (Message, []byte, error) {
+	_, msg, buf, err := ReadMessageN(r, pver, soternet)
 	return msg, buf, err
 }

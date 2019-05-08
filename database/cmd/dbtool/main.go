@@ -1,4 +1,5 @@
 // Copyright (c) 2015-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -10,18 +11,18 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/btcsuite/btcd/database"
-	"github.com/btcsuite/btclog"
+	"github.com/soteria-dag/soterd/database"
+	"github.com/soteria-dag/soterd/soterlog"
 	flags "github.com/jessevdk/go-flags"
 )
 
 const (
-	// blockDbNamePrefix is the prefix for the btcd block database.
+	// blockDbNamePrefix is the prefix for the soterd block database.
 	blockDbNamePrefix = "blocks"
 )
 
 var (
-	log             btclog.Logger
+	log             soterlog.Logger
 	shutdownChannel = make(chan error)
 )
 
@@ -61,11 +62,11 @@ func loadBlockDB() (database.DB, error) {
 // around the fact that deferred functions do not run when os.Exit() is called.
 func realMain() error {
 	// Setup logging.
-	backendLogger := btclog.NewBackend(os.Stdout)
+	backendLogger := soterlog.NewBackend(os.Stdout)
 	defer os.Stdout.Sync()
 	log = backendLogger.Logger("MAIN")
 	dbLog := backendLogger.Logger("BCDB")
-	dbLog.SetLevel(btclog.LevelDebug)
+	dbLog.SetLevel(soterlog.LevelDebug)
 	database.UseLogger(dbLog)
 
 	// Setup the parser options and commands.

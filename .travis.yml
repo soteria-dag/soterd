@@ -1,7 +1,7 @@
+#just to test if it starts.
 language: go
 go:
-  - "1.9.5"
-  - "1.10.1"
+  - "1.11.1"
 sudo: false
 install:
   - GLIDE_TAG=v0.12.3
@@ -14,4 +14,5 @@ install:
   - gometalinter.v2 --install
 script:
   - export PATH=$PATH:$HOME/gopath/bin
-  - ./goclean.sh
+  - go test -v ./...
+#  - ./goclean.sh

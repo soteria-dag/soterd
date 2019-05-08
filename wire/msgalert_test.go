@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -47,9 +48,9 @@ func TestMsgAlert(t *testing.T) {
 			maxPayload, wantPayload)
 	}
 
-	// Test BtcEncode with Payload == nil
+	// Test SotoEncode with Payload == nil
 	var buf bytes.Buffer
-	err := msg.BtcEncode(&buf, pver, encoding)
+	err := msg.SotoEncode(&buf, pver, encoding)
 	if err != nil {
 		t.Error(err.Error())
 	}
@@ -58,15 +59,15 @@ func TestMsgAlert(t *testing.T) {
 	expectedBuf = append(expectedBuf, []byte{0x08}...)
 	expectedBuf = append(expectedBuf, signature...)
 	if !bytes.Equal(buf.Bytes(), expectedBuf) {
-		t.Errorf("BtcEncode got: %s want: %s",
+		t.Errorf("SotoEncode got: %s want: %s",
 			spew.Sdump(buf.Bytes()), spew.Sdump(expectedBuf))
 	}
 
-	// Test BtcEncode with Payload != nil
+	// Test SotoEncode with Payload != nil
 	// note: Payload is an empty Alert but not nil
 	msg.Payload = new(Alert)
 	buf = *new(bytes.Buffer)
-	err = msg.BtcEncode(&buf, pver, encoding)
+	err = msg.SotoEncode(&buf, pver, encoding)
 	if err != nil {
 		t.Error(err.Error())
 	}
@@ -77,7 +78,7 @@ func TestMsgAlert(t *testing.T) {
 	expectedBuf = append(expectedBuf, []byte{0x08}...)
 	expectedBuf = append(expectedBuf, signature...)
 	if !bytes.Equal(buf.Bytes(), expectedBuf) {
-		t.Errorf("BtcEncode got: %s want: %s",
+		t.Errorf("SotoEncode got: %s want: %s",
 			spew.Sdump(buf.Bytes()), spew.Sdump(expectedBuf))
 	}
 }
@@ -151,13 +152,13 @@ func TestMsgAlertWire(t *testing.T) {
 	for i, test := range tests {
 		// Encode the message to wire format.
 		var buf bytes.Buffer
-		err := test.in.BtcEncode(&buf, test.pver, test.enc)
+		err := test.in.SotoEncode(&buf, test.pver, test.enc)
 		if err != nil {
-			t.Errorf("BtcEncode #%d error %v", i, err)
+			t.Errorf("SotoEncode #%d error %v", i, err)
 			continue
 		}
 		if !bytes.Equal(buf.Bytes(), test.buf) {
-			t.Errorf("BtcEncode #%d\n got: %s want: %s", i,
+			t.Errorf("SotoEncode #%d\n got: %s want: %s", i,
 				spew.Sdump(buf.Bytes()), spew.Sdump(test.buf))
 			continue
 		}
@@ -165,13 +166,13 @@ func TestMsgAlertWire(t *testing.T) {
 		// Decode the message from wire format.
 		var msg MsgAlert
 		rbuf := bytes.NewReader(test.buf)
-		err = msg.BtcDecode(rbuf, test.pver, test.enc)
+		err = msg.SotoDecode(rbuf, test.pver, test.enc)
 		if err != nil {
-			t.Errorf("BtcDecode #%d error %v", i, err)
+			t.Errorf("SotoDecode #%d error %v", i, err)
 			continue
 		}
 		if !reflect.DeepEqual(&msg, test.out) {
-			t.Errorf("BtcDecode #%d\n got: %s want: %s", i,
+			t.Errorf("SotoDecode #%d\n got: %s want: %s", i,
 				spew.Sdump(msg), spew.Sdump(test.out))
 			continue
 		}
@@ -216,9 +217,9 @@ func TestMsgAlertWireErrors(t *testing.T) {
 	for i, test := range tests {
 		// Encode to wire format.
 		w := newFixedWriter(test.max)
-		err := test.in.BtcEncode(w, test.pver, test.enc)
+		err := test.in.SotoEncode(w, test.pver, test.enc)
 		if reflect.TypeOf(err) != reflect.TypeOf(test.writeErr) {
-			t.Errorf("BtcEncode #%d wrong error got: %v, want: %v",
+			t.Errorf("SotoEncode #%d wrong error got: %v, want: %v",
 				i, err, test.writeErr)
 			continue
 		}
@@ -227,7 +228,7 @@ func TestMsgAlertWireErrors(t *testing.T) {
 		// equality.
 		if _, ok := err.(*MessageError); !ok {
 			if err != test.writeErr {
-				t.Errorf("BtcEncode #%d wrong error got: %v, "+
+				t.Errorf("SotoEncode #%d wrong error got: %v, "+
 					"want: %v", i, err, test.writeErr)
 				continue
 			}
@@ -236,9 +237,9 @@ func TestMsgAlertWireErrors(t *testing.T) {
 		// Decode from wire format.
 		var msg MsgAlert
 		r := newFixedReader(test.max, test.buf)
-		err = msg.BtcDecode(r, test.pver, test.enc)
+		err = msg.SotoDecode(r, test.pver, test.enc)
 		if reflect.TypeOf(err) != reflect.TypeOf(test.readErr) {
-			t.Errorf("BtcDecode #%d wrong error got: %v, want: %v",
+			t.Errorf("SotoDecode #%d wrong error got: %v, want: %v",
 				i, err, test.readErr)
 			continue
 		}
@@ -247,7 +248,7 @@ func TestMsgAlertWireErrors(t *testing.T) {
 		// equality.
 		if _, ok := err.(*MessageError); !ok {
 			if err != test.readErr {
-				t.Errorf("BtcDecode #%d wrong error got: %v, "+
+				t.Errorf("SotoDecode #%d wrong error got: %v, "+
 					"want: %v", i, err, test.readErr)
 				continue
 			}
@@ -257,9 +258,9 @@ func TestMsgAlertWireErrors(t *testing.T) {
 	// Test Error on empty Payload
 	baseMsgAlert.SerializedPayload = []byte{}
 	w := new(bytes.Buffer)
-	err := baseMsgAlert.BtcEncode(w, pver, encoding)
+	err := baseMsgAlert.SotoEncode(w, pver, encoding)
 	if _, ok := err.(*MessageError); !ok {
-		t.Errorf("MsgAlert.BtcEncode wrong error got: %T, want: %T",
+		t.Errorf("MsgAlert.SotoEncode wrong error got: %T, want: %T",
 			err, MessageError{})
 	}
 
@@ -268,9 +269,9 @@ func TestMsgAlertWireErrors(t *testing.T) {
 	baseMsgAlert.Payload = new(Alert)
 	baseMsgAlert.Payload.SetCancel = make([]int32, maxCountSetCancel+1)
 	buf := *new(bytes.Buffer)
-	err = baseMsgAlert.BtcEncode(&buf, pver, encoding)
+	err = baseMsgAlert.SotoEncode(&buf, pver, encoding)
 	if _, ok := err.(*MessageError); !ok {
-		t.Errorf("MsgAlert.BtcEncode wrong error got: %T, want: %T",
+		t.Errorf("MsgAlert.SotoEncode wrong error got: %T, want: %T",
 			err, MessageError{})
 	}
 
@@ -278,9 +279,9 @@ func TestMsgAlertWireErrors(t *testing.T) {
 	baseMsgAlert.Payload = new(Alert)
 	baseMsgAlert.Payload.SetSubVer = make([]string, maxCountSetSubVer+1)
 	buf = *new(bytes.Buffer)
-	err = baseMsgAlert.BtcEncode(&buf, pver, encoding)
+	err = baseMsgAlert.SotoEncode(&buf, pver, encoding)
 	if _, ok := err.(*MessageError); !ok {
-		t.Errorf("MsgAlert.BtcEncode wrong error got: %T, want: %T",
+		t.Errorf("MsgAlert.SotoEncode wrong error got: %T, want: %T",
 			err, MessageError{})
 	}
 }
@@ -291,7 +292,7 @@ func TestAlert(t *testing.T) {
 	pver := ProtocolVersion
 	alert := NewAlert(
 		1, 1337093712, 1368628812, 1015,
-		1013, []int32{1014}, 0, 40599, []string{"/Satoshi:0.7.2/"}, 5000, "",
+		1013, []int32{1014}, 0, 40599, []string{"/soterd:0.7.2/"}, 5000, "",
 		"URGENT: upgrade required, see http://bitcoin.org/dos for details",
 	)
 	w := new(bytes.Buffer)
@@ -378,15 +379,15 @@ func TestAlertErrors(t *testing.T) {
 
 	baseAlert := NewAlert(
 		1, 1337093712, 1368628812, 1015,
-		1013, []int32{1014}, 0, 40599, []string{"/Satoshi:0.7.2/"}, 5000, "",
+		1013, []int32{1014}, 0, 40599, []string{"/soterd:0.7.2/"}, 5000, "",
 		"URGENT",
 	)
 	baseAlertEncoded := []byte{
 		0x01, 0x00, 0x00, 0x00, 0x50, 0x6e, 0xb2, 0x4f, 0x00, 0x00, 0x00, 0x00, 0x4c, 0x9e, 0x93, 0x51, //|....Pn.O....L..Q|
 		0x00, 0x00, 0x00, 0x00, 0xf7, 0x03, 0x00, 0x00, 0xf5, 0x03, 0x00, 0x00, 0x01, 0xf6, 0x03, 0x00, //|................|
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x97, 0x9e, 0x00, 0x00, 0x01, 0x0f, 0x2f, 0x53, 0x61, 0x74, 0x6f, //|.........../Sato|
-		0x73, 0x68, 0x69, 0x3a, 0x30, 0x2e, 0x37, 0x2e, 0x32, 0x2f, 0x88, 0x13, 0x00, 0x00, 0x00, 0x06, //|shi:0.7.2/......|
-		0x55, 0x52, 0x47, 0x45, 0x4e, 0x54, 0x00, //|URGENT.|
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x97, 0x9e, 0x00, 0x00, 0x01, 0x0f, 0x2f, 0x73, 0x6f, 0x74, 0x65, //|.........../sote|
+		0x72, 0x64, 0x3a, 0x30, 0x2e, 0x37, 0x2e, 0x32, 0x2f, 0x88, 0x13, 0x00, 0x00, 0x00, 0x06, 0x55, //|rd:0.7.2/......U|
+		0x52, 0x47, 0x45, 0x4e, 0x54, 0x00,																//|RGENT.|
 	}
 	tests := []struct {
 		in       *Alert // Value to encode
@@ -409,13 +410,13 @@ func TestAlertErrors(t *testing.T) {
 		// Force error in SetSubVer strings.
 		{baseAlert, baseAlertEncoded, pver, 48, io.ErrShortWrite, io.EOF},
 		// Force error in Priority
-		{baseAlert, baseAlertEncoded, pver, 60, io.ErrShortWrite, io.EOF},
+		{baseAlert, baseAlertEncoded, pver, 59, io.ErrShortWrite, io.EOF},
 		// Force error in Comment string.
-		{baseAlert, baseAlertEncoded, pver, 62, io.ErrShortWrite, io.EOF},
+		{baseAlert, baseAlertEncoded, pver, 61, io.ErrShortWrite, io.EOF},
 		// Force error in StatusBar string.
-		{baseAlert, baseAlertEncoded, pver, 64, io.ErrShortWrite, io.EOF},
+		{baseAlert, baseAlertEncoded, pver, 63, io.ErrShortWrite, io.EOF},
 		// Force error in Reserved string.
-		{baseAlert, baseAlertEncoded, pver, 70, io.ErrShortWrite, io.EOF},
+		{baseAlert, baseAlertEncoded, pver, 69, io.ErrShortWrite, io.EOF},
 	}
 
 	t.Logf("Running %d tests", len(tests))
@@ -444,9 +445,9 @@ func TestAlertErrors(t *testing.T) {
 	badAlertEncoded := []byte{
 		0x01, 0x00, 0x00, 0x00, 0x50, 0x6e, 0xb2, 0x4f, 0x00, 0x00, 0x00, 0x00, 0x4c, 0x9e, 0x93, 0x51, //|....Pn.O....L..Q|
 		0x00, 0x00, 0x00, 0x00, 0xf7, 0x03, 0x00, 0x00, 0xf5, 0x03, 0x00, 0x00, 0xfe, 0xdf, 0xff, 0x7f, //|................|
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x97, 0x9e, 0x00, 0x00, 0x01, 0x0f, 0x2f, 0x53, 0x61, 0x74, 0x6f, //|.........../Sato|
-		0x73, 0x68, 0x69, 0x3a, 0x30, 0x2e, 0x37, 0x2e, 0x32, 0x2f, 0x88, 0x13, 0x00, 0x00, 0x00, 0x06, //|shi:0.7.2/......|
-		0x55, 0x52, 0x47, 0x45, 0x4e, 0x54, 0x00, //|URGENT.|
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x97, 0x9e, 0x00, 0x00, 0x01, 0x0f, 0x2f, 0x73, 0x6f, 0x74, 0x65, //|.........../sote|
+		0x72, 0x64, 0x3a, 0x30, 0x2e, 0x37, 0x2e, 0x32, 0x2f, 0x88, 0x13, 0x00, 0x00, 0x00, 0x06, 0x55, //|rd:0.7.2/......U|
+		0x52, 0x47, 0x45, 0x4e, 0x54, 0x00,																//|RGENT.|
 	}
 	var alert Alert
 	r := bytes.NewReader(badAlertEncoded)

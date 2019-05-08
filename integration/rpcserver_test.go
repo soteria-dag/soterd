@@ -1,4 +1,5 @@
 // Copyright (c) 2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -14,8 +15,9 @@ import (
 	"runtime/debug"
 	"testing"
 
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/integration/rpctest"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/integration/rpctest"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 func testGetBestBlock(r *rpctest.Harness, t *testing.T) {
@@ -48,6 +50,44 @@ func testGetBestBlock(r *rpctest.Harness, t *testing.T) {
 	}
 }
 
+func testGetDAGTips(r *rpctest.Harness, t *testing.T) {
+	tips, err := r.Node.GetDAGTips()
+	if err != nil {
+		t.Fatalf("Call to `getdagtips` failed: %v", err)
+	}
+
+	// Create a new block connecting to the current tip.
+	generatedBlockHashes, err := r.Node.Generate(1)
+	if err != nil {
+		t.Fatalf("Unable to generate block: %v", err)
+	}
+
+	// The new block's hash of parents should be the same as the previous tips' hash.
+	newBlock, err := r.Node.GetBlock(generatedBlockHashes[0])
+	if err != nil {
+		t.Fatalf("Call to `getblock` failed: %v", err)
+	}
+
+	if newBlock.Header.PrevBlock.String() != tips.Hash {
+		t.Fatalf("Generated block PrevBlock hash does not match previous tips hash! Got %v, wanted %v",
+			newBlock.Header.PrevBlock, tips.Hash)
+	}
+
+	// The new block's parents should be the same as the previous tips
+	for _, tipHashString := range tips.Tips {
+		found := false
+		for _, parentHash := range newBlock.Parents.ParentHashes() {
+			if tipHashString == parentHash.String() {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("Missing tip %v from generated block parents %v", tipHashString, newBlock.Parents.ParentHashes())
+		}
+	}
+}
+
 func testGetBlockCount(r *rpctest.Harness, t *testing.T) {
 	// Save the current count.
 	currentCount, err := r.Node.GetBlockCount()
@@ -77,20 +117,47 @@ func testGetBlockHash(r *rpctest.Harness, t *testing.T) {
 		t.Fatalf("Unable to generate block: %v", err)
 	}
 
-	info, err := r.Node.GetInfo()
+	_, err = r.Node.GetInfo()
 	if err != nil {
 		t.Fatalf("call to getinfo cailed: %v", err)
 	}
 
-	blockHash, err := r.Node.GetBlockHash(int64(info.Blocks))
+	_, bestHeight, err := r.Node.GetBestBlock()
+	if err != nil {
+		t.Fatalf("call to getbestblock cailed: %v", err)
+	}
+
+	blockHashes, err := r.Node.GetBlockHash(int64(bestHeight))
 	if err != nil {
 		t.Fatalf("Call to `getblockhash` failed: %v", err)
 	}
 
 	// Block hashes should match newly created block.
-	if !bytes.Equal(generatedBlockHashes[0][:], blockHash[:]) {
-		t.Fatalf("Block hashes do not match. Returned hash %v, wanted "+
-			"hash %v", blockHash, generatedBlockHashes[0][:])
+	foundHash := false
+	for _, blockHash := range blockHashes {
+		if bytes.Equal(generatedBlockHashes[0][:], blockHash[:]) {
+			foundHash = true
+			break
+		}
+	}
+	if !foundHash {
+		t.Fatalf("Generated hash not found. Wanted %v in "+
+			"hashes %v", generatedBlockHashes[0][:], blockHashes)
+	}
+}
+
+// NOTE(cedric): This test requires graphviz to be installed, in order to pass successfully
+func testRenderDag(r *rpctest.Harness, t *testing.T) {
+	dot, err := r.Node.RenderDag()
+	if err != nil {
+		t.Fatalf("Call to `renderdag` failed: %s", err)
+	}
+
+	// Attempt to convert the DOT file to SVG.
+	// If we can do this without error, we know that the DOT file contents produced were valid
+	_, err = soterutil.DotToSvg([]byte(dot.Dot))
+	if err != nil {
+		t.Fatalf("Conversion of DOT file contents to SVG failed: %s", err)
 	}
 }
 
@@ -98,6 +165,8 @@ var rpcTestCases = []rpctest.HarnessTestCase{
 	testGetBestBlock,
 	testGetBlockCount,
 	testGetBlockHash,
+	testGetDAGTips,
+	testRenderDag,
 }
 
 var primaryHarness *rpctest.Harness
@@ -108,8 +177,8 @@ func TestMain(m *testing.M) {
 	// In order to properly test scenarios on as if we were on mainnet,
 	// ensure that non-standard transactions aren't accepted into the
 	// mempool or relayed.
-	btcdCfg := []string{"--rejectnonstd"}
-	primaryHarness, err = rpctest.New(&chaincfg.SimNetParams, nil, btcdCfg)
+	soterdCfg := []string{"--rejectnonstd"}
+	primaryHarness, err = rpctest.New(&chaincfg.SimNetParams, nil, soterdCfg, false)
 	if err != nil {
 		fmt.Println("unable to create primary harness: ", err)
 		os.Exit(1)
@@ -148,7 +217,7 @@ func TestRpcServer(t *testing.T) {
 	defer func() {
 		// If one of the integration tests caused a panic within the main
 		// goroutine, then tear down all the harnesses in order to avoid
-		// any leaked btcd processes.
+		// any leaked soterd processes.
 		if r := recover(); r != nil {
 			fmt.Println("recovering from test panic: ", r)
 			if err := rpctest.TearDownAll(); err != nil {

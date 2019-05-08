@@ -1,4 +1,5 @@
 // Copyright (c) 2016-2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -15,11 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/rpcclient"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/rpcclient"
+	"github.com/soteria-dag/soterd/soterutil"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 const (
@@ -64,10 +65,10 @@ var (
 // Harness to exercise functionality.
 type HarnessTestCase func(r *Harness, t *testing.T)
 
-// Harness fully encapsulates an active btcd process to provide a unified
-// platform for creating rpc driven integration tests involving btcd. The
-// active btcd node will typically be run in simnet mode in order to allow for
-// easy generation of test blockchains.  The active btcd process is fully
+// Harness fully encapsulates an active soterd process to provide a unified
+// platform for creating rpc driven integration tests involving soterd. The
+// active soterd node will typically be run in simnet mode in order to allow for
+// easy generation of test blockchains.  The active soterd process is fully
 // managed by Harness, which handles the necessary initialization, and teardown
 // of the process along with any temporary directories created as a result.
 // Multiple Harness instances may be run concurrently, in order to allow for
@@ -98,7 +99,7 @@ type Harness struct {
 //
 // NOTE: This function is safe for concurrent access.
 func New(activeNet *chaincfg.Params, handlers *rpcclient.NotificationHandlers,
-	extraArgs []string) (*Harness, error) {
+	extraArgs []string, keepLogs bool) (*Harness, error) {
 
 	harnessStateMtx.Lock()
 	defer harnessStateMtx.Unlock()
@@ -108,7 +109,7 @@ func New(activeNet *chaincfg.Params, handlers *rpcclient.NotificationHandlers,
 	switch activeNet.Net {
 	case wire.MainNet:
 		// No extra flags since mainnet is the default
-	case wire.TestNet3:
+	case wire.TestNet1:
 		extraArgs = append(extraArgs, "--testnet")
 	case wire.TestNet:
 		extraArgs = append(extraArgs, "--regtest")
@@ -144,10 +145,31 @@ func New(activeNet *chaincfg.Params, handlers *rpcclient.NotificationHandlers,
 	miningAddr := fmt.Sprintf("--miningaddr=%s", wallet.coinbaseAddr)
 	extraArgs = append(extraArgs, miningAddr)
 
-	config, err := newConfig("rpctest", certFile, keyFile, extraArgs)
+	config, err := newConfig("rpctest", certFile, keyFile, extraArgs, keepLogs)
 	if err != nil {
 		return nil, err
 	}
+
+	// Generate a netCfgFile, for applying custom chaincfg.Params values on the node.
+	netCfg, err := ioutil.TempFile("", config.prefix + "-netCfg*.ini")
+	if err != nil {
+		return nil, err
+	}
+
+	config.netCfgFile = netCfg.Name()
+	err = soterutil.WriteNetCfg(netCfg, activeNet)
+	if err != nil {
+		return nil, err
+	}
+
+	err = netCfg.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	// Add NetCfgFile option to soterd cmdline, so that the node uses the custom chaincfg.Params settings.
+	// (--netcfgfile (and other soterd cli options) are defined in config.go at base of this repository)
+	config.extra = append(config.extra, fmt.Sprintf("--netcfgfile=\"%s\"", config.netCfgFile))
 
 	// Generate p2p+rpc listening addresses.
 	config.listen, config.rpcListen = generateListeningAddresses()
@@ -171,7 +193,7 @@ func New(activeNet *chaincfg.Params, handlers *rpcclient.NotificationHandlers,
 	// callback.
 	if handlers.OnFilteredBlockConnected != nil {
 		obc := handlers.OnFilteredBlockConnected
-		handlers.OnFilteredBlockConnected = func(height int32, header *wire.BlockHeader, filteredTxns []*btcutil.Tx) {
+		handlers.OnFilteredBlockConnected = func(height int32, header *wire.BlockHeader, filteredTxns []*soterutil.Tx) {
 			wallet.IngestBlock(height, header, filteredTxns)
 			obc(height, header, filteredTxns)
 		}
@@ -206,6 +228,11 @@ func New(activeNet *chaincfg.Params, handlers *rpcclient.NotificationHandlers,
 	return h, nil
 }
 
+// LogDir returns the logDir used by the node
+func (h *Harness) LogDir() string {
+	return h.node.config.logDir
+}
+
 // SetUp initializes the rpc test state. Initialization includes: starting up a
 // simnet node, creating a websockets client and connecting to the started
 // node, and finally: optionally generating and submitting a testchain with a
@@ -214,7 +241,7 @@ func New(activeNet *chaincfg.Params, handlers *rpcclient.NotificationHandlers,
 // NOTE: This method and TearDown should always be called from the same
 // goroutine as they are not concurrent safe.
 func (h *Harness) SetUp(createTestChain bool, numMatureOutputs uint32) error {
-	// Start the btcd node itself. This spawns a new process which will be
+	// Start the soterd node itself. This spawns a new process which will be
 	// managed
 	if err := h.node.start(); err != nil {
 		return err
@@ -227,12 +254,12 @@ func (h *Harness) SetUp(createTestChain bool, numMatureOutputs uint32) error {
 
 	// Filter transactions that pay to the coinbase associated with the
 	// wallet.
-	filterAddrs := []btcutil.Address{h.wallet.coinbaseAddr}
+	filterAddrs := []soterutil.Address{h.wallet.coinbaseAddr}
 	if err := h.Node.LoadTxFilter(true, filterAddrs, nil); err != nil {
 		return err
 	}
 
-	// Ensure btcd properly dispatches our registered call-back for each new
+	// Ensure soterd properly dispatches our registered call-back for each new
 	// block. Otherwise, the memWallet won't function properly.
 	if err := h.Node.NotifyBlocks(); err != nil {
 		return err
@@ -301,7 +328,7 @@ func (h *Harness) TearDown() error {
 	return h.tearDown()
 }
 
-// connectRPCClient attempts to establish an RPC connection to the created btcd
+// connectRPCClient attempts to establish an RPC connection to the created soterd
 // process belonging to this Harness instance. If the initial connection
 // attempt fails, this function will retry h.maxConnRetries times, backing off
 // the time between subsequent attempts. If after h.maxConnRetries attempts,
@@ -333,7 +360,7 @@ func (h *Harness) connectRPCClient() error {
 // wallet.
 //
 // This function is safe for concurrent access.
-func (h *Harness) NewAddress() (btcutil.Address, error) {
+func (h *Harness) NewAddress() (soterutil.Address, error) {
 	return h.wallet.NewAddress()
 }
 
@@ -341,7 +368,7 @@ func (h *Harness) NewAddress() (btcutil.Address, error) {
 // wallet.
 //
 // This function is safe for concurrent access.
-func (h *Harness) ConfirmedBalance() btcutil.Amount {
+func (h *Harness) ConfirmedBalance() soterutil.Amount {
 	return h.wallet.ConfirmedBalance()
 }
 
@@ -351,7 +378,7 @@ func (h *Harness) ConfirmedBalance() btcutil.Amount {
 //
 // This function is safe for concurrent access.
 func (h *Harness) SendOutputs(targetOutputs []*wire.TxOut,
-	feeRate btcutil.Amount) (*chainhash.Hash, error) {
+	feeRate soterutil.Amount) (*chainhash.Hash, error) {
 
 	return h.wallet.SendOutputs(targetOutputs, feeRate)
 }
@@ -362,14 +389,14 @@ func (h *Harness) SendOutputs(targetOutputs []*wire.TxOut,
 //
 // This function is safe for concurrent access.
 func (h *Harness) SendOutputsWithoutChange(targetOutputs []*wire.TxOut,
-	feeRate btcutil.Amount) (*chainhash.Hash, error) {
+	feeRate soterutil.Amount) (*chainhash.Hash, error) {
 
 	return h.wallet.SendOutputsWithoutChange(targetOutputs, feeRate)
 }
 
 // CreateTransaction returns a fully signed transaction paying to the specified
 // outputs while observing the desired fee rate. The passed fee rate should be
-// expressed in satoshis-per-byte. The transaction being created can optionally
+// expressed in nanoSoters-per-byte. The transaction being created can optionally
 // include a change output indicated by the change boolean. Any unspent outputs
 // selected as inputs for the crafted transaction are marked as unspendable in
 // order to avoid potential double-spends by future calls to this method. If the
@@ -379,7 +406,7 @@ func (h *Harness) SendOutputsWithoutChange(targetOutputs []*wire.TxOut,
 //
 // This function is safe for concurrent access.
 func (h *Harness) CreateTransaction(targetOutputs []*wire.TxOut,
-	feeRate btcutil.Amount, change bool) (*wire.MsgTx, error) {
+	feeRate soterutil.Amount, change bool) (*wire.MsgTx, error) {
 
 	return h.wallet.CreateTransaction(targetOutputs, feeRate, change)
 }
@@ -416,8 +443,8 @@ func (h *Harness) P2PAddress() string {
 // blockTime parameter if one doesn't wish to set a custom time.
 //
 // This function is safe for concurrent access.
-func (h *Harness) GenerateAndSubmitBlock(txns []*btcutil.Tx, blockVersion int32,
-	blockTime time.Time) (*btcutil.Block, error) {
+func (h *Harness) GenerateAndSubmitBlock(txns []*soterutil.Tx, blockVersion int32,
+	blockTime time.Time) (*soterutil.Block, error) {
 	return h.GenerateAndSubmitBlockWithCustomCoinbaseOutputs(txns,
 		blockVersion, blockTime, []wire.TxOut{})
 }
@@ -437,8 +464,8 @@ func (h *Harness) GenerateAndSubmitBlock(txns []*btcutil.Tx, blockVersion int32,
 //
 // This function is safe for concurrent access.
 func (h *Harness) GenerateAndSubmitBlockWithCustomCoinbaseOutputs(
-	txns []*btcutil.Tx, blockVersion int32, blockTime time.Time,
-	mineTo []wire.TxOut) (*btcutil.Block, error) {
+	txns []*soterutil.Tx, blockVersion int32, blockTime time.Time,
+	mineTo []wire.TxOut) (*soterutil.Block, error) {
 
 	h.Lock()
 	defer h.Unlock()
@@ -447,19 +474,29 @@ func (h *Harness) GenerateAndSubmitBlockWithCustomCoinbaseOutputs(
 		blockVersion = BlockVersion
 	}
 
-	prevBlockHash, prevBlockHeight, err := h.Node.GetBestBlock()
+	bestBlockHash, bestBlockHeight, err := h.Node.GetBestBlock()
 	if err != nil {
 		return nil, err
 	}
-	mBlock, err := h.Node.GetBlock(prevBlockHash)
+
+	tips, err := h.Node.GetDAGTips()
 	if err != nil {
 		return nil, err
 	}
-	prevBlock := btcutil.NewBlock(mBlock)
-	prevBlock.SetHeight(prevBlockHeight)
+	tipsHash, err := chainhash.NewHashFromStr(tips.Hash)
+	if err != nil {
+		return nil, err
+	}
+
+	mBlock, err := h.Node.GetBlock(bestBlockHash)
+	if err != nil {
+		return nil, err
+	}
+	prevBlock := soterutil.NewBlock(mBlock)
+	prevBlock.SetHeight(bestBlockHeight)
 
 	// Create a new block including the specified transactions
-	newBlock, err := CreateBlock(prevBlock, txns, blockVersion,
+	newBlock, err := CreateBlock(prevBlock, tipsHash, txns, blockVersion,
 		blockTime, h.wallet.coinbaseAddr, mineTo, h.ActiveNet)
 	if err != nil {
 		return nil, err
@@ -494,7 +531,7 @@ func generateListeningAddresses() (string, string) {
 
 // baseDir is the directory path of the temp directory for all rpctest files.
 func baseDir() (string, error) {
-	dirPath := filepath.Join(os.TempDir(), "btcd", "rpctest")
+	dirPath := filepath.Join(os.TempDir(), "soterd", "rpctest")
 	err := os.MkdirAll(dirPath, 0755)
 	return dirPath, err
 }

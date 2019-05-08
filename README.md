@@ -1,146 +1,52 @@
-btcd
+soterd
 ====
 
-[![Build Status](https://travis-ci.org/btcsuite/btcd.png?branch=master)](https://travis-ci.org/btcsuite/btcd)
+
+
 [![ISC License](http://img.shields.io/badge/license-ISC-blue.svg)](http://copyfree.org)
-[![GoDoc](https://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/btcsuite/btcd)
 
-btcd is an alternative full node bitcoin implementation written in Go (golang).
+<br>
 
-This project is currently under active development and is in a Beta state.  It
-is extremely stable and has been in production use since October 2013.
+![dag](docs/images/dag_small.svg)
 
-It properly downloads, validates, and serves the block chain using the exact
-rules (including consensus bugs) for block acceptance as Bitcoin Core.  We have
-taken great care to avoid btcd causing a fork to the block chain.  It includes a
-full block validation testing framework which contains all of the 'official'
-block acceptance tests (and some additional ones) that is run on every pull
-request to help ensure it properly follows consensus.  Also, it passes all of
-the JSON test data in the Bitcoin Core code.
+soterd is a full soter node implementation written in Go (golang). It started as a fork of the [btcd](https://github.com/btcsuite/btcd) project, where development focus has changed from providing a bitcoin node to providing an [implementation of blockdag](docs/intro_to_blockdag.md) for soter.
 
-It also properly relays newly mined blocks, maintains a transaction pool, and
-relays individual transactions that have not yet made it into a block.  It
-ensures all individual transactions admitted to the pool follow the rules
-required by the block chain and also includes more strict checks which filter
-transactions based on miner requirements ("standard" transactions).
+The intent of this project is for it to act as a component in Soteria's Trade Anything Platform (TAP); a pillar of Soteria's [Self Sustainable Decentralized Economy](https://www.ssde.io/) vision (SSDE).
 
-One key difference between btcd and Bitcoin Core is that btcd does *NOT* include
-wallet functionality and this was a very intentional design decision.  See the
-blog entry [here](https://blog.conformal.com/btcd-not-your-moms-bitcoin-daemon)
-for more details.  This means you can't actually make or receive payments
-directly with btcd.  That functionality is provided by the
-[btcwallet](https://github.com/btcsuite/btcwallet) and
-[Paymetheus](https://github.com/btcsuite/Paymetheus) (Windows-only) projects
-which are both under active development.
+This project is currently under active development and is in an [Alpha](https://en.wikipedia.org/wiki/Software_release_life_cycle#Alpha) state. It can be considered unstable and has not been in production use as of April 2019.
 
-## Requirements
 
-[Go](http://golang.org) 1.8 or newer.
+## For beginners in blockdag/blockchain technology
 
-## Installation
+The [Intro to Soter BlockDAG](docs/intro_to_blockdag.md) document describes what blockdag is, and how soter/blockdag is different from bitcoin/blockchain.
 
-#### Windows - MSI Available
 
-https://github.com/btcsuite/btcd/releases
+## For software developers
 
-#### Linux/BSD/MacOSX/POSIX - Build from Source
+The [Developers Intro](docs/developers_intro.md) document describes the capabilities of soterd, installation and updates, and links to the developer resources. 
 
-- Install Go according to the installation instructions here:
-  http://golang.org/doc/install
 
-- Ensure Go was installed properly and is a supported version:
+## Testnet Status
 
-```bash
-$ go version
-$ go env GOROOT GOPATH
-```
+The current Testnet (testnet1) will get frequent update in terms of code and genesis block. (could be as frequent as multiple times a day) So if you are running a full node for testnet1, please keep this in mind :-).
 
-NOTE: The `GOROOT` and `GOPATH` above must not be the same path.  It is
-recommended that `GOPATH` is set to a directory in your home directory such as
-`~/goprojects` to avoid write permission issues.  It is also recommended to add
-`$GOPATH/bin` to your `PATH` at this point.
-
-- Run the following commands to obtain btcd, all dependencies, and install it:
-
-```bash
-$ go get -u github.com/Masterminds/glide
-$ git clone https://github.com/btcsuite/btcd $GOPATH/src/github.com/btcsuite/btcd
-$ cd $GOPATH/src/github.com/btcsuite/btcd
-$ glide install
-$ go install . ./cmd/...
-```
-
-- btcd (and utilities) will now be installed in ```$GOPATH/bin```.  If you did
-  not already add the bin directory to your system path during Go installation,
-  we recommend you do so now.
-
-## Updating
-
-#### Windows
-
-Install a newer MSI
-
-#### Linux/BSD/MacOSX/POSIX - Build from Source
-
-- Run the following commands to update btcd, all dependencies, and install it:
-
-```bash
-$ cd $GOPATH/src/github.com/btcsuite/btcd
-$ git pull && glide install
-$ go install . ./cmd/...
-```
-
-## Getting Started
-
-btcd has several configuration options available to tweak how it runs, but all
-of the basic operations described in the intro section work with zero
-configuration.
-
-#### Windows (Installed from MSI)
-
-Launch btcd from your Start menu.
-
-#### Linux/BSD/POSIX/Source
-
-```bash
-$ ./btcd
-```
-
-## IRC
-
-- irc.freenode.net
-- channel #btcd
-- [webchat](https://webchat.freenode.net/?channels=btcd)
-
-## Issue Tracker
-
-The [integrated github issue tracker](https://github.com/btcsuite/btcd/issues)
-is used for this project.
 
 ## Documentation
 
-The documentation is a work-in-progress.  It is located in the [docs](https://github.com/btcsuite/btcd/tree/master/docs) folder.
+Project documentation is located in the [docs](docs/README.md) folder.
 
-## GPG Verification Key
 
-All official release tags are signed by Conformal so users can ensure the code
-has not been tampered with and is coming from the btcsuite developers.  To
-verify the signature perform the following:
+## Issue Tracker
 
-- Download the Conformal public key:
-  https://raw.githubusercontent.com/btcsuite/btcd/master/release/GIT-GPG-KEY-conformal.txt
+The [integrated github issue tracker](https://github.com/soteria-dag/soterd/issues) is used for this project. 
 
-- Import the public key into your GPG keyring:
-  ```bash
-  gpg --import GIT-GPG-KEY-conformal.txt
-  ```
 
-- Verify the release tag with the following command where `TAG_NAME` is a
-  placeholder for the specific tag:
-  ```bash
-  git tag -v TAG_NAME
-  ```
+## Other soteria projects
+
+* [soterwallet](https://github.com/soteria-dag/soterwallet) - for making or receiving payments with soterd and the soter network. See the [Wallet](docs/README.md#Wallet) section for a note about its current functionality.
+* [soterdash](https://github.com/soteria-dag/soterdash) - a web ui that provides information about the soter network.
+
 
 ## License
 
-btcd is licensed under the [copyfree](http://copyfree.org) ISC License.
+soterd is licensed under the [copyfree](http://copyfree.org) ISC License.

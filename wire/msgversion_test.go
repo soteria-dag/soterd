@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -32,7 +33,7 @@ func TestVersion(t *testing.T) {
 	}
 
 	// Ensure we get the correct data back out.
-	msg := NewMsgVersion(me, you, nonce, lastBlock)
+	msg := NewMsgVersion(me, you, nonce, lastBlock, &simNetGenHash)
 	if msg.ProtocolVersion != int32(pver) {
 		t.Errorf("NewMsgVersion: wrong protocol version - got %v, want %v",
 			msg.ProtocolVersion, pver)
@@ -136,7 +137,7 @@ func TestVersionWire(t *testing.T) {
 	verRelayTxFalse.DisableRelayTx = true
 	verRelayTxFalseEncoded := make([]byte, len(baseVersionBIP0037Encoded))
 	copy(verRelayTxFalseEncoded, baseVersionBIP0037Encoded)
-	verRelayTxFalseEncoded[len(verRelayTxFalseEncoded)-1] = 0
+	verRelayTxFalseEncoded[len(verRelayTxFalseEncoded) - 1] = 0
 
 	tests := []struct {
 		in   *MsgVersion     // Message to encode
@@ -215,13 +216,13 @@ func TestVersionWire(t *testing.T) {
 	for i, test := range tests {
 		// Encode the message to wire format.
 		var buf bytes.Buffer
-		err := test.in.BtcEncode(&buf, test.pver, test.enc)
+		err := test.in.SotoEncode(&buf, test.pver, test.enc)
 		if err != nil {
-			t.Errorf("BtcEncode #%d error %v", i, err)
+			t.Errorf("SotoEncode #%d error %v", i, err)
 			continue
 		}
 		if !bytes.Equal(buf.Bytes(), test.buf) {
-			t.Errorf("BtcEncode #%d\n got: %s want: %s", i,
+			t.Errorf("SotoEncode #%d\n got: %s want: %s", i,
 				spew.Sdump(buf.Bytes()), spew.Sdump(test.buf))
 			continue
 		}
@@ -229,13 +230,13 @@ func TestVersionWire(t *testing.T) {
 		// Decode the message from wire format.
 		var msg MsgVersion
 		rbuf := bytes.NewBuffer(test.buf)
-		err = msg.BtcDecode(rbuf, test.pver, test.enc)
+		err = msg.SotoDecode(rbuf, test.pver, test.enc)
 		if err != nil {
-			t.Errorf("BtcDecode #%d error %v", i, err)
+			t.Errorf("SotoDecode #%d error %v", i, err)
 			continue
 		}
 		if !reflect.DeepEqual(&msg, test.out) {
-			t.Errorf("BtcDecode #%d\n got: %s want: %s", i,
+			t.Errorf("SotoDecode #%d\n got: %s want: %s", i,
 				spew.Sdump(msg), spew.Sdump(test.out))
 			continue
 		}
@@ -252,12 +253,12 @@ func TestVersionWireErrors(t *testing.T) {
 	enc := BaseEncoding
 	wireErr := &MessageError{}
 
-	// Ensure calling MsgVersion.BtcDecode with a non *bytes.Buffer returns
+	// Ensure calling MsgVersion.SotoDecode with a non *bytes.Buffer returns
 	// error.
 	fr := newFixedReader(0, []byte{})
-	if err := baseVersion.BtcDecode(fr, pver, enc); err == nil {
+	if err := baseVersion.SotoDecode(fr, pver, enc); err == nil {
 		t.Errorf("Did not received error when calling " +
-			"MsgVersion.BtcDecode with non *bytes.Buffer")
+			"MsgVersion.SotoDecode with non *bytes.Buffer")
 	}
 
 	// Copy the base version and change the user agent to exceed max limits.
@@ -282,7 +283,7 @@ func TestVersionWireErrors(t *testing.T) {
 	copy(exceedUAVerEncoded, baseVersionEncoded[0:80])
 	copy(exceedUAVerEncoded[80:], newUAVarIntBuf.Bytes())
 	copy(exceedUAVerEncoded[83:], []byte(newUA))
-	copy(exceedUAVerEncoded[83+len(newUA):], baseVersionEncoded[97:100])
+	copy(exceedUAVerEncoded[83+len(newUA):], baseVersionEncoded[99:102])
 
 	tests := []struct {
 		in       *MsgVersion     // Value to encode
@@ -309,13 +310,15 @@ func TestVersionWireErrors(t *testing.T) {
 		{baseVersion, baseVersionEncoded, pver, BaseEncoding, 81, io.ErrShortWrite, io.EOF},
 		// Force error in user agent.
 		{baseVersion, baseVersionEncoded, pver, BaseEncoding, 82, io.ErrShortWrite, io.ErrUnexpectedEOF},
-		// Force error in last block.
+		// Force error in genesis hash
 		{baseVersion, baseVersionEncoded, pver, BaseEncoding, 98, io.ErrShortWrite, io.ErrUnexpectedEOF},
+		// Force error in last block.
+		{baseVersion, baseVersionEncoded, pver, BaseEncoding, 130, io.ErrShortWrite, io.ErrUnexpectedEOF},
 		// Force error in relay tx - no read error should happen since
 		// it's optional.
 		{
 			baseVersionBIP0037, baseVersionBIP0037Encoded,
-			BIP0037Version, BaseEncoding, 101, io.ErrShortWrite, nil,
+			BIP0037Version, BaseEncoding, 135, io.ErrShortWrite, nil,
 		},
 		// Force error due to user agent too big
 		{exceedUAVer, exceedUAVerEncoded, pver, BaseEncoding, newLen, wireErr, wireErr},
@@ -325,9 +328,9 @@ func TestVersionWireErrors(t *testing.T) {
 	for i, test := range tests {
 		// Encode to wire format.
 		w := newFixedWriter(test.max)
-		err := test.in.BtcEncode(w, test.pver, test.enc)
+		err := test.in.SotoEncode(w, test.pver, test.enc)
 		if reflect.TypeOf(err) != reflect.TypeOf(test.writeErr) {
-			t.Errorf("BtcEncode #%d wrong error got: %v, want: %v",
+			t.Errorf("SotoEncode #%d wrong error got: %v, want: %v",
 				i, err, test.writeErr)
 			continue
 		}
@@ -336,7 +339,7 @@ func TestVersionWireErrors(t *testing.T) {
 		// equality.
 		if _, ok := err.(*MessageError); !ok {
 			if err != test.writeErr {
-				t.Errorf("BtcEncode #%d wrong error got: %v, "+
+				t.Errorf("SotoEncode #%d wrong error got: %v, "+
 					"want: %v", i, err, test.writeErr)
 				continue
 			}
@@ -345,9 +348,9 @@ func TestVersionWireErrors(t *testing.T) {
 		// Decode from wire format.
 		var msg MsgVersion
 		buf := bytes.NewBuffer(test.buf[0:test.max])
-		err = msg.BtcDecode(buf, test.pver, test.enc)
+		err = msg.SotoDecode(buf, test.pver, test.enc)
 		if reflect.TypeOf(err) != reflect.TypeOf(test.readErr) {
-			t.Errorf("BtcDecode #%d wrong error got: %v, want: %v",
+			t.Errorf("SotoDecode #%d wrong error got: %v, want: %v",
 				i, err, test.readErr)
 			continue
 		}
@@ -356,7 +359,7 @@ func TestVersionWireErrors(t *testing.T) {
 		// equality.
 		if _, ok := err.(*MessageError); !ok {
 			if err != test.readErr {
-				t.Errorf("BtcDecode #%d wrong error got: %v, "+
+				t.Errorf("SotoDecode #%d wrong error got: %v, "+
 					"want: %v", i, err, test.readErr)
 				continue
 			}
@@ -380,7 +383,7 @@ func TestVersionOptionalFields(t *testing.T) {
 			Port:      8333,
 		},
 	}
-	onlyRequiredVersionEncoded := make([]byte, len(baseVersionEncoded)-55)
+	onlyRequiredVersionEncoded := make([]byte, len(baseVersionEncoded) - 89)
 	copy(onlyRequiredVersionEncoded, baseVersionEncoded)
 
 	// addrMeVersion is a version message that contains all fields through
@@ -392,26 +395,33 @@ func TestVersionOptionalFields(t *testing.T) {
 		IP:        net.ParseIP("127.0.0.1"),
 		Port:      8333,
 	}
-	addrMeVersionEncoded := make([]byte, len(baseVersionEncoded)-29)
+	addrMeVersionEncoded := make([]byte, len(baseVersionEncoded) - 63)
 	copy(addrMeVersionEncoded, baseVersionEncoded)
 
 	// nonceVersion is a version message that contains all fields through
 	// the Nonce field.
 	nonceVersion := addrMeVersion
 	nonceVersion.Nonce = 123123 // 0x1e0f3
-	nonceVersionEncoded := make([]byte, len(baseVersionEncoded)-21)
+	nonceVersionEncoded := make([]byte, len(baseVersionEncoded) - 55)
 	copy(nonceVersionEncoded, baseVersionEncoded)
 
 	// uaVersion is a version message that contains all fields through
 	// the UserAgent field.
 	uaVersion := nonceVersion
-	uaVersion.UserAgent = "/btcdtest:0.0.1/"
-	uaVersionEncoded := make([]byte, len(baseVersionEncoded)-4)
+	uaVersion.UserAgent = "/soterdtest:0.0.1/"
+	uaVersionEncoded := make([]byte, len(baseVersionEncoded) - 36)
 	copy(uaVersionEncoded, baseVersionEncoded)
+
+	// genHashVersion is a version message that contains all fields
+	// through the GenesisHash field
+	genHashVersion := uaVersion
+	genHashVersion.GenesisHash = simNetGenHash
+	genHashVersionEncoded := make([]byte, len(baseVersionEncoded) - 4)
+	copy(genHashVersionEncoded, baseVersionEncoded)
 
 	// lastBlockVersion is a version message that contains all fields
 	// through the LastBlock field.
-	lastBlockVersion := uaVersion
+	lastBlockVersion := genHashVersion
 	lastBlockVersion.LastBlock = 234234 // 0x392fa
 	lastBlockVersionEncoded := make([]byte, len(baseVersionEncoded))
 	copy(lastBlockVersionEncoded, baseVersionEncoded)
@@ -447,6 +457,12 @@ func TestVersionOptionalFields(t *testing.T) {
 			BaseEncoding,
 		},
 		{
+			&genHashVersion,
+			genHashVersionEncoded,
+			ProtocolVersion,
+			BaseEncoding,
+		},
+		{
 			&lastBlockVersion,
 			lastBlockVersionEncoded,
 			ProtocolVersion,
@@ -458,17 +474,24 @@ func TestVersionOptionalFields(t *testing.T) {
 		// Decode the message from wire format.
 		var msg MsgVersion
 		rbuf := bytes.NewBuffer(test.buf)
-		err := msg.BtcDecode(rbuf, test.pver, test.enc)
+		err := msg.SotoDecode(rbuf, test.pver, test.enc)
 		if err != nil {
-			t.Errorf("BtcDecode #%d error %v", i, err)
+			t.Errorf("SotoDecode #%d error %v", i, err)
 			continue
 		}
 		if !reflect.DeepEqual(&msg, test.msg) {
-			t.Errorf("BtcDecode #%d\n got: %s want: %s", i,
+			t.Errorf("SotoDecode #%d\n got: %s want: %s", i,
 				spew.Sdump(msg), spew.Sdump(test.msg))
 			continue
 		}
 	}
+}
+
+var simNetGenHash = [32]byte{
+0xb2, 0x6c, 0xaf, 0xeb, 0x6b, 0xdd, 0x5c, 0xd9,
+0xd3, 0x15, 0x4b, 0x55, 0x6c, 0xc3, 0x96, 0x95,
+0xd2, 0x54, 0x51, 0x99, 0x62, 0x8c, 0x30, 0xdf,
+0x8a, 0x80, 0xd5, 0xf5, 0xc9, 0x94, 0x26, 0x5f,
 }
 
 // baseVersion is used in the various tests as a baseline MsgVersion.
@@ -489,8 +512,9 @@ var baseVersion = &MsgVersion{
 		Port:      8333,
 	},
 	Nonce:     123123, // 0x1e0f3
-	UserAgent: "/btcdtest:0.0.1/",
+	UserAgent: "/soterdtest:0.0.1/",
 	LastBlock: 234234, // 0x392fa
+	GenesisHash: simNetGenHash,
 }
 
 // baseVersionEncoded is the wire encoded bytes for baseVersion using protocol
@@ -510,9 +534,14 @@ var baseVersionEncoded = []byte{
 	0x00, 0x00, 0xff, 0xff, 0x7f, 0x00, 0x00, 0x01, // IP 127.0.0.1
 	0x20, 0x8d, // Port 8333 in big-endian
 	0xf3, 0xe0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, // Nonce
-	0x10, // Varint for user agent length
-	0x2f, 0x62, 0x74, 0x63, 0x64, 0x74, 0x65, 0x73,
-	0x74, 0x3a, 0x30, 0x2e, 0x30, 0x2e, 0x31, 0x2f, // User agent
+	0x12, // Varint for user agent length
+	0x2f, 0x73, 0x6f, 0x74, 0x65, 0x72, 0x64, 0x74,
+	0x65, 0x73, 0x74, 0x3a, 0x30, 0x2e, 0x30, 0x2e,
+	0x31, 0x2f, // User agent
+	0xb2, 0x6c, 0xaf, 0xeb, 0x6b, 0xdd, 0x5c, 0xd9,
+	0xd3, 0x15, 0x4b, 0x55, 0x6c, 0xc3, 0x96, 0x95,
+	0xd2, 0x54, 0x51, 0x99, 0x62, 0x8c, 0x30, 0xdf,
+	0x8a, 0x80, 0xd5, 0xf5, 0xc9, 0x94, 0x26, 0x5f, // GenesisHash
 	0xfa, 0x92, 0x03, 0x00, // Last block
 }
 
@@ -535,8 +564,9 @@ var baseVersionBIP0037 = &MsgVersion{
 		Port:      8333,
 	},
 	Nonce:     123123, // 0x1e0f3
-	UserAgent: "/btcdtest:0.0.1/",
+	UserAgent: "/soterdtest:0.0.1/",
 	LastBlock: 234234, // 0x392fa
+	GenesisHash: simNetGenHash,
 }
 
 // baseVersionBIP0037Encoded is the wire encoded bytes for baseVersionBIP0037
@@ -556,9 +586,14 @@ var baseVersionBIP0037Encoded = []byte{
 	0x00, 0x00, 0xff, 0xff, 0x7f, 0x00, 0x00, 0x01, // IP 127.0.0.1
 	0x20, 0x8d, // Port 8333 in big-endian
 	0xf3, 0xe0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, // Nonce
-	0x10, // Varint for user agent length
-	0x2f, 0x62, 0x74, 0x63, 0x64, 0x74, 0x65, 0x73,
-	0x74, 0x3a, 0x30, 0x2e, 0x30, 0x2e, 0x31, 0x2f, // User agent
+	0x12, // Varint for user agent length
+	0x2f, 0x73, 0x6f, 0x74, 0x65, 0x72, 0x64, 0x74,
+	0x65, 0x73, 0x74, 0x3a, 0x30, 0x2e, 0x30, 0x2e,
+	0x31, 0x2f, // User agent
+	0xb2, 0x6c, 0xaf, 0xeb, 0x6b, 0xdd, 0x5c, 0xd9,
+	0xd3, 0x15, 0x4b, 0x55, 0x6c, 0xc3, 0x96, 0x95,
+	0xd2, 0x54, 0x51, 0x99, 0x62, 0x8c, 0x30, 0xdf,
+	0x8a, 0x80, 0xd5, 0xf5, 0xc9, 0x94, 0x26, 0x5f, // GenesisHash
 	0xfa, 0x92, 0x03, 0x00, // Last block
 	0x01, // Relay tx
 }

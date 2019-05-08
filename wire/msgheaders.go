@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -10,10 +11,10 @@ import (
 )
 
 // MaxBlockHeadersPerMsg is the maximum number of block headers that can be in
-// a single bitcoin headers message.
+// a single soter headers message.
 const MaxBlockHeadersPerMsg = 2000
 
-// MsgHeaders implements the Message interface and represents a bitcoin headers
+// MsgHeaders implements the Message interface and represents a soter headers
 // message.  It is used to deliver block header information in response
 // to a getheaders message (MsgGetHeaders).  The maximum number of block headers
 // per message is currently 2000.  See MsgGetHeaders for details on requesting
@@ -34,9 +35,9 @@ func (msg *MsgHeaders) AddBlockHeader(bh *BlockHeader) error {
 	return nil
 }
 
-// BtcDecode decodes r using the bitcoin protocol encoding into the receiver.
+// SotoDecode decodes r using the soter protocol encoding into the receiver.
 // This is part of the Message interface implementation.
-func (msg *MsgHeaders) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
+func (msg *MsgHeaders) SotoDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
 	count, err := ReadVarInt(r, pver)
 	if err != nil {
 		return err
@@ -46,7 +47,7 @@ func (msg *MsgHeaders) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) 
 	if count > MaxBlockHeadersPerMsg {
 		str := fmt.Sprintf("too many block headers for message "+
 			"[count %v, max %v]", count, MaxBlockHeadersPerMsg)
-		return messageError("MsgHeaders.BtcDecode", str)
+		return messageError("MsgHeaders.SotoDecode", str)
 	}
 
 	// Create a contiguous slice of headers to deserialize into in order to
@@ -69,7 +70,7 @@ func (msg *MsgHeaders) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) 
 		if txCount > 0 {
 			str := fmt.Sprintf("block headers may not contain "+
 				"transactions [count %v]", txCount)
-			return messageError("MsgHeaders.BtcDecode", str)
+			return messageError("MsgHeaders.SotoDecode", str)
 		}
 		msg.AddBlockHeader(bh)
 	}
@@ -77,15 +78,15 @@ func (msg *MsgHeaders) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) 
 	return nil
 }
 
-// BtcEncode encodes the receiver to w using the bitcoin protocol encoding.
+// SotoEncode encodes the receiver to w using the soter protocol encoding.
 // This is part of the Message interface implementation.
-func (msg *MsgHeaders) BtcEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
+func (msg *MsgHeaders) SotoEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
 	// Limit to max block headers per message.
 	count := len(msg.Headers)
 	if count > MaxBlockHeadersPerMsg {
 		str := fmt.Sprintf("too many block headers for message "+
 			"[count %v, max %v]", count, MaxBlockHeadersPerMsg)
-		return messageError("MsgHeaders.BtcEncode", str)
+		return messageError("MsgHeaders.SotoEncode", str)
 	}
 
 	err := WriteVarInt(w, pver, uint64(count))
@@ -127,7 +128,7 @@ func (msg *MsgHeaders) MaxPayloadLength(pver uint32) uint32 {
 		MaxBlockHeadersPerMsg)
 }
 
-// NewMsgHeaders returns a new bitcoin headers message that conforms to the
+// NewMsgHeaders returns a new soter headers message that conforms to the
 // Message interface.  See MsgHeaders for details.
 func NewMsgHeaders() *MsgHeaders {
 	return &MsgHeaders{

@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2015 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -8,10 +9,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/soterec"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/wire"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 // RawTxInWitnessSignature returns the serialized ECDA signature for the input
@@ -20,7 +21,7 @@ import (
 // signs a new sighash digest defined in BIP0143.
 func RawTxInWitnessSignature(tx *wire.MsgTx, sigHashes *TxSigHashes, idx int,
 	amt int64, subScript []byte, hashType SigHashType,
-	key *btcec.PrivateKey) ([]byte, error) {
+	key *soterec.PrivateKey) ([]byte, error) {
 
 	parsedScript, err := parseScript(subScript)
 	if err != nil {
@@ -41,13 +42,13 @@ func RawTxInWitnessSignature(tx *wire.MsgTx, sigHashes *TxSigHashes, idx int,
 	return append(signature.Serialize(), byte(hashType)), nil
 }
 
-// WitnessSignature creates an input witness stack for tx to spend BTC sent
+// WitnessSignature creates an input witness stack for tx to spend SOTO sent
 // from a previous output to the owner of privKey using the p2wkh script
 // template. The passed transaction must contain all the inputs and outputs as
 // dictated by the passed hashType. The signature generated observes the new
 // transaction digest algorithm defined within BIP0143.
 func WitnessSignature(tx *wire.MsgTx, sigHashes *TxSigHashes, idx int, amt int64,
-	subscript []byte, hashType SigHashType, privKey *btcec.PrivateKey,
+	subscript []byte, hashType SigHashType, privKey *soterec.PrivateKey,
 	compress bool) (wire.TxWitness, error) {
 
 	sig, err := RawTxInWitnessSignature(tx, sigHashes, idx, amt, subscript,
@@ -56,7 +57,7 @@ func WitnessSignature(tx *wire.MsgTx, sigHashes *TxSigHashes, idx int, amt int64
 		return nil, err
 	}
 
-	pk := (*btcec.PublicKey)(&privKey.PublicKey)
+	pk := (*soterec.PublicKey)(&privKey.PublicKey)
 	var pkData []byte
 	if compress {
 		pkData = pk.SerializeCompressed()
@@ -72,7 +73,7 @@ func WitnessSignature(tx *wire.MsgTx, sigHashes *TxSigHashes, idx int, amt int64
 // RawTxInSignature returns the serialized ECDSA signature for the input idx of
 // the given transaction, with hashType appended to it.
 func RawTxInSignature(tx *wire.MsgTx, idx int, subScript []byte,
-	hashType SigHashType, key *btcec.PrivateKey) ([]byte, error) {
+	hashType SigHashType, key *soterec.PrivateKey) ([]byte, error) {
 
 	hash, err := CalcSignatureHash(subScript, hashType, tx, idx)
 	if err != nil {
@@ -86,7 +87,7 @@ func RawTxInSignature(tx *wire.MsgTx, idx int, subScript []byte,
 	return append(signature.Serialize(), byte(hashType)), nil
 }
 
-// SignatureScript creates an input signature script for tx to spend BTC sent
+// SignatureScript creates an input signature script for tx to spend SOTO sent
 // from a previous output to the owner of privKey. tx must include all
 // transaction inputs and outputs, however txin scripts are allowed to be filled
 // or empty. The returned script is calculated to be used as the idx'th txin
@@ -94,13 +95,13 @@ func RawTxInSignature(tx *wire.MsgTx, idx int, subScript []byte,
 // as the idx'th input. privKey is serialized in either a compressed or
 // uncompressed format based on compress. This format must match the same format
 // used to generate the payment address, or the script validation will fail.
-func SignatureScript(tx *wire.MsgTx, idx int, subscript []byte, hashType SigHashType, privKey *btcec.PrivateKey, compress bool) ([]byte, error) {
+func SignatureScript(tx *wire.MsgTx, idx int, subscript []byte, hashType SigHashType, privKey *soterec.PrivateKey, compress bool) ([]byte, error) {
 	sig, err := RawTxInSignature(tx, idx, subscript, hashType, privKey)
 	if err != nil {
 		return nil, err
 	}
 
-	pk := (*btcec.PublicKey)(&privKey.PublicKey)
+	pk := (*soterec.PublicKey)(&privKey.PublicKey)
 	var pkData []byte
 	if compress {
 		pkData = pk.SerializeCompressed()
@@ -111,7 +112,7 @@ func SignatureScript(tx *wire.MsgTx, idx int, subscript []byte, hashType SigHash
 	return NewScriptBuilder().AddData(sig).AddData(pkData).Script()
 }
 
-func p2pkSignatureScript(tx *wire.MsgTx, idx int, subScript []byte, hashType SigHashType, privKey *btcec.PrivateKey) ([]byte, error) {
+func p2pkSignatureScript(tx *wire.MsgTx, idx int, subScript []byte, hashType SigHashType, privKey *soterec.PrivateKey) ([]byte, error) {
 	sig, err := RawTxInSignature(tx, idx, subScript, hashType, privKey)
 	if err != nil {
 		return nil, err
@@ -125,7 +126,7 @@ func p2pkSignatureScript(tx *wire.MsgTx, idx int, subScript []byte, hashType Sig
 // the contract (i.e. nrequired signatures are provided).  Since it is arguably
 // legal to not be able to sign any of the outputs, no error is returned.
 func signMultiSig(tx *wire.MsgTx, idx int, subScript []byte, hashType SigHashType,
-	addresses []btcutil.Address, nRequired int, kdb KeyDB) ([]byte, bool) {
+	addresses []soterutil.Address, nRequired int, kdb KeyDB) ([]byte, bool) {
 	// We start with a single OP_FALSE to work around the (now standard)
 	// but in the reference implementation that causes a spurious pop at
 	// the end of OP_CHECKMULTISIG.
@@ -155,7 +156,7 @@ func signMultiSig(tx *wire.MsgTx, idx int, subScript []byte, hashType SigHashTyp
 
 func sign(chainParams *chaincfg.Params, tx *wire.MsgTx, idx int,
 	subScript []byte, hashType SigHashType, kdb KeyDB, sdb ScriptDB) ([]byte,
-	ScriptClass, []btcutil.Address, int, error) {
+	ScriptClass, []soterutil.Address, int, error) {
 
 	class, addresses, nrequired, err := ExtractPkScriptAddrs(subScript,
 		chainParams)
@@ -219,7 +220,7 @@ func sign(chainParams *chaincfg.Params, tx *wire.MsgTx, idx int,
 // function with addresses, class and nrequired that do not match pkScript is
 // an error and results in undefined behaviour.
 func mergeScripts(chainParams *chaincfg.Params, tx *wire.MsgTx, idx int,
-	pkScript []byte, class ScriptClass, addresses []btcutil.Address,
+	pkScript []byte, class ScriptClass, addresses []soterutil.Address,
 	nRequired int, sigScript, prevScript []byte) []byte {
 
 	// TODO: the scripthash and multisig paths here are overly
@@ -285,7 +286,7 @@ func mergeScripts(chainParams *chaincfg.Params, tx *wire.MsgTx, idx int,
 // pkScript. Since this function is internal only we assume that the arguments
 // have come from other functions internally and thus are all consistent with
 // each other, behaviour is undefined if this contract is broken.
-func mergeMultiSig(tx *wire.MsgTx, idx int, addresses []btcutil.Address,
+func mergeMultiSig(tx *wire.MsgTx, idx int, addresses []soterutil.Address,
 	nRequired int, pkScript, sigScript, prevScript []byte) []byte {
 
 	// This is an internal only function and we already parsed this script
@@ -335,7 +336,7 @@ sigLoop:
 		tSig := sig[:len(sig)-1]
 		hashType := SigHashType(sig[len(sig)-1])
 
-		pSig, err := btcec.ParseDERSignature(tSig, btcec.S256())
+		pSig, err := soterec.ParseDERSignature(tSig, soterec.S256())
 		if err != nil {
 			continue
 		}
@@ -351,7 +352,7 @@ sigLoop:
 			// All multisig addresses should be pubkey addresses
 			// it is an error to call this internal function with
 			// bad input.
-			pkaddr := addr.(*btcutil.AddressPubKey)
+			pkaddr := addr.(*soterutil.AddressPubKey)
 
 			pubKey := pkaddr.PubKey()
 
@@ -397,14 +398,14 @@ sigLoop:
 // KeyDB is an interface type provided to SignTxOutput, it encapsulates
 // any user state required to get the private keys for an address.
 type KeyDB interface {
-	GetKey(btcutil.Address) (*btcec.PrivateKey, bool, error)
+	GetKey(soterutil.Address) (*soterec.PrivateKey, bool, error)
 }
 
 // KeyClosure implements KeyDB with a closure.
-type KeyClosure func(btcutil.Address) (*btcec.PrivateKey, bool, error)
+type KeyClosure func(soterutil.Address) (*soterec.PrivateKey, bool, error)
 
 // GetKey implements KeyDB by returning the result of calling the closure.
-func (kc KeyClosure) GetKey(address btcutil.Address) (*btcec.PrivateKey,
+func (kc KeyClosure) GetKey(address soterutil.Address) (*soterec.PrivateKey,
 	bool, error) {
 	return kc(address)
 }
@@ -412,14 +413,14 @@ func (kc KeyClosure) GetKey(address btcutil.Address) (*btcec.PrivateKey,
 // ScriptDB is an interface type provided to SignTxOutput, it encapsulates any
 // user state required to get the scripts for an pay-to-script-hash address.
 type ScriptDB interface {
-	GetScript(btcutil.Address) ([]byte, error)
+	GetScript(soterutil.Address) ([]byte, error)
 }
 
 // ScriptClosure implements ScriptDB with a closure.
-type ScriptClosure func(btcutil.Address) ([]byte, error)
+type ScriptClosure func(soterutil.Address) ([]byte, error)
 
 // GetScript implements ScriptDB by returning the result of calling the closure.
-func (sc ScriptClosure) GetScript(address btcutil.Address) ([]byte, error) {
+func (sc ScriptClosure) GetScript(address soterutil.Address) ([]byte, error) {
 	return sc(address)
 }
 

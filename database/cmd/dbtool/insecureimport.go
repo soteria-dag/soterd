@@ -1,4 +1,5 @@
 // Copyright (c) 2015-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -12,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/database"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/database"
+	"github.com/soteria-dag/soterd/wire"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 // importCmd defines the configuration options for the insecureimport command.
@@ -108,7 +109,7 @@ func (bi *blockImporter) readBlock() ([]byte, error) {
 // NOTE: This is not a safe import as it does not verify chain rules.
 func (bi *blockImporter) processBlock(serializedBlock []byte) (bool, error) {
 	// Deserialize the block which includes checks for malformed blocks.
-	block, err := btcutil.NewBlockFromBytes(serializedBlock)
+	block, err := soterutil.NewBlockFromBytes(serializedBlock)
 	if err != nil {
 		return false, err
 	}
@@ -133,18 +134,22 @@ func (bi *blockImporter) processBlock(serializedBlock []byte) (bool, error) {
 	// Don't bother trying to process orphans.
 	prevHash := &block.MsgBlock().Header.PrevBlock
 	if !prevHash.IsEqual(&zeroHash) {
-		var exists bool
-		err := bi.db.View(func(tx database.Tx) error {
-			exists, err = tx.HasBlock(prevHash)
-			return err
-		})
-		if err != nil {
-			return false, err
-		}
-		if !exists {
-			return false, fmt.Errorf("import file contains block "+
-				"%v which does not link to the available "+
-				"block chain", prevHash)
+		// jenlouie: for DAG, check all parents in chain
+		parentsHash := block.MsgBlock().Parents.ParentHashes()
+		for _, parentHash := range parentsHash {
+			var exists bool
+			err := bi.db.View(func(tx database.Tx) error {
+				exists, err = tx.HasBlock(&parentHash)
+				return err
+			})
+			if err != nil {
+				return false, err
+			}
+			if !exists {
+				return false, fmt.Errorf("import file contains block "+
+					"%v which does not link to the available "+
+					"block chain", parentHash)
+			}
 		}
 	}
 

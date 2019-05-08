@@ -1,4 +1,5 @@
 // Copyright (c) 2015-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -9,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btclog"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/txscript"
+	"github.com/soteria-dag/soterd/wire"
+	"github.com/soteria-dag/soterd/soterlog"
 )
 
 const (
@@ -24,7 +25,7 @@ const (
 // log is a logger that is initialized with no output filters.  This
 // means the package will not perform any logging by default until the caller
 // requests it.
-var log btclog.Logger
+var log soterlog.Logger
 
 // The default amount of logging is none.
 func init() {
@@ -34,11 +35,11 @@ func init() {
 // DisableLog disables all library log output.  Logging output is disabled
 // by default until UseLogger is called.
 func DisableLog() {
-	log = btclog.Disabled
+	log = soterlog.Disabled
 }
 
 // UseLogger uses a specified Logger to output package logging info.
-func UseLogger(logger btclog.Logger) {
+func UseLogger(logger soterlog.Logger) {
 	log = logger
 }
 
@@ -109,9 +110,9 @@ func invSummary(invList []*wire.InvVect) string {
 }
 
 // locatorSummary returns a block locator as a human-readable string.
-func locatorSummary(locator []*chainhash.Hash, stopHash *chainhash.Hash) string {
+func locatorSummary(locator []*int32, stopHash *chainhash.Hash) string {
 	if len(locator) > 0 {
-		return fmt.Sprintf("locator %s, stop %s", locator[0], stopHash)
+		return fmt.Sprintf("locator %d, stop %s", *locator[0], stopHash)
 	}
 
 	return fmt.Sprintf("no locator, stop %s", stopHash)
@@ -191,10 +192,10 @@ func messageSummary(msg wire.Message) string {
 		return invSummary(msg.InvList)
 
 	case *wire.MsgGetBlocks:
-		return locatorSummary(msg.BlockLocatorHashes, &msg.HashStop)
+		return locatorSummary(msg.BlockLocatorHeight, &msg.HashStop)
 
 	case *wire.MsgGetHeaders:
-		return locatorSummary(msg.BlockLocatorHashes, &msg.HashStop)
+		return locatorSummary(msg.BlockLocatorHeight, &msg.HashStop)
 
 	case *wire.MsgHeaders:
 		return fmt.Sprintf("num %d", len(msg.Headers))

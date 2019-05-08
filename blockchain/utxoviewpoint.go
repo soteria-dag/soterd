@@ -1,4 +1,5 @@
 // Copyright (c) 2015-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -7,11 +8,11 @@ package blockchain
 import (
 	"fmt"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/database"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/database"
+	"github.com/soteria-dag/soterd/txscript"
+	"github.com/soteria-dag/soterd/wire"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 // txoFlags is a bitmask defining additional information and state for a
@@ -176,7 +177,7 @@ func (view *UtxoViewpoint) addTxOut(outpoint wire.OutPoint, txOut *wire.TxOut, i
 // it exists and is not provably unspendable.  When the view already has an
 // entry for the output, it will be marked unspent.  All fields will be updated
 // for existing entries since it's possible it has changed during a reorg.
-func (view *UtxoViewpoint) AddTxOut(tx *btcutil.Tx, txOutIdx uint32, blockHeight int32) {
+func (view *UtxoViewpoint) AddTxOut(tx *soterutil.Tx, txOutIdx uint32, blockHeight int32) {
 	// Can't add an output for an out of bounds index.
 	if txOutIdx >= uint32(len(tx.MsgTx().TxOut)) {
 		return
@@ -195,7 +196,7 @@ func (view *UtxoViewpoint) AddTxOut(tx *btcutil.Tx, txOutIdx uint32, blockHeight
 // unspendable to the view.  When the view already has entries for any of the
 // outputs, they are simply marked unspent.  All fields will be updated for
 // existing entries since it's possible it has changed during a reorg.
-func (view *UtxoViewpoint) AddTxOuts(tx *btcutil.Tx, blockHeight int32) {
+func (view *UtxoViewpoint) AddTxOuts(tx *soterutil.Tx, blockHeight int32) {
 	// Loop all of the transaction outputs and add those which are not
 	// provably unspendable.
 	isCoinBase := IsCoinBase(tx)
@@ -216,7 +217,7 @@ func (view *UtxoViewpoint) AddTxOuts(tx *btcutil.Tx, blockHeight int32) {
 // spent.  In addition, when the 'stxos' argument is not nil, it will be updated
 // to append an entry for each spent txout.  An error will be returned if the
 // view does not contain the required utxos.
-func (view *UtxoViewpoint) connectTransaction(tx *btcutil.Tx, blockHeight int32, stxos *[]SpentTxOut) error {
+func (view *UtxoViewpoint) connectTransaction(tx *soterutil.Tx, blockHeight int32, stxos *[]SpentTxOut) error {
 	// Coinbase transactions don't have any inputs to spend.
 	if IsCoinBase(tx) {
 		// Add the transaction's outputs as available utxos.
@@ -264,7 +265,7 @@ func (view *UtxoViewpoint) connectTransaction(tx *btcutil.Tx, blockHeight int32,
 // spend as spent, and setting the best hash for the view to the passed block.
 // In addition, when the 'stxos' argument is not nil, it will be updated to
 // append an entry for each spent txout.
-func (view *UtxoViewpoint) connectTransactions(block *btcutil.Block, stxos *[]SpentTxOut) error {
+func (view *UtxoViewpoint) connectTransactions(block *soterutil.Block, stxos *[]SpentTxOut) error {
 	for _, tx := range block.Transactions() {
 		err := view.connectTransaction(tx, block.Height(), stxos)
 		if err != nil {
@@ -308,7 +309,7 @@ func (view *UtxoViewpoint) fetchEntryByHash(db database.DB, hash *chainhash.Hash
 // created by the passed block, restoring all utxos the transactions spent by
 // using the provided spent txo information, and setting the best hash for the
 // view to the block before the passed block.
-func (view *UtxoViewpoint) disconnectTransactions(db database.DB, block *btcutil.Block, stxos []SpentTxOut) error {
+func (view *UtxoViewpoint) disconnectTransactions(db database.DB, block *soterutil.Block, stxos []SpentTxOut) error {
 	// Sanity check the correct number of stxos are provided.
 	if len(stxos) != countSpentOutputs(block) {
 		return AssertError("disconnectTransactions called with bad " +
@@ -526,7 +527,7 @@ func (view *UtxoViewpoint) fetchUtxos(db database.DB, outpoints map[wire.OutPoin
 // database as needed.  In particular, referenced entries that are earlier in
 // the block are added to the view and entries that are already in the view are
 // not modified.
-func (view *UtxoViewpoint) fetchInputUtxos(db database.DB, block *btcutil.Block) error {
+func (view *UtxoViewpoint) fetchInputUtxos(db database.DB, block *soterutil.Block) error {
 	// Build a map of in-flight transactions because some of the inputs in
 	// this block could be referencing other transactions earlier in this
 	// block which are not yet in the chain.
@@ -589,7 +590,7 @@ func NewUtxoViewpoint() *UtxoViewpoint {
 // so the returned view can be examined for duplicate transactions.
 //
 // This function is safe for concurrent access however the returned view is NOT.
-func (b *BlockChain) FetchUtxoView(tx *btcutil.Tx) (*UtxoViewpoint, error) {
+func (b *BlockChain) FetchUtxoView(tx *soterutil.Tx) (*UtxoViewpoint, error) {
 	// Create a set of needed outputs based on those referenced by the
 	// inputs of the passed transaction and the outputs of the transaction
 	// itself.

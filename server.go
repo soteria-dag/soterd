@@ -1,5 +1,6 @@
 // Copyright (c) 2013-2017 The btcsuite developers
 // Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -15,29 +16,30 @@ import (
 	"math"
 	"net"
 	"runtime"
-	"sort"
+	// "sort"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/btcsuite/btcd/addrmgr"
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/blockchain/indexers"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/connmgr"
-	"github.com/btcsuite/btcd/database"
-	"github.com/btcsuite/btcd/mempool"
-	"github.com/btcsuite/btcd/mining"
-	"github.com/btcsuite/btcd/mining/cpuminer"
-	"github.com/btcsuite/btcd/netsync"
-	"github.com/btcsuite/btcd/peer"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
-	"github.com/btcsuite/btcutil/bloom"
+	"github.com/soteria-dag/soterd/addrmgr"
+	"github.com/soteria-dag/soterd/blockdag"
+	"github.com/soteria-dag/soterd/blockdag/indexers"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/connmgr"
+	"github.com/soteria-dag/soterd/database"
+	"github.com/soteria-dag/soterd/mempool"
+	"github.com/soteria-dag/soterd/metrics"
+	"github.com/soteria-dag/soterd/mining/cpuminer"
+	"github.com/soteria-dag/soterd/miningdag"
+	"github.com/soteria-dag/soterd/netsync"
+	"github.com/soteria-dag/soterd/peer"
+	"github.com/soteria-dag/soterd/soterutil"
+	"github.com/soteria-dag/soterd/soterutil/bloom"
+	"github.com/soteria-dag/soterd/txscript"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 const (
@@ -61,12 +63,12 @@ const (
 
 var (
 	// userAgentName is the user agent name and is used to help identify
-	// ourselves to other bitcoin peers.
-	userAgentName = "btcd"
+	// ourselves to other soter peers.
+	userAgentName = "soterd"
 
 	// userAgentVersion is the user agent version and is used to help
-	// identify ourselves to other bitcoin peers.
-	userAgentVersion = fmt.Sprintf("%d.%d.%d", appMajor, appMinor, appPatch)
+	// identify ourselves to other soter peers.
+	userAgentVersion = version
 )
 
 // zeroHash is the zero value hash (all zeros).  It is defined as a convenience.
@@ -116,7 +118,7 @@ func (a simpleAddr) Network() string {
 // Ensure simpleAddr implements the net.Addr interface.
 var _ net.Addr = simpleAddr{}
 
-// broadcastMsg provides the ability to house a bitcoin message to be broadcast
+// broadcastMsg provides the ability to house a soter message to be broadcast
 // to all connected peers except specified excluded peers.
 type broadcastMsg struct {
 	message      wire.Message
@@ -193,8 +195,8 @@ type cfHeaderKV struct {
 	filterHeader chainhash.Hash
 }
 
-// server provides a bitcoin server for handling communications to and from
-// bitcoin peers.
+// server provides a soter server for handling communications to and from
+// soter peers.
 type server struct {
 	// The following variables must only be used atomically.
 	// Putting the uint64s first makes them 64-bit aligned for 32-bit systems.
@@ -211,8 +213,9 @@ type server struct {
 	sigCache             *txscript.SigCache
 	hashCache            *txscript.HashCache
 	rpcServer            *rpcServer
+	metricsManager       *metrics.MetricsManager
 	syncManager          *netsync.SyncManager
-	chain                *blockchain.BlockChain
+	chain                *blockdag.BlockDAG
 	txMemPool            *mempool.TxPool
 	cpuMiner             *cpuminer.CPUMiner
 	modifyRebroadcastInv chan interface{}
@@ -227,16 +230,16 @@ type server struct {
 	quit                 chan struct{}
 	nat                  NAT
 	db                   database.DB
-	timeSource           blockchain.MedianTimeSource
+	timeSource           blockdag.MedianTimeSource
 	services             wire.ServiceFlag
 
 	// The following fields are used for optional indexes.  They will be nil
 	// if the associated index is not enabled.  These fields are set during
 	// initial creation of the server and never changed afterwards, so they
 	// do not need to be protected for concurrent access.
-	txIndex   *indexers.TxIndex
-	addrIndex *indexers.AddrIndex
-	cfIndex   *indexers.CfIndex
+	txIndex   *dagindexers.TxIndex
+	addrIndex *dagindexers.AddrIndex
+	cfIndex   *dagindexers.CfIndex
 
 	// The fee estimator keeps track of how long transactions are left in
 	// the mempool before they are mined into blocks.
@@ -266,6 +269,7 @@ type serverPeer struct {
 	isWhitelisted  bool
 	filter         *bloom.Filter
 	knownAddresses map[string]struct{}
+	addressMtx     sync.RWMutex
 	banScore       connmgr.DynamicBanScore
 	quit           chan struct{}
 	// The following chans are used to sync blockmanager and server.
@@ -291,12 +295,15 @@ func newServerPeer(s *server, isPersistent bool) *serverPeer {
 // required by the configuration for the peer package.
 func (sp *serverPeer) newestBlock() (*chainhash.Hash, int32, error) {
 	best := sp.server.chain.BestSnapshot()
-	return &best.Hash, best.Height, nil
+	dagState := sp.server.chain.DAGSnapshot()
+	return &best.Hash, dagState.MaxHeight, nil
 }
 
 // addKnownAddresses adds the given addresses to the set of known addresses to
 // the peer to prevent sending duplicate addresses.
 func (sp *serverPeer) addKnownAddresses(addresses []*wire.NetAddress) {
+	sp.addressMtx.Lock()
+	defer sp.addressMtx.Unlock()
 	for _, na := range addresses {
 		sp.knownAddresses[addrmgr.NetAddressKey(na)] = struct{}{}
 	}
@@ -304,6 +311,8 @@ func (sp *serverPeer) addKnownAddresses(addresses []*wire.NetAddress) {
 
 // addressKnown true if the given address is already known to the peer.
 func (sp *serverPeer) addressKnown(na *wire.NetAddress) bool {
+	sp.addressMtx.RLock()
+	defer sp.addressMtx.RUnlock()
 	_, exists := sp.knownAddresses[addrmgr.NetAddressKey(na)]
 	return exists
 }
@@ -385,7 +394,20 @@ func (sp *serverPeer) addBanScore(persistent, transient uint32, reason string) {
 	}
 }
 
-// OnVersion is invoked when a peer receives a version bitcoin message
+// KnownAddresses returns a slice of all the known addresses on the peer
+func (sp *serverPeer) KnownAddresses() []string {
+	sp.addressMtx.RLock()
+	defer sp.addressMtx.RUnlock()
+
+	addrs := make([]string, 0)
+	for a := range sp.knownAddresses {
+		addrs = append(addrs, a)
+	}
+
+	return addrs
+}
+
+// OnVersion is invoked when a peer receives a version soter message
 // and is used to negotiate the protocol version details as well as kick start
 // the communications.
 func (sp *serverPeer) OnVersion(_ *peer.Peer, msg *wire.MsgVersion) {
@@ -459,7 +481,7 @@ func (sp *serverPeer) OnVersion(_ *peer.Peer, msg *wire.MsgVersion) {
 	sp.server.AddPeer(sp)
 }
 
-// OnMemPool is invoked when a peer receives a mempool bitcoin message.
+// OnMemPool is invoked when a peer receives a mempool soter message.
 // It creates and sends an inventory message with the contents of the memory
 // pool up to the maximum inventory allowed per message.  When the peer has a
 // bloom filter loaded, the contents are filtered accordingly.
@@ -493,7 +515,7 @@ func (sp *serverPeer) OnMemPool(_ *peer.Peer, msg *wire.MsgMemPool) {
 		// or only the transactions that match the filter when there is
 		// one.
 		if !sp.filter.IsLoaded() || sp.filter.MatchTxAndUpdate(txDesc.Tx) {
-			iv := wire.NewInvVect(wire.InvTypeTx, txDesc.Tx.Hash())
+			iv := wire.NewInvVect(wire.InvTypeTx, txDesc.Tx.Hash(), -1)
 			invMsg.AddInvVect(iv)
 			if len(invMsg.InvList)+1 > wire.MaxInvPerMsg {
 				break
@@ -507,8 +529,8 @@ func (sp *serverPeer) OnMemPool(_ *peer.Peer, msg *wire.MsgMemPool) {
 	}
 }
 
-// OnTx is invoked when a peer receives a tx bitcoin message.  It blocks
-// until the bitcoin transaction has been fully processed.  Unlock the block
+// OnTx is invoked when a peer receives a tx soter message.  It blocks
+// until the soter transaction has been fully processed.  Unlock the block
 // handler this does not serialize all transactions through a single thread
 // transactions don't rely on the previous one in a linear fashion like blocks.
 func (sp *serverPeer) OnTx(_ *peer.Peer, msg *wire.MsgTx) {
@@ -519,10 +541,10 @@ func (sp *serverPeer) OnTx(_ *peer.Peer, msg *wire.MsgTx) {
 	}
 
 	// Add the transaction to the known inventory for the peer.
-	// Convert the raw MsgTx to a btcutil.Tx which provides some convenience
+	// Convert the raw MsgTx to a soterutil.Tx which provides some convenience
 	// methods and things such as hash caching.
-	tx := btcutil.NewTx(msg)
-	iv := wire.NewInvVect(wire.InvTypeTx, tx.Hash())
+	tx := soterutil.NewTx(msg)
+	iv := wire.NewInvVect(wire.InvTypeTx, tx.Hash(), -1)
 	sp.AddKnownInventory(iv)
 
 	// Queue the transaction up to be handled by the sync manager and
@@ -534,20 +556,20 @@ func (sp *serverPeer) OnTx(_ *peer.Peer, msg *wire.MsgTx) {
 	<-sp.txProcessed
 }
 
-// OnBlock is invoked when a peer receives a block bitcoin message.  It
-// blocks until the bitcoin block has been fully processed.
+// OnBlock is invoked when a peer receives a block soter message.  It
+// blocks until the soter block has been fully processed.
 func (sp *serverPeer) OnBlock(_ *peer.Peer, msg *wire.MsgBlock, buf []byte) {
-	// Convert the raw MsgBlock to a btcutil.Block which provides some
+	// Convert the raw MsgBlock to a soterutil.Block which provides some
 	// convenience methods and things such as hash caching.
-	block := btcutil.NewBlockFromBlockAndBytes(msg, buf)
+	block := soterutil.NewBlockFromBlockAndBytes(msg, buf)
 
 	// Add the block to the known inventory for the peer.
-	iv := wire.NewInvVect(wire.InvTypeBlock, block.Hash())
+	iv := wire.NewInvVect(wire.InvTypeBlock, block.Hash(), block.Height())
 	sp.AddKnownInventory(iv)
 
 	// Queue the block up to be handled by the block
 	// manager and intentionally block further receives
-	// until the bitcoin block is fully processed and known
+	// until the soter block is fully processed and known
 	// good or bad.  This helps prevent a malicious peer
 	// from queuing up a bunch of bad blocks before
 	// disconnecting (or being disconnected) and wasting
@@ -555,12 +577,12 @@ func (sp *serverPeer) OnBlock(_ *peer.Peer, msg *wire.MsgBlock, buf []byte) {
 	// by at least the block acceptance test tool as the
 	// reference implementation processes blocks in the same
 	// thread and therefore blocks further messages until
-	// the bitcoin block has been fully processed.
+	// the soter block has been fully processed.
 	sp.server.syncManager.QueueBlock(block, sp.Peer, sp.blockProcessed)
 	<-sp.blockProcessed
 }
 
-// OnInv is invoked when a peer receives an inv bitcoin message and is
+// OnInv is invoked when a peer receives an inv soter message and is
 // used to examine the inventory being advertised by the remote peer and react
 // accordingly.  We pass the message down to blockmanager which will call
 // QueueMessage with any appropriate responses.
@@ -597,13 +619,13 @@ func (sp *serverPeer) OnInv(_ *peer.Peer, msg *wire.MsgInv) {
 	}
 }
 
-// OnHeaders is invoked when a peer receives a headers bitcoin
+// OnHeaders is invoked when a peer receives a headers soter
 // message.  The message is passed down to the sync manager.
 func (sp *serverPeer) OnHeaders(_ *peer.Peer, msg *wire.MsgHeaders) {
 	sp.server.syncManager.QueueHeaders(msg, sp.Peer)
 }
 
-// handleGetData is invoked when a peer receives a getdata bitcoin message and
+// handleGetData is invoked when a peer receives a getdata soter message and
 // is used to deliver block and transaction information.
 func (sp *serverPeer) OnGetData(_ *peer.Peer, msg *wire.MsgGetData) {
 	numAdded := 0
@@ -683,7 +705,7 @@ func (sp *serverPeer) OnGetData(_ *peer.Peer, msg *wire.MsgGetData) {
 	}
 }
 
-// OnGetBlocks is invoked when a peer receives a getblocks bitcoin
+// OnGetBlocks is invoked when a peer receives a getblocks soter
 // message.
 func (sp *serverPeer) OnGetBlocks(_ *peer.Peer, msg *wire.MsgGetBlocks) {
 	// Find the most recent known block in the best chain based on the block
@@ -697,32 +719,36 @@ func (sp *serverPeer) OnGetBlocks(_ *peer.Peer, msg *wire.MsgGetBlocks) {
 	//
 	// This mirrors the behavior in the reference implementation.
 	chain := sp.server.chain
-	hashList := chain.LocateBlocks(msg.BlockLocatorHashes, &msg.HashStop,
+	hashList := chain.LocateBlocks(msg.BlockLocatorHeight, &msg.HashStop,
 		wire.MaxBlocksPerMsg)
 
 	// Generate inventory message.
 	invMsg := wire.NewMsgInv()
 	for i := range hashList {
-		iv := wire.NewInvVect(wire.InvTypeBlock, &hashList[i])
+		block, err := chain.BlockByHash(&hashList[i])
+		if err != nil {
+			peerLog.Errorf("Failed to retrieve block %v: %v", hashList[i], err)
+		}
+
+		iv := wire.NewInvVect(wire.InvTypeBlock, &hashList[i], block.Height())
 		invMsg.AddInvVect(iv)
 	}
 
-	// Send the inventory message if there is anything to send.
-	if len(invMsg.InvList) > 0 {
-		invListLen := len(invMsg.InvList)
-		if invListLen == wire.MaxBlocksPerMsg {
-			// Intentionally use a copy of the final hash so there
-			// is not a reference into the inventory slice which
-			// would prevent the entire slice from being eligible
-			// for GC as soon as it's sent.
-			continueHash := invMsg.InvList[invListLen-1].Hash
-			sp.continueHash = &continueHash
-		}
-		sp.QueueMessage(invMsg, nil)
+	// Send the inventory message. We even send empty inventory back, so that the requesting node will know that we're
+	// still responding to their requests like a good peer should.
+	invListLen := len(invMsg.InvList)
+	if invListLen == wire.MaxBlocksPerMsg {
+		// Intentionally use a copy of the final hash so there
+		// is not a reference into the inventory slice which
+		// would prevent the entire slice from being eligible
+		// for GC as soon as it's sent.
+		continueHash := invMsg.InvList[invListLen-1].Hash
+		sp.continueHash = &continueHash
 	}
+	sp.QueueMessage(invMsg, nil)
 }
 
-// OnGetHeaders is invoked when a peer receives a getheaders bitcoin
+// OnGetHeaders is invoked when a peer receives a getheaders soter
 // message.
 func (sp *serverPeer) OnGetHeaders(_ *peer.Peer, msg *wire.MsgGetHeaders) {
 	// Ignore getheaders requests if not in sync.
@@ -741,7 +767,7 @@ func (sp *serverPeer) OnGetHeaders(_ *peer.Peer, msg *wire.MsgGetHeaders) {
 	//
 	// This mirrors the behavior in the reference implementation.
 	chain := sp.server.chain
-	headers := chain.LocateHeaders(msg.BlockLocatorHashes, &msg.HashStop)
+	headers := chain.LocateHeaders(msg.BlockLocatorHeight, &msg.HashStop)
 
 	// Send found headers to the requesting peer.
 	blockHeaders := make([]*wire.BlockHeader, len(headers))
@@ -751,7 +777,7 @@ func (sp *serverPeer) OnGetHeaders(_ *peer.Peer, msg *wire.MsgGetHeaders) {
 	sp.QueueMessage(&wire.MsgHeaders{Headers: blockHeaders}, nil)
 }
 
-// OnGetCFilters is invoked when a peer receives a getcfilters bitcoin message.
+// OnGetCFilters is invoked when a peer receives a getcfilters soter message.
 func (sp *serverPeer) OnGetCFilters(_ *peer.Peer, msg *wire.MsgGetCFilters) {
 	// Ignore getcfilters requests if not in sync.
 	if !sp.server.syncManager.IsCurrent() {
@@ -807,7 +833,7 @@ func (sp *serverPeer) OnGetCFilters(_ *peer.Peer, msg *wire.MsgGetCFilters) {
 	}
 }
 
-// OnGetCFHeaders is invoked when a peer receives a getcfheader bitcoin message.
+// OnGetCFHeaders is invoked when a peer receives a getcfheader soter message.
 func (sp *serverPeer) OnGetCFHeaders(_ *peer.Peer, msg *wire.MsgGetCFHeaders) {
 	// Ignore getcfilterheader requests if not in sync.
 	if !sp.server.syncManager.IsCurrent() {
@@ -924,7 +950,7 @@ func (sp *serverPeer) OnGetCFHeaders(_ *peer.Peer, msg *wire.MsgGetCFHeaders) {
 	sp.QueueMessage(headersMsg, nil)
 }
 
-// OnGetCFCheckpt is invoked when a peer receives a getcfcheckpt bitcoin message.
+// OnGetCFCheckpt is invoked when a peer receives a getcfcheckpt soter message.
 func (sp *serverPeer) OnGetCFCheckpt(_ *peer.Peer, msg *wire.MsgGetCFCheckpt) {
 	// Ignore getcfcheckpt requests if not in sync.
 	if !sp.server.syncManager.IsCurrent() {
@@ -1110,15 +1136,15 @@ func (sp *serverPeer) enforceNodeBloomFlag(cmd string) bool {
 	return true
 }
 
-// OnFeeFilter is invoked when a peer receives a feefilter bitcoin message and
+// OnFeeFilter is invoked when a peer receives a feefilter soter message and
 // is used by remote peers to request that no transactions which have a fee rate
 // lower than provided value are inventoried to them.  The peer will be
 // disconnected if an invalid fee filter value is provided.
 func (sp *serverPeer) OnFeeFilter(_ *peer.Peer, msg *wire.MsgFeeFilter) {
 	// Check that the passed minimum fee is a valid amount.
-	if msg.MinFee < 0 || msg.MinFee > btcutil.MaxSatoshi {
+	if msg.MinFee < 0 || msg.MinFee > soterutil.MaxNanoSoter {
 		peerLog.Debugf("Peer %v sent an invalid feefilter '%v' -- "+
-			"disconnecting", sp, btcutil.Amount(msg.MinFee))
+			"disconnecting", sp, soterutil.Amount(msg.MinFee))
 		sp.Disconnect()
 		return
 	}
@@ -1126,7 +1152,7 @@ func (sp *serverPeer) OnFeeFilter(_ *peer.Peer, msg *wire.MsgFeeFilter) {
 	atomic.StoreInt64(&sp.feeFilter, msg.MinFee)
 }
 
-// OnFilterAdd is invoked when a peer receives a filteradd bitcoin
+// OnFilterAdd is invoked when a peer receives a filteradd soter
 // message and is used by remote peers to add data to an already loaded bloom
 // filter.  The peer will be disconnected if a filter is not loaded when this
 // message is received or the server is not configured to allow bloom filters.
@@ -1147,7 +1173,7 @@ func (sp *serverPeer) OnFilterAdd(_ *peer.Peer, msg *wire.MsgFilterAdd) {
 	sp.filter.Add(msg.Data)
 }
 
-// OnFilterClear is invoked when a peer receives a filterclear bitcoin
+// OnFilterClear is invoked when a peer receives a filterclear soter
 // message and is used by remote peers to clear an already loaded bloom filter.
 // The peer will be disconnected if a filter is not loaded when this message is
 // received  or the server is not configured to allow bloom filters.
@@ -1168,7 +1194,7 @@ func (sp *serverPeer) OnFilterClear(_ *peer.Peer, msg *wire.MsgFilterClear) {
 	sp.filter.Unload()
 }
 
-// OnFilterLoad is invoked when a peer receives a filterload bitcoin
+// OnFilterLoad is invoked when a peer receives a filterload soter
 // message and it used to load a bloom filter that should be used for
 // delivering merkle blocks and associated transactions that match the filter.
 // The peer will be disconnected if the server is not configured to allow bloom
@@ -1185,7 +1211,7 @@ func (sp *serverPeer) OnFilterLoad(_ *peer.Peer, msg *wire.MsgFilterLoad) {
 	sp.filter.Reload(msg)
 }
 
-// OnGetAddr is invoked when a peer receives a getaddr bitcoin message
+// OnGetAddr is invoked when a peer receives a getaddr soter message
 // and is used to provide the peer with known addresses from the address
 // manager.
 func (sp *serverPeer) OnGetAddr(_ *peer.Peer, msg *wire.MsgGetAddr) {
@@ -1221,7 +1247,105 @@ func (sp *serverPeer) OnGetAddr(_ *peer.Peer, msg *wire.MsgGetAddr) {
 	sp.pushAddrMsg(addrCache)
 }
 
-// OnAddr is invoked when a peer receives an addr bitcoin message and is
+// OnGetAddrCache is called when a peer receives a getaddrcache message.
+// It responds with a addrcache message. It works the similar to getaddr except that:
+// - simnet isn't ignored
+// - All addrs are sent in response, using multiple addrcache messages if necessary (instead of 23% of peers)
+// - Includes outbound peer addresses
+func (sp *serverPeer) OnGetAddrCache(_ *peer.Peer, msg *wire.MsgGetAddrCache) {
+	ourAddr := addrmgr.NetAddressKey(sp.NA())
+	addrs := make([]*wire.NetAddress, 0)
+	added := make(map[string]int)
+
+	// Get the known addresses from the address manager and peer cache
+	addrCache := sp.server.addrManager.EntireAddressCache()
+	peerCache := sp.KnownAddresses()
+
+	// Get addresses of connected peers
+	replyChan := make(chan []*serverPeer)
+	sp.server.query <- getPeersMsg{reply: replyChan}
+	serverPeers := <-replyChan
+
+	// Add outbound peers
+	for _, p := range serverPeers {
+		if p.Addr() == sp.Addr() || p.Inbound() {
+			continue
+		}
+
+		na := p.NA()
+		a := addrmgr.NetAddressKey(na)
+		_, exists := added[a]
+		if exists {
+			continue
+		}
+
+		addrs = append(addrs, na)
+		added[a] = 1
+	}
+
+	// Add contents of address manager cache
+	for _, na := range addrCache {
+		a := addrmgr.NetAddressKey(na)
+		if a == ourAddr {
+			continue
+		}
+
+		_, exists := added[a]
+		if exists {
+			continue
+		}
+
+		addrs = append(addrs, na)
+		added[a] = 1
+	}
+
+	// Add contents of peer address cache
+	for _, a := range peerCache {
+		if a == ourAddr {
+			continue
+		}
+
+		_, exists := added[a]
+		if exists {
+			continue
+		}
+
+		// Convert the IP address string into a wire.NetAddress type
+		parts := strings.Split(a, ":")
+		ip := parts[0]
+		port64, err := strconv.ParseUint(parts[1], 10, 16)
+		if err != nil {
+			peerLog.Errorf("OnGetAddrCache failed to convert peer address %s to wire.NetAddress: %s", a, err)
+			continue
+		}
+		port := uint16(port64)
+
+		na, err := sp.server.addrManager.HostToNetAddress(ip, port, defaultServices)
+		if err != nil {
+			peerLog.Errorf("OnGetAddrCache failed to convert peer address %s to wire.NetAddress: %s", a, err)
+			continue
+		}
+
+		addrs = append(addrs, na)
+		added[a] = 1
+	}
+
+	peerLog.Tracef("OnGetAddrCache found %d addresses", len(addrs))
+
+	// Push the addresses.
+	err := sp.PushAddrCacheMsg(addrs)
+	if err != nil {
+		peerLog.Errorf("Failed to send addrcache msgs to peer %s: %s", sp.Peer, err)
+	}
+}
+
+// OnAddrCache is called when a peer receives an addrcache message. It caches the addresses in the serverPeer
+// Unlike the addr message, addresses found while in simnet mode aren't dropped
+func (sp *serverPeer) OnAddrCache(_ *peer.Peer, msg *wire.MsgAddrCache) {
+	sp.addKnownAddresses(msg.AddrList)
+}
+
+// OnAddr is invoked when a peer receives an addr soter message and is
 // used to notify the server about advertised addresses.
 func (sp *serverPeer) OnAddr(_ *peer.Peer, msg *wire.MsgAddr) {
 	// Ignore addresses when running on the simulation test network.  This
@@ -1327,7 +1451,7 @@ func (s *server) RemoveRebroadcastInventory(iv *wire.InvVect) {
 // passed transactions to all connected peers.
 func (s *server) relayTransactions(txns []*mempool.TxDesc) {
 	for _, txD := range txns {
-		iv := wire.NewInvVect(wire.InvTypeTx, txD.Tx.Hash())
+		iv := wire.NewInvVect(wire.InvTypeTx, txD.Tx.Hash(), -1)
 		s.RelayInventory(iv, txD)
 	}
 }
@@ -1350,13 +1474,13 @@ func (s *server) AnnounceNewTransactions(txns []*mempool.TxDesc) {
 
 // Transaction has one confirmation on the main chain. Now we can mark it as no
 // longer needing rebroadcasting.
-func (s *server) TransactionConfirmed(tx *btcutil.Tx) {
+func (s *server) TransactionConfirmed(tx *soterutil.Tx) {
 	// Rebroadcasting is only necessary when the RPC server is active.
 	if s.rpcServer == nil {
 		return
 	}
 
-	iv := wire.NewInvVect(wire.InvTypeTx, tx.Hash())
+	iv := wire.NewInvVect(wire.InvTypeTx, tx.Hash(), -1)
 	s.RemoveRebroadcastInventory(iv)
 }
 
@@ -1437,6 +1561,7 @@ func (s *server) pushBlockMsg(sp *serverPeer, hash *chainhash.Hash, doneChan cha
 	if !sendInv {
 		dc = doneChan
 	}
+
 	sp.QueueMessageWithEncoding(&msgBlock, dc, encoding)
 
 	// When the peer requests the final block that was advertised in
@@ -1445,10 +1570,12 @@ func (s *server) pushBlockMsg(sp *serverPeer, hash *chainhash.Hash, doneChan cha
 	// to trigger it to issue another getblocks message for the next
 	// batch of inventory.
 	if sendInv {
-		best := sp.server.chain.BestSnapshot()
-		invMsg := wire.NewMsgInvSizeHint(1)
-		iv := wire.NewInvVect(wire.InvTypeBlock, &best.Hash)
-		invMsg.AddInvVect(iv)
+		// Use the special zeroHash to indicate that there's more blocks to download.
+		// This lets the peer know that it should ask for blocks from its maxHeight to our tips,
+		// and that we're not asking it to just sync top-down from the provided blocks.
+		invMsg := wire.NewMsgInvSizeHint(uint(1))
+		iv := wire.NewInvVect(wire.InvTypeBlock, &zeroHash, -1)
+		_ = invMsg.AddInvVect(iv)
 		sp.QueueMessage(invMsg, doneChan)
 		sp.continueHash = nil
 	}
@@ -1535,10 +1662,12 @@ func (s *server) handleUpdatePeerHeights(state *peerState, umsg updatePeerHeight
 		}
 
 		// If the peer has recently announced a block, and this block
-		// matches our newly accepted block, then update their block
-		// height.
+		// matches our newly accepted block, and the block's height is higher
+		// than the current max block height for the peer, then update their block height.
 		if *latestBlkHash == *umsg.newHash {
-			sp.UpdateLastBlockHeight(umsg.newHeight)
+			if umsg.newHeight > sp.MaxBlockHeight() {
+				sp.UpdateMaxBlockHeight(umsg.newHeight)
+			}
 			sp.UpdateLastAnnouncedBlock(nil)
 		}
 	})
@@ -1744,6 +1873,10 @@ type getConnCountMsg struct {
 	reply chan int32
 }
 
+type getKnownAddrsMsg struct {
+	reply chan []string
+}
+
 type getPeersMsg struct {
 	reply chan []*serverPeer
 }
@@ -1785,6 +1918,22 @@ func (s *server) handleQuery(state *peerState, querymsg interface{}) {
 			}
 		})
 		msg.reply <- nconnected
+
+	case getKnownAddrsMsg:
+		collected := make(map[string]int, 0)
+		collectAddrs := func(sp *serverPeer) {
+			for _, addr := range sp.KnownAddresses() {
+				collected[addr] = 1
+			}
+		}
+		state.forAllPeers(collectAddrs)
+
+		allAddrs := make([]string, 0)
+		for a := range collected {
+			allAddrs = append(allAddrs, a)
+		}
+
+		msg.reply <- allAddrs
 
 	case getPeersMsg:
 		peers := make([]*serverPeer, 0, state.Count())
@@ -1930,7 +2079,9 @@ func newPeerConfig(sp *serverPeer) *peer.Config {
 			OnFilterClear:  sp.OnFilterClear,
 			OnFilterLoad:   sp.OnFilterLoad,
 			OnGetAddr:      sp.OnGetAddr,
+			OnGetAddrCache: sp.OnGetAddrCache,
 			OnAddr:         sp.OnAddr,
+			OnAddrCache:    sp.OnAddrCache,
 			OnRead:         sp.OnRead,
 			OnWrite:        sp.OnWrite,
 
@@ -2032,7 +2183,7 @@ func (s *server) peerHandler() {
 	if !cfg.DisableDNSSeed {
 		// Add peers discovered through DNS to the address manager.
 		connmgr.SeedFromDNS(activeNetParams.Params, defaultRequiredServices,
-			btcdLookup, func(addrs []*wire.NetAddress) {
+			soterdLookup, func(addrs []*wire.NetAddress) {
 				// Bitcoind uses a lookup of the dns seeder here. This
 				// is rather strange since the values looked up by the
 				// DNS seed lookups will vary quite a lot.
@@ -2274,6 +2425,9 @@ func (s *server) Start() {
 	if cfg.Generate {
 		s.cpuMiner.Start()
 	}
+
+	// Start metrics manager
+	s.metricsManager.Start()
 }
 
 // Stop gracefully shuts down the server by stopping and disconnecting all
@@ -2294,6 +2448,9 @@ func (s *server) Stop() error {
 	if !cfg.DisableRPC {
 		s.rpcServer.Stop()
 	}
+
+	// Stop metrics manager
+	s.metricsManager.Stop()
 
 	// Save fee estimator state in the database.
 	s.db.Update(func(tx database.Tx) error {
@@ -2413,7 +2570,7 @@ out:
 			// listen port?
 			// XXX this assumes timeout is in seconds.
 			listenPort, err := s.nat.AddPortMapping("tcp", int(lport), int(lport),
-				"btcd listen port", 20*60)
+				"soterd listen port", 20*60)
 			if err != nil {
 				srvrLog.Warnf("can't add UPnP port mapping: %v", err)
 			}
@@ -2500,8 +2657,8 @@ func setupRPCListeners() ([]net.Listener, error) {
 	return listeners, nil
 }
 
-// newServer returns a new btcd server configured to listen on addr for the
-// bitcoin network type specified by chainParams.  Use start to begin accepting
+// newServer returns a new soterd server configured to listen on addr for the
+// soter network type specified by chainParams.  Use start to begin accepting
 // connections from peers.
 func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Params, interrupt <-chan struct{}) (*server, error) {
 	services := defaultServices
@@ -2512,7 +2669,7 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 		services &^= wire.SFNodeCF
 	}
 
-	amgr := addrmgr.New(cfg.DataDir, btcdLookup)
+	amgr := addrmgr.New(cfg.DataDir, soterdLookup)
 
 	var listeners []net.Listener
 	var nat NAT
@@ -2541,7 +2698,7 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 		peerHeightsUpdate:    make(chan updatePeerHeightsMsg),
 		nat:                  nat,
 		db:                   db,
-		timeSource:           blockchain.NewMedianTime(),
+		timeSource:           blockdag.NewMedianTime(),
 		services:             services,
 		sigCache:             txscript.NewSigCache(cfg.SigCacheMaxSize),
 		hashCache:            txscript.NewHashCache(cfg.SigCacheMaxSize),
@@ -2554,7 +2711,7 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 	// the addrindex uses data from the txindex during catchup.  If the
 	// addrindex is run first, it may not have the transactions from the
 	// current block indexed.
-	var indexes []indexers.Indexer
+	var indexes []dagindexers.Indexer
 	if cfg.TxIndex || cfg.AddrIndex {
 		// Enable transaction index if address index is enabled since it
 		// requires it.
@@ -2566,39 +2723,45 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 			indxLog.Info("Transaction index is enabled")
 		}
 
-		s.txIndex = indexers.NewTxIndex(db)
+		s.txIndex = dagindexers.NewTxIndex(db)
 		indexes = append(indexes, s.txIndex)
 	}
 	if cfg.AddrIndex {
 		indxLog.Info("Address index is enabled")
-		s.addrIndex = indexers.NewAddrIndex(db, chainParams)
+		s.addrIndex = dagindexers.NewAddrIndex(db, chainParams)
 		indexes = append(indexes, s.addrIndex)
 	}
 	if !cfg.NoCFilters {
 		indxLog.Info("Committed filter index is enabled")
-		s.cfIndex = indexers.NewCfIndex(db, chainParams)
+		s.cfIndex = dagindexers.NewCfIndex(db, chainParams)
 		indexes = append(indexes, s.cfIndex)
 	}
 
 	// Create an index manager if any of the optional indexes are enabled.
-	var indexManager blockchain.IndexManager
+	var indexManager blockdag.IndexManager
 	if len(indexes) > 0 {
-		indexManager = indexers.NewManager(db, indexes)
+		indexManager = dagindexers.NewManager(db, indexes)
 	}
 
+	// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+	// 
+	//
 	// Merge given checkpoints with the default ones unless they are disabled.
-	var checkpoints []chaincfg.Checkpoint
-	if !cfg.DisableCheckpoints {
-		checkpoints = mergeCheckpoints(s.chainParams.Checkpoints, cfg.addCheckpoints)
-	}
+	// var checkpoints []chaincfg.Checkpoint
+	// if !cfg.DisableCheckpoints {
+	// 	checkpoints = mergeCheckpoints(s.chainParams.Checkpoints, cfg.addCheckpoints)
+	// }
 
 	// Create a new block chain instance with the appropriate configuration.
 	var err error
-	s.chain, err = blockchain.New(&blockchain.Config{
-		DB:           s.db,
-		Interrupt:    interrupt,
-		ChainParams:  s.chainParams,
-		Checkpoints:  checkpoints,
+	s.chain, err = blockdag.New(&blockdag.Config{
+		DB:          s.db,
+		Interrupt:   interrupt,
+		ChainParams: s.chainParams,
+		// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+		// 
+		//
+		// Checkpoints:  checkpoints,
 		TimeSource:   s.timeSource,
 		SigCache:     s.sigCache,
 		IndexManager: indexManager,
@@ -2632,7 +2795,7 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 
 	// If no feeEstimator has been found, or if the one that has been found
 	// is behind somehow, create a new one and start over.
-	if s.feeEstimator == nil || s.feeEstimator.LastKnownHeight() != s.chain.BestSnapshot().Height {
+	if s.feeEstimator == nil || s.feeEstimator.LastKnownHeight() != s.chain.DAGSnapshot().MaxHeight {
 		s.feeEstimator = mempool.NewFeeEstimator(
 			mempool.DefaultEstimateFeeMaxRollback,
 			mempool.DefaultEstimateFeeMinRegisteredBlocks)
@@ -2645,15 +2808,15 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 			FreeTxRelayLimit:     cfg.FreeTxRelayLimit,
 			MaxOrphanTxs:         cfg.MaxOrphanTxs,
 			MaxOrphanTxSize:      defaultMaxOrphanTxSize,
-			MaxSigOpCostPerTx:    blockchain.MaxBlockSigOpsCost / 4,
+			MaxSigOpCostPerTx:    blockdag.MaxBlockSigOpsCost / 4,
 			MinRelayTxFee:        cfg.minRelayTxFee,
 			MaxTxVersion:         2,
 		},
 		ChainParams:    chainParams,
 		FetchUtxoView:  s.chain.FetchUtxoView,
-		BestHeight:     func() int32 { return s.chain.BestSnapshot().Height },
+		BestHeight:     func() int32 { return s.chain.DAGSnapshot().MaxHeight },
 		MedianTimePast: func() time.Time { return s.chain.BestSnapshot().MedianTime },
-		CalcSequenceLock: func(tx *btcutil.Tx, view *blockchain.UtxoViewpoint) (*blockchain.SequenceLock, error) {
+		CalcSequenceLock: func(tx *soterutil.Tx, view *blockdag.UtxoViewpoint) (*blockdag.SequenceLock, error) {
 			return s.chain.CalcSequenceLock(tx, view, true)
 		},
 		IsDeploymentActive: s.chain.IsDeploymentActive,
@@ -2665,13 +2828,16 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 	s.txMemPool = mempool.New(&txC)
 
 	s.syncManager, err = netsync.New(&netsync.Config{
-		PeerNotifier:       &s,
-		Chain:              s.chain,
-		TxMemPool:          s.txMemPool,
-		ChainParams:        s.chainParams,
-		DisableCheckpoints: cfg.DisableCheckpoints,
-		MaxPeers:           cfg.MaxPeers,
-		FeeEstimator:       s.feeEstimator,
+		PeerNotifier: &s,
+		Chain:        s.chain,
+		TxMemPool:    s.txMemPool,
+		ChainParams:  s.chainParams,
+		// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+		// 
+		//
+		// DisableCheckpoints: cfg.DisableCheckpoints,
+		MaxPeers:     cfg.MaxPeers,
+		FeeEstimator: s.feeEstimator,
 	})
 	if err != nil {
 		return nil, err
@@ -2682,7 +2848,7 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 	//
 	// NOTE: The CPU miner relies on the mempool, so the mempool has to be
 	// created before calling the function to create the CPU miner.
-	policy := mining.Policy{
+	policy := miningdag.Policy{
 		BlockMinWeight:    cfg.BlockMinWeight,
 		BlockMaxWeight:    cfg.BlockMaxWeight,
 		BlockMinSize:      cfg.BlockMinSize,
@@ -2690,7 +2856,7 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 		BlockPrioritySize: cfg.BlockPrioritySize,
 		TxMinFreeFee:      cfg.minRelayTxFee,
 	}
-	blockTemplateGenerator := mining.NewBlkTmplGenerator(&policy,
+	blockTemplateGenerator := miningdag.NewBlkTmplGenerator(&policy,
 		s.chainParams, s.txMemPool, s.chain, s.timeSource,
 		s.sigCache, s.hashCache)
 	s.cpuMiner = cpuminer.New(&cpuminer.Config{
@@ -2758,7 +2924,7 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 		OnAccept:       s.inboundPeerConnected,
 		RetryDuration:  connectionRetryInterval,
 		TargetOutbound: uint32(targetOutbound),
-		Dial:           btcdDial,
+		Dial:           soterdDial,
 		OnConnection:   s.outboundPeerConnected,
 		GetNewAddress:  newAddressFunc,
 	})
@@ -2784,6 +2950,17 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 		})
 	}
 
+	// Create a metrics manager
+	mm, err := metrics.New(&metrics.Config{
+		MinerSolveCount: &s.cpuMiner.SolveCount,
+		MinerSolveHashes: &s.cpuMiner.SolveHashes,
+		MinerSolveTimes: &s.cpuMiner.SolveTimes,
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.metricsManager = mm
+
 	if !cfg.DisableRPC {
 		// Setup listeners for the configured RPC listen addresses and
 		// TLS settings.
@@ -2799,6 +2976,7 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 			Listeners:    rpcListeners,
 			StartupTime:  s.startupTime,
 			ConnMgr:      &rpcConnManager{&s},
+			MetricsMgr:   mm,
 			SyncMgr:      &rpcSyncMgr{&s, s.syncManager},
 			TimeSource:   s.timeSource,
 			Chain:        s.chain,
@@ -2938,7 +3116,7 @@ func addrStringToNetAddr(addr string) (net.Addr, error) {
 	}
 
 	// Attempt to look up an IP address associated with the parsed host.
-	ips, err := btcdLookup(host)
+	ips, err := soterdLookup(host)
 	if err != nil {
 		return nil, err
 	}
@@ -3046,55 +3224,58 @@ func isWhitelisted(addr net.Addr) bool {
 	return false
 }
 
-// checkpointSorter implements sort.Interface to allow a slice of checkpoints to
-// be sorted.
-type checkpointSorter []chaincfg.Checkpoint
+// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+// 
+//
+// // checkpointSorter implements sort.Interface to allow a slice of checkpoints to
+// // be sorted.
+// type checkpointSorter []chaincfg.Checkpoint
 
-// Len returns the number of checkpoints in the slice.  It is part of the
-// sort.Interface implementation.
-func (s checkpointSorter) Len() int {
-	return len(s)
-}
+// // Len returns the number of checkpoints in the slice.  It is part of the
+// // sort.Interface implementation.
+// func (s checkpointSorter) Len() int {
+// 	return len(s)
+// }
 
-// Swap swaps the checkpoints at the passed indices.  It is part of the
-// sort.Interface implementation.
-func (s checkpointSorter) Swap(i, j int) {
-	s[i], s[j] = s[j], s[i]
-}
+// // Swap swaps the checkpoints at the passed indices.  It is part of the
+// // sort.Interface implementation.
+// func (s checkpointSorter) Swap(i, j int) {
+// 	s[i], s[j] = s[j], s[i]
+// }
 
-// Less returns whether the checkpoint with index i should sort before the
-// checkpoint with index j.  It is part of the sort.Interface implementation.
-func (s checkpointSorter) Less(i, j int) bool {
-	return s[i].Height < s[j].Height
-}
+// // Less returns whether the checkpoint with index i should sort before the
+// // checkpoint with index j.  It is part of the sort.Interface implementation.
+// func (s checkpointSorter) Less(i, j int) bool {
+// 	return s[i].Height < s[j].Height
+// }
 
-// mergeCheckpoints returns two slices of checkpoints merged into one slice
-// such that the checkpoints are sorted by height.  In the case the additional
-// checkpoints contain a checkpoint with the same height as a checkpoint in the
-// default checkpoints, the additional checkpoint will take precedence and
-// overwrite the default one.
-func mergeCheckpoints(defaultCheckpoints, additional []chaincfg.Checkpoint) []chaincfg.Checkpoint {
-	// Create a map of the additional checkpoints to remove duplicates while
-	// leaving the most recently-specified checkpoint.
-	extra := make(map[int32]chaincfg.Checkpoint)
-	for _, checkpoint := range additional {
-		extra[checkpoint.Height] = checkpoint
-	}
+// // mergeCheckpoints returns two slices of checkpoints merged into one slice
+// // such that the checkpoints are sorted by height.  In the case the additional
+// // checkpoints contain a checkpoint with the same height as a checkpoint in the
+// // default checkpoints, the additional checkpoint will take precedence and
+// // overwrite the default one.
+// func mergeCheckpoints(defaultCheckpoints, additional []chaincfg.Checkpoint) []chaincfg.Checkpoint {
+// 	// Create a map of the additional checkpoints to remove duplicates while
+// 	// leaving the most recently-specified checkpoint.
+// 	extra := make(map[int32]chaincfg.Checkpoint)
+// 	for _, checkpoint := range additional {
+// 		extra[checkpoint.Height] = checkpoint
+// 	}
 
-	// Add all default checkpoints that do not have an override in the
-	// additional checkpoints.
-	numDefault := len(defaultCheckpoints)
-	checkpoints := make([]chaincfg.Checkpoint, 0, numDefault+len(extra))
-	for _, checkpoint := range defaultCheckpoints {
-		if _, exists := extra[checkpoint.Height]; !exists {
-			checkpoints = append(checkpoints, checkpoint)
-		}
-	}
+// 	// Add all default checkpoints that do not have an override in the
+// 	// additional checkpoints.
+// 	numDefault := len(defaultCheckpoints)
+// 	checkpoints := make([]chaincfg.Checkpoint, 0, numDefault+len(extra))
+// 	for _, checkpoint := range defaultCheckpoints {
+// 		if _, exists := extra[checkpoint.Height]; !exists {
+// 			checkpoints = append(checkpoints, checkpoint)
+// 		}
+// 	}
 
-	// Append the additional checkpoints and return the sorted results.
-	for _, checkpoint := range extra {
-		checkpoints = append(checkpoints, checkpoint)
-	}
-	sort.Sort(checkpointSorter(checkpoints))
-	return checkpoints
-}
+// 	// Append the additional checkpoints and return the sorted results.
+// 	for _, checkpoint := range extra {
+// 		checkpoints = append(checkpoints, checkpoint)
+// 	}
+// 	sort.Sort(checkpointSorter(checkpoints))
+// 	return checkpoints
+// }

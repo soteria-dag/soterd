@@ -1,19 +1,10 @@
-hash: 4d4efdd452d746ef15b66d35caadb3cbd58bb299e9c1f5172e90b2f3f272863f
-updated: 2018-08-23T22:38:49.421147894-07:00
+hash: 27f5557ed3d8d5613926f8224229785d6b0d1accc3516eebdcd4780d45c7ea45
+updated: 2019-05-02T23:33:24.470145569-06:00
 imports:
 - name: github.com/aead/siphash
   version: 83563a290f60225eb120d724600b9690c3fb536f
-- name: github.com/btcsuite/btclog
-  version: 84c8d2346e9fc8c7b947e243b9c24e6df9fd206a
-- name: github.com/btcsuite/btcutil
-  version: ab6388e0c60ae4834a1f57511e20c17b5f78be4b
-  subpackages:
-  - base58
-  - bech32
-  - bloom
-  - gcs
-  - gcs/builder
-  - hdkeychain
+- name: github.com/blang/semver
+  version: ba2c2ddd89069b46a7011d4106f6868f17ee1705
 - name: github.com/btcsuite/go-socks
   version: 4720035b7bfd2a9bb130b1c184f8bbe41b6f0d0f
   subpackages:
@@ -49,6 +40,11 @@ imports:
   version: ecdeabc65495df2dec95d7c4a4c3e021903035e5
   subpackages:
   - spew
+- name: github.com/golang/freetype
+  version: e2365dfdc4a05e4b8299a783240d4a7d5a65d4e4
+  subpackages:
+  - raster
+  - truetype
 - name: github.com/jessevdk/go-flags
   version: 1679536dcc895411a9f5848d9a0250be7856448c
 - name: github.com/jrick/logrotate
@@ -57,8 +53,23 @@ imports:
   - rotator
 - name: github.com/kkdai/bstream
   version: f391b8402d23024e7c0f624b31267a89998fca95
+- name: github.com/wcharczuk/go-chart
+  version: 9852fce5a172598e72d16f4306f0f17a53d94eb4
+  subpackages:
+  - drawing
+  - matrix
+  - roboto
+  - seq
+  - util
 - name: golang.org/x/crypto
   version: 9419663f5a44be8b34ca85f08abc5fe1be11f8a3
   subpackages:
   - ripemd160
+- name: golang.org/x/image
+  version: 3fc05d484e9f77dd51816890e05f2602e4ca4d65
+  subpackages:
+  - draw
+  - font
+  - math/f64
+  - math/fixed
 testImports: []

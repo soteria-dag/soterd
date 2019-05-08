@@ -1,0 +1,59 @@
+version: "3"
+services:
+  simnet1:
+    # The build parameters are meant to compensate for the fact that soterd and soterwallet are private repositories
+    # with circular dependencies, and in order to resolve them locally in a docker build environment,
+    # the docker build command needs to be run from a directory above both soterd and soterwallet directories.
+    # Once both soterd and soterwallet are public repositories, this won't be necessary.
+    build:
+      context: ../
+      dockerfile: soterd/Dockerfile
+    image: soteria-dag/soterd:latest
+    command: soterd --simnet --datadir=/srv/soterd/data --logdir=/srv/soterd/logs --listen=0.0.0.0:18555 --rpclisten=0.0.0.0:18556 --rpcuser=USER --rpcpass=PASS --miningaddr=SXXJVcFu1n6jpv2jHZTFCD3XfR6AbGH9Ae
+    cap_add:
+      - ALL
+    ports:
+      - "18555"
+      - "18556"
+    networks:
+      simnet:
+        ipv4_address: 10.27.0.11
+  simnet2:
+    build:
+      context: ../
+      dockerfile: soterd/Dockerfile
+    image: soteria-dag/soterd:latest
+    command: soterd --simnet --datadir=/srv/soterd/data --logdir=/srv/soterd/logs --listen=0.0.0.0:18565 --rpclisten=0.0.0.0:18566 --rpcuser=USER --rpcpass=PASS --miningaddr=SXXJVcFu1n6jpv2jHZTFCD3XfR6AbGH9Ae
+    cap_add:
+      - ALL
+    ports:
+      - "18565"
+      - "18566"
+    networks:
+      simnet:
+        ipv4_address: 10.27.0.12
+  testnet:
+    build:
+      context: ../
+      dockerfile: soterd/Dockerfile
+    image: soteria-dag/soterd:latest
+    command: soterd --testnet --datadir=/srv/soterd/data --logdir=/srv/soterd/logs --listen=0.0.0.0:5070 --rpclisten=0.0.0.0:5071 --rpcuser=USER --rpcpass=PASS --miningaddr=mrqvnRT17uBvozaaZXZJb2LSeWiWadx96N
+    cap_add:
+      - ALL
+    ports:
+      - "5070"
+      - "5071"
+    networks:
+      testnet:
+        ipv4_address: 10.26.0.11
+networks:
+  simnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.27.0.0/24
+  testnet:
+    driver: bridge
+    ipam:
+     config:
+       - subnet: 10.26.0.0/24

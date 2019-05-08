@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -11,12 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/blockchain/indexers"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/database"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/blockdag"
+	"github.com/soteria-dag/soterd/blockdag/indexers"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/database"
+	"github.com/soteria-dag/soterd/wire"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 var zeroHash = chainhash.Hash{}
@@ -32,7 +33,7 @@ type importResults struct {
 // file to the block database.
 type blockImporter struct {
 	db                database.DB
-	chain             *blockchain.BlockChain
+	chain             *blockdag.BlockDAG
 	r                 io.ReadSeeker
 	processQueue      chan []byte
 	doneChan          chan bool
@@ -94,7 +95,7 @@ func (bi *blockImporter) readBlock() ([]byte, error) {
 // with any potential errors.
 func (bi *blockImporter) processBlock(serializedBlock []byte) (bool, error) {
 	// Deserialize the block which includes checks for malformed blocks.
-	block, err := btcutil.NewBlockFromBytes(serializedBlock)
+	block, err := soterutil.NewBlockFromBytes(serializedBlock)
 	if err != nil {
 		return false, err
 	}
@@ -116,21 +117,25 @@ func (bi *blockImporter) processBlock(serializedBlock []byte) (bool, error) {
 	// Don't bother trying to process orphans.
 	prevHash := &block.MsgBlock().Header.PrevBlock
 	if !prevHash.IsEqual(&zeroHash) {
-		exists, err := bi.chain.HaveBlock(prevHash)
-		if err != nil {
-			return false, err
-		}
-		if !exists {
-			return false, fmt.Errorf("import file contains block "+
-				"%v which does not link to the available "+
-				"block chain", prevHash)
+		// jenlouie: for DAG, check all parents in chain
+		parentsHash := block.MsgBlock().Parents.ParentHashes()
+		for _, parentHash := range parentsHash {
+			exists, err := bi.chain.HaveBlock(&parentHash)
+			if err != nil {
+				return false, err
+			}
+			if !exists {
+				return false, fmt.Errorf("import file contains block "+
+					"%v which does not link to the available "+
+					"block chain", parentHash)
+			}
 		}
 	}
 
 	// Ensure the blocks follows all of the chain rules and match up to the
 	// known checkpoints.
 	isMainChain, isOrphan, err := bi.chain.ProcessBlock(block,
-		blockchain.BFFastAdd)
+		blockdag.BFFastAdd)
 	if err != nil {
 		return false, err
 	}
@@ -306,7 +311,7 @@ func newBlockImporter(db database.DB, r io.ReadSeeker) (*blockImporter, error) {
 	// the addrindex uses data from the txindex during catchup.  If the
 	// addrindex is run first, it may not have the transactions from the
 	// current block indexed.
-	var indexes []indexers.Indexer
+	var indexes []dagindexers.Indexer
 	if cfg.TxIndex || cfg.AddrIndex {
 		// Enable transaction index if address index is enabled since it
 		// requires it.
@@ -317,23 +322,23 @@ func newBlockImporter(db database.DB, r io.ReadSeeker) (*blockImporter, error) {
 		} else {
 			log.Info("Transaction index is enabled")
 		}
-		indexes = append(indexes, indexers.NewTxIndex(db))
+		indexes = append(indexes, dagindexers.NewTxIndex(db))
 	}
 	if cfg.AddrIndex {
 		log.Info("Address index is enabled")
-		indexes = append(indexes, indexers.NewAddrIndex(db, activeNetParams))
+		indexes = append(indexes, dagindexers.NewAddrIndex(db, activeNetParams))
 	}
 
 	// Create an index manager if any of the optional indexes are enabled.
-	var indexManager blockchain.IndexManager
+	var indexManager blockdag.IndexManager
 	if len(indexes) > 0 {
-		indexManager = indexers.NewManager(db, indexes)
+		indexManager = dagindexers.NewManager(db, indexes)
 	}
 
-	chain, err := blockchain.New(&blockchain.Config{
+	chain, err := blockdag.New(&blockdag.Config{
 		DB:           db,
 		ChainParams:  activeNetParams,
-		TimeSource:   blockchain.NewMedianTime(),
+		TimeSource:   blockdag.NewMedianTime(),
 		IndexManager: indexManager,
 	})
 	if err != nil {

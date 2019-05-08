@@ -1,4 +1,5 @@
 // Copyright (c) 2015-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -12,11 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/peer"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/blang/semver"
 	"github.com/btcsuite/go-socks/socks"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/peer"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 // conn mocks a network connection by implementing the net.Conn interface.  It
@@ -100,7 +102,7 @@ type peerStats struct {
 	wantConnected       bool
 	wantVersionKnown    bool
 	wantVerAckReceived  bool
-	wantLastBlock       int32
+	wantMaxBlockHeight  int32
 	wantStartingHeight  int32
 	wantLastPingTime    time.Time
 	wantLastPingNonce   uint64
@@ -153,8 +155,8 @@ func testPeer(t *testing.T, p *peer.Peer, s peerStats) {
 		return
 	}
 
-	if p.LastBlock() != s.wantLastBlock {
-		t.Errorf("testPeer: wrong LastBlock - got %v, want %v", p.LastBlock(), s.wantLastBlock)
+	if p.MaxBlockHeight() != s.wantMaxBlockHeight {
+		t.Errorf("testPeer: wrong MaxBlockHeight - got %v, want %v", p.MaxBlockHeight(), s.wantMaxBlockHeight)
 		return
 	}
 
@@ -231,7 +233,7 @@ func TestPeerConnection(t *testing.T) {
 			},
 		},
 		UserAgentName:     "peer",
-		UserAgentVersion:  "1.0",
+		UserAgentVersion: semver.Version{Major:1, Minor: 0, Patch: 0}, // User agent version to advertise.
 		UserAgentComments: []string{"comment"},
 		ChainParams:       &chaincfg.MainNetParams,
 		ProtocolVersion:   wire.RejectVersion, // Configure with older version
@@ -241,7 +243,7 @@ func TestPeerConnection(t *testing.T) {
 	peer2Cfg := &peer.Config{
 		Listeners:         peer1Cfg.Listeners,
 		UserAgentName:     "peer",
-		UserAgentVersion:  "1.0",
+		UserAgentVersion: semver.Version{Major:1, Minor: 0, Patch: 0}, // User agent version to advertise.
 		UserAgentComments: []string{"comment"},
 		ChainParams:       &chaincfg.MainNetParams,
 		Services:          wire.SFNodeNetwork | wire.SFNodeWitness,
@@ -249,7 +251,7 @@ func TestPeerConnection(t *testing.T) {
 	}
 
 	wantStats1 := peerStats{
-		wantUserAgent:       wire.DefaultUserAgent + "peer:1.0(comment)/",
+		wantUserAgent:       wire.DefaultUserAgent + "peer:1.0.0(comment)/",
 		wantServices:        0,
 		wantProtocolVersion: wire.RejectVersion,
 		wantConnected:       true,
@@ -259,12 +261,12 @@ func TestPeerConnection(t *testing.T) {
 		wantLastPingNonce:   uint64(0),
 		wantLastPingMicros:  int64(0),
 		wantTimeOffset:      int64(0),
-		wantBytesSent:       167, // 143 version + 24 verack
-		wantBytesReceived:   167,
+		wantBytesSent:       203, // 179 version + 24 verack
+		wantBytesReceived:   203,
 		wantWitnessEnabled:  false,
 	}
 	wantStats2 := peerStats{
-		wantUserAgent:       wire.DefaultUserAgent + "peer:1.0(comment)/",
+		wantUserAgent:       wire.DefaultUserAgent + "peer:1.0.0(comment)/",
 		wantServices:        wire.SFNodeNetwork | wire.SFNodeWitness,
 		wantProtocolVersion: wire.RejectVersion,
 		wantConnected:       true,
@@ -274,8 +276,8 @@ func TestPeerConnection(t *testing.T) {
 		wantLastPingNonce:   uint64(0),
 		wantLastPingMicros:  int64(0),
 		wantTimeOffset:      int64(0),
-		wantBytesSent:       167, // 143 version + 24 verack
-		wantBytesReceived:   167,
+		wantBytesSent:       203, // 179 version + 24 verack
+		wantBytesReceived:   203,
 		wantWitnessEnabled:  true,
 	}
 
@@ -445,7 +447,7 @@ func TestPeerListeners(t *testing.T) {
 			},
 		},
 		UserAgentName:     "peer",
-		UserAgentVersion:  "1.0",
+		UserAgentVersion: semver.Version{Major:1, Minor: 0, Patch: 0}, // User agent version to advertise.
 		UserAgentComments: []string{"comment"},
 		ChainParams:       &chaincfg.MainNetParams,
 		Services:          wire.SFNodeBloom,
@@ -613,10 +615,10 @@ func TestOutboundPeer(t *testing.T) {
 
 	peerCfg := &peer.Config{
 		NewestBlock: func() (*chainhash.Hash, int32, error) {
-			return nil, 0, errors.New("newest block not found")
+			return nil, 0, errors.New("newest blocks not found")
 		},
 		UserAgentName:     "peer",
-		UserAgentVersion:  "1.0",
+		UserAgentVersion: semver.Version{Major:1, Minor: 0, Patch: 0}, // User agent version to advertise.
 		UserAgentComments: []string{"comment"},
 		ChainParams:       &chaincfg.MainNetParams,
 		Services:          0,
@@ -655,7 +657,7 @@ func TestOutboundPeer(t *testing.T) {
 
 	// Test Queue Inv
 	fakeBlockHash := &chainhash.Hash{0: 0x00, 1: 0x01}
-	fakeInv := wire.NewInvVect(wire.InvTypeBlock, fakeBlockHash)
+	fakeInv := wire.NewInvVect(wire.InvTypeBlock, fakeBlockHash, 1)
 
 	// Should be noops as the peer could not connect.
 	p.QueueInventory(fakeInv)
@@ -696,7 +698,7 @@ func TestOutboundPeer(t *testing.T) {
 		return
 	}
 	p1.UpdateLastAnnouncedBlock(latestBlockHash)
-	p1.UpdateLastBlockHeight(234440)
+	p1.UpdateMaxBlockHeight(234440)
 	if p1.LastAnnouncedBlock() != latestBlockHash {
 		t.Errorf("LastAnnouncedBlock: wrong block - got %v, want %v",
 			p1.LastAnnouncedBlock(), latestBlockHash)
@@ -757,7 +759,111 @@ func TestOutboundPeer(t *testing.T) {
 func TestUnsupportedVersionPeer(t *testing.T) {
 	peerCfg := &peer.Config{
 		UserAgentName:     "peer",
-		UserAgentVersion:  "1.0",
+		UserAgentVersion: semver.Version{Major:1, Minor: 0, Patch: 0}, // User agent version to advertise.
+		UserAgentComments: []string{"comment"},
+		ChainParams:       &chaincfg.MainNetParams,
+		Services:          0,
+		TrickleInterval:   time.Second * 10,
+	}
+
+	localNA := wire.NewNetAddressIPPort(
+		net.ParseIP("10.0.0.1"),
+		uint16(8333),
+		wire.SFNodeNetwork,
+	)
+	remoteNA := wire.NewNetAddressIPPort(
+		net.ParseIP("10.0.0.2"),
+		uint16(8333),
+		wire.SFNodeNetwork,
+	)
+	localConn, remoteConn := pipe(
+		&conn{laddr: "10.0.0.1:8333", raddr: "10.0.0.2:8333"},
+		&conn{laddr: "10.0.0.2:8333", raddr: "10.0.0.1:8333"},
+	)
+	genHash := peerCfg.ChainParams.GenesisHash.CloneBytes32()
+
+	p, err := peer.NewOutboundPeer(peerCfg, "10.0.0.1:8333")
+	if err != nil {
+		t.Fatalf("NewOutboundPeer: unexpected err - %v\n", err)
+	}
+	p.AssociateConnection(localConn)
+
+	// Read outbound messages to peer into a channel
+	outboundMessages := make(chan wire.Message)
+	go func() {
+		for {
+			_, msg, _, err := wire.ReadMessageN(
+				remoteConn,
+				p.ProtocolVersion(),
+				peerCfg.ChainParams.Net,
+			)
+			if err == io.EOF {
+				close(outboundMessages)
+				return
+			}
+			if err != nil {
+				t.Errorf("Error reading message from local node: %v\n", err)
+				return
+			}
+
+			outboundMessages <- msg
+		}
+	}()
+
+	// Read version message sent to remote peer
+	select {
+	case msg := <-outboundMessages:
+		if _, ok := msg.(*wire.MsgVersion); !ok {
+			t.Fatalf("Expected version message, got [%s]", msg.Command())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Peer did not send version message")
+	}
+
+	// Remote peer writes version message advertising invalid protocol version 1
+	invalidVersionMsg := wire.NewMsgVersion(remoteNA, localNA, 0, 0, &genHash)
+	invalidVersionMsg.ProtocolVersion = 1
+
+	_, err = wire.WriteMessageN(
+		remoteConn.Writer,
+		invalidVersionMsg,
+		uint32(invalidVersionMsg.ProtocolVersion),
+		peerCfg.ChainParams.Net,
+	)
+	if err != nil {
+		t.Fatalf("wire.WriteMessageN: unexpected err - %v\n", err)
+	}
+
+	// Expect peer to disconnect automatically
+	disconnected := make(chan struct{})
+	go func() {
+		p.WaitForDisconnect()
+		disconnected <- struct{}{}
+	}()
+
+	select {
+	case <-disconnected:
+		close(disconnected)
+	case <-time.After(time.Second):
+		t.Fatal("Peer did not automatically disconnect")
+	}
+
+	// Expect no further outbound messages from peer
+	select {
+	case msg, chanOpen := <-outboundMessages:
+		if chanOpen {
+			t.Fatalf("Expected no further messages, received [%s]", msg.Command())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Timeout waiting for remote reader to close")
+	}
+}
+
+// TestMismatchedGenesisBlock tests that the node disconnects from peers with a different genesis block
+func TestMismatchedGenesisBlock(t *testing.T) {
+	peerCfg := &peer.Config{
+		UserAgentName:     "peer",
+		UserAgentVersion: semver.Version{Major:1, Minor: 0, Patch: 0}, // User agent version to advertise.
 		UserAgentComments: []string{"comment"},
 		ChainParams:       &chaincfg.MainNetParams,
 		Services:          0,
@@ -817,14 +923,128 @@ func TestUnsupportedVersionPeer(t *testing.T) {
 		t.Fatal("Peer did not send version message")
 	}
 
-	// Remote peer writes version message advertising invalid protocol version 1
-	invalidVersionMsg := wire.NewMsgVersion(remoteNA, localNA, 0, 0)
-	invalidVersionMsg.ProtocolVersion = 1
+	otherGenHash := [32]byte{
+		0xda, 0xb0, 0xda, 0xb0, 0xda, 0xb0, 0xda, 0xb0,
+		0xda, 0xb0, 0xda, 0xb0, 0xda, 0xb0, 0xda, 0xb0,
+		0xda, 0xb0, 0xda, 0xb0, 0xda, 0xb0, 0xda, 0xb0,
+		0xda, 0xb0, 0xda, 0xb0, 0xda, 0xb0, 0xda, 0xb0,
+	}
+
+	// Remote peer writes version message advertising a different genesis hash
+	remoteMsg := wire.NewMsgVersion(remoteNA, localNA, 0, 0, &otherGenHash)
 
 	_, err = wire.WriteMessageN(
 		remoteConn.Writer,
-		invalidVersionMsg,
-		uint32(invalidVersionMsg.ProtocolVersion),
+		remoteMsg,
+		uint32(remoteMsg.ProtocolVersion),
+		peerCfg.ChainParams.Net,
+	)
+	if err != nil {
+		t.Fatalf("wire.WriteMessageN: unexpected err - %v\n", err)
+	}
+
+	// Expect peer to disconnect automatically
+	disconnected := make(chan struct{})
+	go func() {
+		p.WaitForDisconnect()
+		disconnected <- struct{}{}
+	}()
+
+	select {
+	case <-disconnected:
+		close(disconnected)
+	case <-time.After(time.Second):
+		t.Fatal("Peer did not automatically disconnect")
+	}
+
+	// Expect no further outbound messages from peer
+	select {
+	case msg, chanOpen := <-outboundMessages:
+		if chanOpen {
+			t.Fatalf("Expected no further messages, received [%s]", msg.Command())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Timeout waiting for remote reader to close")
+	}
+}
+
+// TestIncompatibleUAVersion tests that the node disconnects from peers with an incompatible User Agent version
+func TestIncompatibleUAVersion(t *testing.T) {
+	peerCfg := &peer.Config{
+		UserAgentName:     "peer",
+		UserAgentVersion: semver.Version{Major:1, Minor: 0, Patch: 0}, // User agent version to advertise.
+		UserAgentComments: []string{"comment"},
+		ChainParams:       &chaincfg.MainNetParams,
+		Services:          0,
+		TrickleInterval:   time.Second * 10,
+	}
+
+	localNA := wire.NewNetAddressIPPort(
+		net.ParseIP("10.0.0.1"),
+		uint16(8333),
+		wire.SFNodeNetwork,
+	)
+	remoteNA := wire.NewNetAddressIPPort(
+		net.ParseIP("10.0.0.2"),
+		uint16(8333),
+		wire.SFNodeNetwork,
+	)
+	localConn, remoteConn := pipe(
+		&conn{laddr: "10.0.0.1:8333", raddr: "10.0.0.2:8333"},
+		&conn{laddr: "10.0.0.2:8333", raddr: "10.0.0.1:8333"},
+	)
+	genHash := peerCfg.ChainParams.GenesisHash.CloneBytes32()
+
+	p, err := peer.NewOutboundPeer(peerCfg, "10.0.0.1:8333")
+	if err != nil {
+		t.Fatalf("NewOutboundPeer: unexpected err - %v\n", err)
+	}
+	p.AssociateConnection(localConn)
+
+	// Read outbound messages to peer into a channel
+	outboundMessages := make(chan wire.Message)
+	go func() {
+		for {
+			_, msg, _, err := wire.ReadMessageN(
+				remoteConn,
+				p.ProtocolVersion(),
+				peerCfg.ChainParams.Net,
+			)
+			if err == io.EOF {
+				close(outboundMessages)
+				return
+			}
+			if err != nil {
+				t.Errorf("Error reading message from local node: %v\n", err)
+				return
+			}
+
+			outboundMessages <- msg
+		}
+	}()
+
+	// Read version message sent to remote peer
+	select {
+	case msg := <-outboundMessages:
+		if _, ok := msg.(*wire.MsgVersion); !ok {
+			t.Fatalf("Expected version message, got [%s]", msg.Command())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Peer did not send version message")
+	}
+
+	// Remote peer writes version message advertising an incompatible version
+	badUAVer := semver.Version{Major:0, Minor: 3, Patch: 1}
+	badUAVerMsg := wire.NewMsgVersion(remoteNA, localNA, 0, 0, &genHash)
+	err = badUAVerMsg.AddUserAgent(peerCfg.UserAgentName, badUAVer.String())
+	if err != nil {
+		t.Fatalf("badUAVerMsg.AddUserAgent: unexpected err - %s\n", err)
+	}
+
+	_, err = wire.WriteMessageN(
+		remoteConn.Writer,
+		badUAVerMsg,
+		uint32(badUAVerMsg.ProtocolVersion),
 		peerCfg.ChainParams.Net,
 	)
 	if err != nil {

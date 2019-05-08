@@ -1,4 +1,5 @@
 // Copyright (c) 2015-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -7,8 +8,8 @@ package txscript
 import (
 	"sync"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/soterec"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 )
 
 // sigCacheEntry represents an entry in the SigCache. Entries within the
@@ -18,8 +19,8 @@ import (
 // match. In the occasion that two sigHashes collide, the newer sigHash will
 // simply overwrite the existing entry.
 type sigCacheEntry struct {
-	sig    *btcec.Signature
-	pubKey *btcec.PublicKey
+	sig    *soterec.Signature
+	pubKey *soterec.PublicKey
 }
 
 // SigCache implements an ECDSA signature verification cache with a randomized
@@ -55,7 +56,7 @@ func NewSigCache(maxEntries uint) *SigCache {
 //
 // NOTE: This function is safe for concurrent access. Readers won't be blocked
 // unless there exists a writer, adding an entry to the SigCache.
-func (s *SigCache) Exists(sigHash chainhash.Hash, sig *btcec.Signature, pubKey *btcec.PublicKey) bool {
+func (s *SigCache) Exists(sigHash chainhash.Hash, sig *soterec.Signature, pubKey *soterec.PublicKey) bool {
 	s.RLock()
 	entry, ok := s.validSigs[sigHash]
 	s.RUnlock()
@@ -70,7 +71,7 @@ func (s *SigCache) Exists(sigHash chainhash.Hash, sig *btcec.Signature, pubKey *
 //
 // NOTE: This function is safe for concurrent access. Writers will block
 // simultaneous readers until function execution has concluded.
-func (s *SigCache) Add(sigHash chainhash.Hash, sig *btcec.Signature, pubKey *btcec.PublicKey) {
+func (s *SigCache) Add(sigHash chainhash.Hash, sig *soterec.Signature, pubKey *soterec.PublicKey) {
 	s.Lock()
 	defer s.Unlock()
 

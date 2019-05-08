@@ -1,4 +1,5 @@
 // Copyright (c) 2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -18,13 +19,13 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/blockchain"
+	"github.com/soteria-dag/soterd/soterec"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/txscript"
+	"github.com/soteria-dag/soterd/wire"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 const (
@@ -48,9 +49,9 @@ var (
 	// opcode.  It is defined here to reduce garbage creation.
 	opTrueScript = []byte{txscript.OP_TRUE}
 
-	// lowFee is a single satoshi and exists to make the test code more
+	// lowFee is a single nanoSoter and exists to make the test code more
 	// readable.
-	lowFee = btcutil.Amount(1)
+	lowFee = soterutil.Amount(1)
 )
 
 // TestInstance is an interface that describes a specific test instance returned
@@ -154,7 +155,7 @@ func (b RejectedNonCanonicalBlock) FullBlockTestInstance() {}
 // additional metadata such as the block its in and how much it pays.
 type spendableOut struct {
 	prevOut wire.OutPoint
-	amount  btcutil.Amount
+	amount  soterutil.Amount
 }
 
 // makeSpendableOutForTx returns a spendable output for the given transaction
@@ -165,7 +166,7 @@ func makeSpendableOutForTx(tx *wire.MsgTx, txOutIndex uint32) spendableOut {
 			Hash:  tx.TxHash(),
 			Index: txOutIndex,
 		},
-		amount: btcutil.Amount(tx.TxOut[txOutIndex].Value),
+		amount: soterutil.Amount(tx.TxOut[txOutIndex].Value),
 	}
 }
 
@@ -192,13 +193,13 @@ type testGenerator struct {
 	prevCollectedHash chainhash.Hash
 
 	// Common key for any tests which require signed transactions.
-	privKey *btcec.PrivateKey
+	privKey *soterec.PrivateKey
 }
 
 // makeTestGenerator returns a test generator instance initialized with the
 // genesis block as the tip.
 func makeTestGenerator(params *chaincfg.Params) (testGenerator, error) {
-	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x01})
+	privKey, _ := soterec.PrivKeyFromBytes(soterec.S256(), []byte{0x01})
 	genesis := params.GenesisBlock
 	genesisHash := genesis.BlockHash()
 	return testGenerator{
@@ -216,7 +217,7 @@ func makeTestGenerator(params *chaincfg.Params) (testGenerator, error) {
 // payToScriptHashScript returns a standard pay-to-script-hash for the provided
 // redeem script.
 func payToScriptHashScript(redeemScript []byte) []byte {
-	redeemScriptHash := btcutil.Hash160(redeemScript)
+	redeemScriptHash := soterutil.Hash160(redeemScript)
 	script, err := txscript.NewScriptBuilder().
 		AddOp(txscript.OP_HASH160).AddData(redeemScriptHash).
 		AddOp(txscript.OP_EQUAL).Script()
@@ -305,9 +306,9 @@ func calcMerkleRoot(txns []*wire.MsgTx) chainhash.Hash {
 		return chainhash.Hash{}
 	}
 
-	utilTxns := make([]*btcutil.Tx, 0, len(txns))
+	utilTxns := make([]*soterutil.Tx, 0, len(txns))
 	for _, tx := range txns {
-		utilTxns = append(utilTxns, btcutil.NewTx(tx))
+		utilTxns = append(utilTxns, soterutil.NewTx(tx))
 	}
 	merkles := blockchain.BuildMerkleTreeStore(utilTxns, false)
 	return *merkles[len(merkles)-1]
@@ -380,7 +381,7 @@ func solveBlock(header *wire.BlockHeader) bool {
 
 // additionalCoinbase returns a function that itself takes a block and
 // modifies it by adding the provided amount to coinbase subsidy.
-func additionalCoinbase(amount btcutil.Amount) func(*wire.MsgBlock) {
+func additionalCoinbase(amount soterutil.Amount) func(*wire.MsgBlock) {
 	return func(b *wire.MsgBlock) {
 		// Increase the first proof-of-work coinbase subsidy by the
 		// provided amount.
@@ -393,7 +394,7 @@ func additionalCoinbase(amount btcutil.Amount) func(*wire.MsgBlock) {
 //
 // NOTE: The coinbase value is NOT updated to reflect the additional fee.  Use
 // 'additionalCoinbase' for that purpose.
-func additionalSpendFee(fee btcutil.Amount) func(*wire.MsgBlock) {
+func additionalSpendFee(fee soterutil.Amount) func(*wire.MsgBlock) {
 	return func(b *wire.MsgBlock) {
 		// Increase the fee of the spending transaction by reducing the
 		// amount paid.
@@ -435,7 +436,7 @@ func additionalTx(tx *wire.MsgTx) func(*wire.MsgBlock) {
 // transaction ends up with a unique hash.  The script is a simple OP_TRUE
 // script which avoids the need to track addresses and signature scripts in the
 // tests.
-func createSpendTx(spend *spendableOut, fee btcutil.Amount) *wire.MsgTx {
+func createSpendTx(spend *spendableOut, fee soterutil.Amount) *wire.MsgTx {
 	spendTx := wire.NewMsgTx(1)
 	spendTx.AddTxIn(&wire.TxIn{
 		PreviousOutPoint: spend.prevOut,
@@ -454,7 +455,7 @@ func createSpendTx(spend *spendableOut, fee btcutil.Amount) *wire.MsgTx {
 // to ensure the transaction ends up with a unique hash.  The public key script
 // is a simple OP_TRUE script which avoids the need to track addresses and
 // signature scripts in the tests.  The signature script is nil.
-func createSpendTxForTx(tx *wire.MsgTx, fee btcutil.Amount) *wire.MsgTx {
+func createSpendTxForTx(tx *wire.MsgTx, fee soterutil.Amount) *wire.MsgTx {
 	spend := makeSpendableOutForTx(tx, 0)
 	return createSpendTx(&spend, fee)
 }
@@ -487,7 +488,7 @@ func (g *testGenerator) nextBlock(blockName string, spend *spendableOut, mungers
 	if spend != nil {
 		// Create the transaction with a fee of 1 atom for the
 		// miner and increase the coinbase subsidy accordingly.
-		fee := btcutil.Amount(1)
+		fee := soterutil.Amount(1)
 		coinbaseTx.TxOut[0].Value += int64(fee)
 
 		// Create a transaction that spends from the provided spendable
@@ -635,10 +636,10 @@ func nonCanonicalVarInt(val uint32) []byte {
 // encoding.
 func encodeNonCanonicalBlock(b *wire.MsgBlock) []byte {
 	var buf bytes.Buffer
-	b.Header.BtcEncode(&buf, 0, wire.BaseEncoding)
+	b.Header.SotoEncode(&buf, 0, wire.BaseEncoding)
 	buf.Write(nonCanonicalVarInt(uint32(len(b.Transactions))))
 	for _, tx := range b.Transactions {
-		tx.BtcEncode(&buf, 0, wire.BaseEncoding)
+		tx.SotoEncode(&buf, 0, wire.BaseEncoding)
 	}
 	return buf.Bytes()
 }
@@ -1978,7 +1979,7 @@ func Generate(includeLargeReorg bool) (tests [][]TestInstance, err error) {
 		// each contain an OP_RETURN output.
 		//
 		// NOTE: The createSpendTx func adds the OP_RETURN output.
-		zeroFee := btcutil.Amount(0)
+		zeroFee := soterutil.Amount(0)
 		for i := uint32(0); i < numAdditionalOutputs; i++ {
 			spend := makeSpendableOut(b, 1, i+2)
 			tx := createSpendTx(&spend, zeroFee)

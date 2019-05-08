@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -13,7 +14,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 )
 
 // genesisCoinbaseTx is the coinbase transaction for the genesis blocks for
@@ -385,17 +386,14 @@ func BenchmarkDecodeGetHeaders(b *testing.B) {
 	pver := ProtocolVersion
 	var m MsgGetHeaders
 	for i := 0; i < MaxBlockLocatorsPerMsg; i++ {
-		hash, err := chainhash.NewHashFromStr(fmt.Sprintf("%x", i))
-		if err != nil {
-			b.Fatalf("NewHashFromStr: unexpected error: %v", err)
-		}
-		m.AddBlockLocatorHash(hash)
+		height := int32(4)
+		m.AddBlockLocatorHeight(&height)
 	}
 
 	// Serialize it so the bytes are available to test the decode below.
 	var bb bytes.Buffer
-	if err := m.BtcEncode(&bb, pver, LatestEncoding); err != nil {
-		b.Fatalf("MsgGetHeaders.BtcEncode: unexpected error: %v", err)
+	if err := m.SotoEncode(&bb, pver, LatestEncoding); err != nil {
+		b.Fatalf("MsgGetHeaders.SotoEncode: unexpected error: %v", err)
 	}
 	buf := bb.Bytes()
 
@@ -404,7 +402,7 @@ func BenchmarkDecodeGetHeaders(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		r.Seek(0, 0)
-		msg.BtcDecode(r, pver, LatestEncoding)
+		msg.SotoDecode(r, pver, LatestEncoding)
 	}
 }
 
@@ -424,8 +422,8 @@ func BenchmarkDecodeHeaders(b *testing.B) {
 
 	// Serialize it so the bytes are available to test the decode below.
 	var bb bytes.Buffer
-	if err := m.BtcEncode(&bb, pver, LatestEncoding); err != nil {
-		b.Fatalf("MsgHeaders.BtcEncode: unexpected error: %v", err)
+	if err := m.SotoEncode(&bb, pver, LatestEncoding); err != nil {
+		b.Fatalf("MsgHeaders.SotoEncode: unexpected error: %v", err)
 	}
 	buf := bb.Bytes()
 
@@ -434,7 +432,7 @@ func BenchmarkDecodeHeaders(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		r.Seek(0, 0)
-		msg.BtcDecode(r, pver, LatestEncoding)
+		msg.SotoDecode(r, pver, LatestEncoding)
 	}
 }
 
@@ -445,17 +443,14 @@ func BenchmarkDecodeGetBlocks(b *testing.B) {
 	pver := ProtocolVersion
 	var m MsgGetBlocks
 	for i := 0; i < MaxBlockLocatorsPerMsg; i++ {
-		hash, err := chainhash.NewHashFromStr(fmt.Sprintf("%x", i))
-		if err != nil {
-			b.Fatalf("NewHashFromStr: unexpected error: %v", err)
-		}
-		m.AddBlockLocatorHash(hash)
+		height := int32(4)
+		m.AddBlockLocatorHeight(&height)
 	}
 
 	// Serialize it so the bytes are available to test the decode below.
 	var bb bytes.Buffer
-	if err := m.BtcEncode(&bb, pver, LatestEncoding); err != nil {
-		b.Fatalf("MsgGetBlocks.BtcEncode: unexpected error: %v", err)
+	if err := m.SotoEncode(&bb, pver, LatestEncoding); err != nil {
+		b.Fatalf("MsgGetBlocks.SotoEncode: unexpected error: %v", err)
 	}
 	buf := bb.Bytes()
 
@@ -464,7 +459,7 @@ func BenchmarkDecodeGetBlocks(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		r.Seek(0, 0)
-		msg.BtcDecode(r, pver, LatestEncoding)
+		msg.SotoDecode(r, pver, LatestEncoding)
 	}
 }
 
@@ -481,8 +476,8 @@ func BenchmarkDecodeAddr(b *testing.B) {
 
 	// Serialize it so the bytes are available to test the decode below.
 	var bb bytes.Buffer
-	if err := ma.BtcEncode(&bb, pver, LatestEncoding); err != nil {
-		b.Fatalf("MsgAddr.BtcEncode: unexpected error: %v", err)
+	if err := ma.SotoEncode(&bb, pver, LatestEncoding); err != nil {
+		b.Fatalf("MsgAddr.SotoEncode: unexpected error: %v", err)
 	}
 	buf := bb.Bytes()
 
@@ -491,7 +486,7 @@ func BenchmarkDecodeAddr(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		r.Seek(0, 0)
-		msg.BtcDecode(r, pver, LatestEncoding)
+		msg.SotoDecode(r, pver, LatestEncoding)
 	}
 }
 
@@ -506,13 +501,13 @@ func BenchmarkDecodeInv(b *testing.B) {
 		if err != nil {
 			b.Fatalf("NewHashFromStr: unexpected error: %v", err)
 		}
-		m.AddInvVect(NewInvVect(InvTypeBlock, hash))
+		m.AddInvVect(NewInvVect(InvTypeBlock, hash, 1))
 	}
 
 	// Serialize it so the bytes are available to test the decode below.
 	var bb bytes.Buffer
-	if err := m.BtcEncode(&bb, pver, LatestEncoding); err != nil {
-		b.Fatalf("MsgInv.BtcEncode: unexpected error: %v", err)
+	if err := m.SotoEncode(&bb, pver, LatestEncoding); err != nil {
+		b.Fatalf("MsgInv.SotoEncode: unexpected error: %v", err)
 	}
 	buf := bb.Bytes()
 
@@ -521,7 +516,7 @@ func BenchmarkDecodeInv(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		r.Seek(0, 0)
-		msg.BtcDecode(r, pver, LatestEncoding)
+		msg.SotoDecode(r, pver, LatestEncoding)
 	}
 }
 
@@ -536,13 +531,13 @@ func BenchmarkDecodeNotFound(b *testing.B) {
 		if err != nil {
 			b.Fatalf("NewHashFromStr: unexpected error: %v", err)
 		}
-		m.AddInvVect(NewInvVect(InvTypeBlock, hash))
+		m.AddInvVect(NewInvVect(InvTypeBlock, hash, 1))
 	}
 
 	// Serialize it so the bytes are available to test the decode below.
 	var bb bytes.Buffer
-	if err := m.BtcEncode(&bb, pver, LatestEncoding); err != nil {
-		b.Fatalf("MsgNotFound.BtcEncode: unexpected error: %v", err)
+	if err := m.SotoEncode(&bb, pver, LatestEncoding); err != nil {
+		b.Fatalf("MsgNotFound.SotoEncode: unexpected error: %v", err)
 	}
 	buf := bb.Bytes()
 
@@ -551,7 +546,7 @@ func BenchmarkDecodeNotFound(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		r.Seek(0, 0)
-		msg.BtcDecode(r, pver, LatestEncoding)
+		msg.SotoDecode(r, pver, LatestEncoding)
 	}
 }
 
@@ -579,8 +574,8 @@ func BenchmarkDecodeMerkleBlock(b *testing.B) {
 
 	// Serialize it so the bytes are available to test the decode below.
 	var bb bytes.Buffer
-	if err := m.BtcEncode(&bb, pver, LatestEncoding); err != nil {
-		b.Fatalf("MsgMerkleBlock.BtcEncode: unexpected error: %v", err)
+	if err := m.SotoEncode(&bb, pver, LatestEncoding); err != nil {
+		b.Fatalf("MsgMerkleBlock.SotoEncode: unexpected error: %v", err)
 	}
 	buf := bb.Bytes()
 
@@ -589,7 +584,7 @@ func BenchmarkDecodeMerkleBlock(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		r.Seek(0, 0)
-		msg.BtcDecode(r, pver, LatestEncoding)
+		msg.SotoDecode(r, pver, LatestEncoding)
 	}
 }
 

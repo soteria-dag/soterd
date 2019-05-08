@@ -1,5 +1,6 @@
 // Copyright (c) 2015-2017 The btcsuite developers
 // Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -11,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/btcsuite/btcd/btcjson"
+	"github.com/soteria-dag/soterd/soterjson"
 )
 
 // helpDescsEnUS defines the English descriptions used for the help strings.
@@ -21,7 +22,7 @@ var helpDescsEnUS = map[string]string{
 		"The levelspec can either a debug level or of the form:\n" +
 		"<subsystem>=<level>,<subsystem2>=<level2>,...\n" +
 		"The valid debug levels are trace, debug, info, warn, error, and critical.\n" +
-		"The valid subsystems are AMGR, ADXR, BCDB, BMGR, BTCD, CHAN, DISC, PEER, RPCS, SCRP, SRVR, and TXMP.\n" +
+		"The valid subsystems are AMGR, ADXR, BCDB, BMGR, SOTERD, CHAN, DISC, METR, PEER, RPCS, SCRP, SRVR, and TXMP.\n" +
 		"Finally the keyword 'show' will return a list of the available subsystems.",
 	"debuglevel-levelspec":   "The debug level(s) to use or the keyword 'show'",
 	"debuglevel--condition0": "levelspec!=show",
@@ -52,7 +53,7 @@ var helpDescsEnUS = map[string]string{
 	"createrawtransaction-amounts":        "JSON object with the destination addresses as keys and amounts as values",
 	"createrawtransaction-amounts--key":   "address",
 	"createrawtransaction-amounts--value": "n.nnn",
-	"createrawtransaction-amounts--desc":  "The destination address as the key and the amount in BTC as the value",
+	"createrawtransaction-amounts--desc":  "The destination address as the key and the amount in SOTO as the value",
 	"createrawtransaction-locktime":       "Locktime value; a non-zero value will also locktime-activate the inputs",
 	"createrawtransaction--result0":       "Hex-encoded bytes of the serialized transaction",
 
@@ -86,10 +87,10 @@ var helpDescsEnUS = map[string]string{
 	"scriptpubkeyresult-hex":       "Hex-encoded bytes of the script",
 	"scriptpubkeyresult-reqSigs":   "The number of required signatures",
 	"scriptpubkeyresult-type":      "The type of the script (e.g. 'pubkeyhash')",
-	"scriptpubkeyresult-addresses": "The bitcoin addresses associated with this script",
+	"scriptpubkeyresult-addresses": "The soter addresses associated with this script",
 
 	// Vout help.
-	"vout-value":        "The amount in BTC",
+	"vout-value":        "The amount in SOTO",
 	"vout-n":            "The index of this transaction output",
 	"vout-scriptPubKey": "The public key script used to pay coins as a JSON object",
 
@@ -108,7 +109,7 @@ var helpDescsEnUS = map[string]string{
 	"decodescriptresult-asm":       "Disassembly of the script",
 	"decodescriptresult-reqSigs":   "The number of required signatures",
 	"decodescriptresult-type":      "The type of the script (e.g. 'pubkeyhash')",
-	"decodescriptresult-addresses": "The bitcoin addresses associated with this script",
+	"decodescriptresult-addresses": "The soter addresses associated with this script",
 	"decodescriptresult-p2sh":      "The script hash for use in pay-to-script-hash transactions (only present if the provided redeem script is not already a pay-to-script-hash script)",
 
 	// DecodeScriptCmd help.
@@ -116,12 +117,12 @@ var helpDescsEnUS = map[string]string{
 	"decodescript-hexscript": "Hex-encoded script",
 
 	// EstimateFeeCmd help.
-	"estimatefee--synopsis": "Estimate the fee per kilobyte in satoshis " +
+	"estimatefee--synopsis": "Estimate the fee per kilobyte in nanoSoter " +
 		"required for a transaction to be mined before a certain number of " +
 		"blocks have been generated.",
 	"estimatefee-numblocks": "The maximum number of blocks which can be " +
 		"generated before the transaction is mined.",
-	"estimatefee--result0": "Estimated fee per kilobyte in satoshis for a block to " +
+	"estimatefee--result0": "Estimated fee per kilobyte in nanoSoter for a block to " +
 		"be mined in the next NumBlocks blocks.",
 
 	// GenerateCmd help
@@ -147,6 +148,12 @@ var helpDescsEnUS = map[string]string{
 	"getaddednodeinfo--condition1": "dns=true",
 	"getaddednodeinfo--result0":    "List of added peers",
 
+	// GetAddrCacheCmd help.
+	"getaddrcache--synopsis": "Returns all known addresses for all connected peers.",
+
+	// GetAddrCacheResult help.
+	"getaddrcacheresult-addresses": "A list of address strings in ip:port format",
+
 	// GetBestBlockResult help.
 	"getbestblockresult-hash":   "Hex-encoded bytes of the best block hash",
 	"getbestblockresult-height": "Height of the best block",
@@ -163,7 +170,7 @@ var helpDescsEnUS = map[string]string{
 	"getblock--synopsis":   "Returns information about a block given its hash.",
 	"getblock-hash":        "The hash of the block",
 	"getblock-verbose":     "Specifies the block is returned as a JSON object instead of hex-encoded string",
-	"getblock-verbosetx":   "Specifies that each transaction is returned as a JSON object and only applies if the verbose flag is true (btcd extension)",
+	"getblock-verbosetx":   "Specifies that each transaction is returned as a JSON object and only applies if the verbose flag is true (soterd extension)",
 	"getblock--condition0": "verbose=false",
 	"getblock--condition1": "verbose=true",
 	"getblock--result0":    "Hex-encoded bytes of the serialized block",
@@ -187,6 +194,20 @@ var helpDescsEnUS = map[string]string{
 	"getblockchaininforesult-bip9_softforks--key":   "bip9_softforks",
 	"getblockchaininforesult-bip9_softforks--value": "An object describing a particular BIP009 deployment",
 	"getblockchaininforesult-bip9_softforks--desc":  "The status of any defined BIP0009 soft-fork deployments",
+
+	// GetBlockMetrics
+	"getblockmetrics--synopsis": "Returns metrics for blocks generated by this node's miners",
+
+	// GetBlockMetricsResult help.
+	"getblockmetricsresult-blkgencount": "A counter for the number of blocks generated by this node's miners",
+	"getblockmetricsresult-blkgentimes": "A list of block-generation times in milliseconds, for blocks generated by this node's miners",
+	"getblockmetricsresult-blkhashes": "A list of block-hash strings for blocks generated by this node's miners",
+
+	// GetListenAddrsCmd help.
+	"getlistenaddrs--synopsis": "Returns list of addresses server is listening on.",
+
+	// GetListenAddrsResult help.
+	"getlistenaddrsresult-p2p": "A list of address strings in ip:port format",
 
 	// SoftForkDescription help.
 	"softforkdescription-reject":  "The current activation status of the softfork",
@@ -239,9 +260,32 @@ var helpDescsEnUS = map[string]string{
 	"getblockverboseresult-bits":              "The bits which represent the block difficulty",
 	"getblockverboseresult-difficulty":        "The proof-of-work difficulty as a multiple of the minimum difficulty",
 	"getblockverboseresult-previousblockhash": "The hash of the previous block",
-	"getblockverboseresult-nextblockhash":     "The hash of the next block (only if there is one)",
+	"getblockverboseresult-nextblockhashes":   "The hashes of the next blocks (only if there are one or more)",
 	"getblockverboseresult-strippedsize":      "The size of the block without witness data",
 	"getblockverboseresult-weight":            "The weight of the block",
+	"getblockverboseresult-parents":           "The parents of the block, if any",
+
+	// GetDAGColoring
+	"getdagcoloring--synopsis": "Returns the current DAG block coloring and order",
+
+	// GetDAGColoringResult help
+	"getdagcoloringresult-hash": "Block hash",
+	"getdagcoloringresult-isblue": "True is block is in the blue set of the DAG coloring",
+
+	// GetDAGTips
+	"getdagtips--synopsis": "Returns current DAG tip info",
+
+	// GetDAGTipsResult help.
+	"getdagtipsresult-tips":	"The hashes of the dag tips",
+	"getdagtipsresult-hash":	"The virtual hash of the dag tips",
+	"getdagtipsresult-minheight":	"The minimum height of the blocks in tips",
+	"getdagtipsresult-maxheight":	"The maximum height of the blocks in tips",
+	"getdagtipsresult-blkcount":	"The number of blocks in dag",
+
+	// DAGParent
+	"dagparent-hash":          "The hash of the parent in the DAG",
+	"dagparent-parentdata":    "The data in bytes of the parent, if any",
+	"dagparent-version":       "The version of the parent header",
 
 	// GetBlockCountCmd help.
 	"getblockcount--synopsis": "Returns the number of blocks in the longest block chain.",
@@ -272,7 +316,7 @@ var helpDescsEnUS = map[string]string{
 	"getblockheaderverboseresult-bits":              "The bits which represent the block difficulty",
 	"getblockheaderverboseresult-difficulty":        "The proof-of-work difficulty as a multiple of the minimum difficulty",
 	"getblockheaderverboseresult-previousblockhash": "The hash of the previous block",
-	"getblockheaderverboseresult-nextblockhash":     "The hash of the next block (only if there is one)",
+	"getblockheaderverboseresult-nextblockhashes":   "The hashes of the next blocks (only if there are one or more)",
 
 	// TemplateRequest help.
 	"templaterequest-mode":         "This is 'template', 'proposal', or omitted",
@@ -289,7 +333,7 @@ var helpDescsEnUS = map[string]string{
 	"getblocktemplateresulttx-data":    "Hex-encoded transaction data (byte-for-byte)",
 	"getblocktemplateresulttx-hash":    "Hex-encoded transaction hash (little endian if treated as a 256-bit number)",
 	"getblocktemplateresulttx-depends": "Other transactions before this one (by 1-based index in the 'transactions'  list) that must be present in the final block if this one is",
-	"getblocktemplateresulttx-fee":     "Difference in value between transaction inputs and outputs (in Satoshi)",
+	"getblocktemplateresulttx-fee":     "Difference in value between transaction inputs and outputs (in nanoSoter)",
 	"getblocktemplateresulttx-sigops":  "Total number of signature operations as counted for purposes of block limits",
 	"getblocktemplateresulttx-weight":  "The weight of the transaction",
 
@@ -307,7 +351,7 @@ var helpDescsEnUS = map[string]string{
 	"getblocktemplateresult-version":                    "The block version",
 	"getblocktemplateresult-coinbaseaux":                "Data that should be included in the coinbase signature script",
 	"getblocktemplateresult-coinbasetxn":                "Information about the coinbase transaction",
-	"getblocktemplateresult-coinbasevalue":              "Total amount available for the coinbase in Satoshi",
+	"getblocktemplateresult-coinbasevalue":              "Total amount available for the coinbase in nanoSoter",
 	"getblocktemplateresult-workid":                     "This value must be returned with result if provided (not provided)",
 	"getblocktemplateresult-longpollid":                 "Identifier for long poll request which allows monitoring for expiration",
 	"getblocktemplateresult-longpolluri":                "An alternate URI to use for long poll requests if provided (not provided)",
@@ -349,7 +393,7 @@ var helpDescsEnUS = map[string]string{
 	"getconnectioncount--result0":  "The number of connections",
 
 	// GetCurrentNetCmd help.
-	"getcurrentnet--synopsis": "Get bitcoin network the server is running on.",
+	"getcurrentnet--synopsis": "Get soter network the server is running on.",
 	"getcurrentnet--result0":  "The network identifer",
 
 	// GetDifficultyCmd help.
@@ -373,14 +417,14 @@ var helpDescsEnUS = map[string]string{
 	"infochainresult-proxy":           "The proxy used by the server",
 	"infochainresult-difficulty":      "The current target difficulty",
 	"infochainresult-testnet":         "Whether or not server is using testnet",
-	"infochainresult-relayfee":        "The minimum relay fee for non-free transactions in BTC/KB",
+	"infochainresult-relayfee":        "The minimum relay fee for non-free transactions in SOTO/KB",
 	"infochainresult-errors":          "Any current errors",
 
 	// InfoWalletResult help.
 	"infowalletresult-version":         "The version of the server",
 	"infowalletresult-protocolversion": "The latest supported protocol version",
 	"infowalletresult-walletversion":   "The version of the wallet server",
-	"infowalletresult-balance":         "The total bitcoin balance of the wallet",
+	"infowalletresult-balance":         "The total soter balance of the wallet",
 	"infowalletresult-blocks":          "The number of blocks processed",
 	"infowalletresult-timeoffset":      "The time offset",
 	"infowalletresult-connections":     "The number of connected peers",
@@ -390,8 +434,8 @@ var helpDescsEnUS = map[string]string{
 	"infowalletresult-keypoololdest":   "Seconds since 1 Jan 1970 GMT of the oldest pre-generated key in the key pool",
 	"infowalletresult-keypoolsize":     "The number of new keys that are pre-generated",
 	"infowalletresult-unlocked_until":  "The timestamp in seconds since 1 Jan 1970 GMT that the wallet is unlocked for transfers, or 0 if the wallet is locked",
-	"infowalletresult-paytxfee":        "The transaction fee set in BTC/KB",
-	"infowalletresult-relayfee":        "The minimum relay fee for non-free transactions in BTC/KB",
+	"infowalletresult-paytxfee":        "The transaction fee set in SOTO/KB",
+	"infowalletresult-relayfee":        "The minimum relay fee for non-free transactions in SOTO/KB",
 	"infowalletresult-errors":          "Any current errors",
 
 	// GetHeadersCmd help.
@@ -469,7 +513,7 @@ var helpDescsEnUS = map[string]string{
 
 	// GetRawMempoolVerboseResult help.
 	"getrawmempoolverboseresult-size":             "Transaction size in bytes",
-	"getrawmempoolverboseresult-fee":              "Transaction fee in bitcoins",
+	"getrawmempoolverboseresult-fee":              "Transaction fee in soter tokens",
 	"getrawmempoolverboseresult-time":             "Local time transaction entered pool in seconds since 1 Jan 1970 GMT",
 	"getrawmempoolverboseresult-height":           "Block height when transaction entered the pool",
 	"getrawmempoolverboseresult-startingpriority": "Priority when transaction entered the pool",
@@ -495,7 +539,7 @@ var helpDescsEnUS = map[string]string{
 	// GetTxOutResult help.
 	"gettxoutresult-bestblock":     "The block hash that contains the transaction output",
 	"gettxoutresult-confirmations": "The number of confirmations",
-	"gettxoutresult-value":         "The transaction amount in BTC",
+	"gettxoutresult-value":         "The transaction amount in SOTO",
 	"gettxoutresult-scriptPubKey":  "The public key script used to pay coins as a JSON object",
 	"gettxoutresult-version":       "The transaction version",
 	"gettxoutresult-coinbase":      "Whether or not the transaction is a coinbase",
@@ -518,13 +562,19 @@ var helpDescsEnUS = map[string]string{
 	"ping--synopsis": "Queues a ping to be sent to each connected peer.\n" +
 		"Ping times are provided by getpeerinfo via the pingtime and pingwait fields.",
 
+	// RenderDag
+	"renderdag--synopsis": "Returns a representation of the dag in graphviz DOT file format.",
+
+	// RenderDagResult help.
+	"renderdagresult-dot": "The graphviz DOT file contents",
+
 	// SearchRawTransactionsCmd help.
 	"searchrawtransactions--synopsis": "Returns raw data for transactions involving the passed address.\n" +
 		"Returned transactions are pulled from both the database, and transactions currently in the mempool.\n" +
 		"Transactions pulled from the mempool will have the 'confirmations' field set to 0.\n" +
 		"Usage of this RPC requires the optional --addrindex flag to be activated, otherwise all responses will simply return with an error stating the address index has not yet been built.\n" +
 		"Similarly, until the address index has caught up with the current best height, all requests will return an error response in order to avoid serving stale data.",
-	"searchrawtransactions-address":     "The Bitcoin address to search for",
+	"searchrawtransactions-address":     "The soter address to search for",
 	"searchrawtransactions-verbose":     "Specifies the transaction is returned as a JSON object instead of hex-encoded string",
 	"searchrawtransactions--condition0": "verbose=0",
 	"searchrawtransactions--condition1": "verbose=1",
@@ -538,7 +588,7 @@ var helpDescsEnUS = map[string]string{
 	// SendRawTransactionCmd help.
 	"sendrawtransaction--synopsis":     "Submits the serialized, hex-encoded transaction to the local peer and relays it to the network.",
 	"sendrawtransaction-hextx":         "Serialized, hex-encoded signed transaction",
-	"sendrawtransaction-allowhighfees": "Whether or not to allow insanely high fees (btcd does not yet implement this parameter, so it has no effect)",
+	"sendrawtransaction-allowhighfees": "Whether or not to allow insanely high fees (soterd does not yet implement this parameter, so it has no effect)",
 	"sendrawtransaction--result0":      "The hash of the transaction",
 
 	// SetGenerateCmd help.
@@ -547,8 +597,8 @@ var helpDescsEnUS = map[string]string{
 	"setgenerate-genproclimit": "The number of processors (cores) to limit generation to or -1 for default",
 
 	// StopCmd help.
-	"stop--synopsis": "Shutdown btcd.",
-	"stop--result0":  "The string 'btcd stopping.'",
+	"stop--synopsis": "Shutdown soterd.",
+	"stop--result0":  "The string 'soterd stopping.'",
 
 	// SubmitBlockOptions help.
 	"submitblockoptions-workid": "This parameter is currently ignored",
@@ -563,16 +613,16 @@ var helpDescsEnUS = map[string]string{
 
 	// ValidateAddressResult help.
 	"validateaddresschainresult-isvalid": "Whether or not the address is valid",
-	"validateaddresschainresult-address": "The bitcoin address (only when isvalid is true)",
+	"validateaddresschainresult-address": "The soter address (only when isvalid is true)",
 
 	// ValidateAddressCmd help.
 	"validateaddress--synopsis": "Verify an address is valid.",
-	"validateaddress-address":   "Bitcoin address to validate",
+	"validateaddress-address":   "Soter address to validate",
 
 	// VerifyChainCmd help.
 	"verifychain--synopsis": "Verifies the block chain database.\n" +
 		"The actual checks performed by the checklevel parameter are implementation specific.\n" +
-		"For btcd this is:\n" +
+		"For soterd this is:\n" +
 		"checklevel=0 - Look up each block and ensure it can be loaded from the database.\n" +
 		"checklevel=1 - Perform basic context-free sanity checks on each block.",
 	"verifychain-checklevel": "How thorough the block verification is",
@@ -581,7 +631,7 @@ var helpDescsEnUS = map[string]string{
 
 	// VerifyMessageCmd help.
 	"verifymessage--synopsis": "Verify a signed message.",
-	"verifymessage-address":   "The bitcoin address to use for the signature",
+	"verifymessage-address":   "The soter address to use for the signature",
 	"verifymessage-signature": "The base-64 encoded signature provided by the signer",
 	"verifymessage-message":   "The signed message",
 	"verifymessage--result0":  "Whether or not the signature verified",
@@ -619,7 +669,7 @@ var helpDescsEnUS = map[string]string{
 	"outpoint-index": "The index of the outpoint",
 
 	// NotifySpentCmd help.
-	"notifyspent--synopsis": "Send a redeemingtx notification when a transaction spending an outpoint appears in mempool (if relayed to this btcd instance) and when such a transaction first appears in a newly-attached block.",
+	"notifyspent--synopsis": "Send a redeemingtx notification when a transaction spending an outpoint appears in mempool (if relayed to this soterd instance) and when such a transaction first appears in a newly-attached block.",
 	"notifyspent-outpoints": "List of transaction outpoints to monitor.",
 
 	// StopNotifySpentCmd help.
@@ -677,53 +727,59 @@ var rpcResultTypes = map[string][]interface{}{
 	"addnode":               nil,
 	"createrawtransaction":  {(*string)(nil)},
 	"debuglevel":            {(*string)(nil), (*string)(nil)},
-	"decoderawtransaction":  {(*btcjson.TxRawDecodeResult)(nil)},
-	"decodescript":          {(*btcjson.DecodeScriptResult)(nil)},
+	"decoderawtransaction":  {(*soterjson.TxRawDecodeResult)(nil)},
+	"decodescript":          {(*soterjson.DecodeScriptResult)(nil)},
 	"estimatefee":           {(*float64)(nil)},
 	"generate":              {(*[]string)(nil)},
-	"getaddednodeinfo":      {(*[]string)(nil), (*[]btcjson.GetAddedNodeInfoResult)(nil)},
-	"getbestblock":          {(*btcjson.GetBestBlockResult)(nil)},
+	"getaddednodeinfo":      {(*[]string)(nil), (*[]soterjson.GetAddedNodeInfoResult)(nil)},
+	"getaddrcache":          {(*soterjson.GetAddrCacheResult)(nil)},
+	"getbestblock":          {(*soterjson.GetBestBlockResult)(nil)},
 	"getbestblockhash":      {(*string)(nil)},
-	"getblock":              {(*string)(nil), (*btcjson.GetBlockVerboseResult)(nil)},
+	"getblock":              {(*string)(nil), (*soterjson.GetBlockVerboseResult)(nil)},
 	"getblockcount":         {(*int64)(nil)},
 	"getblockhash":          {(*string)(nil)},
-	"getblockheader":        {(*string)(nil), (*btcjson.GetBlockHeaderVerboseResult)(nil)},
-	"getblocktemplate":      {(*btcjson.GetBlockTemplateResult)(nil), (*string)(nil), nil},
-	"getblockchaininfo":     {(*btcjson.GetBlockChainInfoResult)(nil)},
+	"getblockheader":        {(*string)(nil), (*soterjson.GetBlockHeaderVerboseResult)(nil)},
+	"getblocktemplate":      {(*soterjson.GetBlockTemplateResult)(nil), (*string)(nil), nil},
+	"getblockmetrics":       {(*soterjson.GetBlockMetricsResult)(nil)},
+	"getblockchaininfo":     {(*soterjson.GetBlockChainInfoResult)(nil)},
 	"getcfilter":            {(*string)(nil)},
 	"getcfilterheader":      {(*string)(nil)},
 	"getconnectioncount":    {(*int32)(nil)},
 	"getcurrentnet":         {(*uint32)(nil)},
+	"getdagcoloring":    	 {(*[]soterjson.GetDAGColoringResult)(nil)},
+	"getdagtips":     		 {(*soterjson.GetDAGTipsResult)(nil)},
 	"getdifficulty":         {(*float64)(nil)},
 	"getgenerate":           {(*bool)(nil)},
 	"gethashespersec":       {(*float64)(nil)},
 	"getheaders":            {(*[]string)(nil)},
-	"getinfo":               {(*btcjson.InfoChainResult)(nil)},
-	"getmempoolinfo":        {(*btcjson.GetMempoolInfoResult)(nil)},
-	"getmininginfo":         {(*btcjson.GetMiningInfoResult)(nil)},
-	"getnettotals":          {(*btcjson.GetNetTotalsResult)(nil)},
+	"getlistenaddrs":        {(*soterjson.GetListenAddrsResult)(nil)},
+	"getinfo":               {(*soterjson.InfoChainResult)(nil)},
+	"getmempoolinfo":        {(*soterjson.GetMempoolInfoResult)(nil)},
+	"getmininginfo":         {(*soterjson.GetMiningInfoResult)(nil)},
+	"getnettotals":          {(*soterjson.GetNetTotalsResult)(nil)},
 	"getnetworkhashps":      {(*int64)(nil)},
-	"getpeerinfo":           {(*[]btcjson.GetPeerInfoResult)(nil)},
-	"getrawmempool":         {(*[]string)(nil), (*btcjson.GetRawMempoolVerboseResult)(nil)},
-	"getrawtransaction":     {(*string)(nil), (*btcjson.TxRawResult)(nil)},
-	"gettxout":              {(*btcjson.GetTxOutResult)(nil)},
+	"getpeerinfo":           {(*[]soterjson.GetPeerInfoResult)(nil)},
+	"getrawmempool":         {(*[]string)(nil), (*soterjson.GetRawMempoolVerboseResult)(nil)},
+	"getrawtransaction":     {(*string)(nil), (*soterjson.TxRawResult)(nil)},
+	"gettxout":              {(*soterjson.GetTxOutResult)(nil)},
 	"node":                  nil,
 	"help":                  {(*string)(nil), (*string)(nil)},
 	"ping":                  nil,
-	"searchrawtransactions": {(*string)(nil), (*[]btcjson.SearchRawTransactionsResult)(nil)},
+	"renderdag":             {(*soterjson.RenderDagResult)(nil)},
+	"searchrawtransactions": {(*string)(nil), (*[]soterjson.SearchRawTransactionsResult)(nil)},
 	"sendrawtransaction":    {(*string)(nil)},
 	"setgenerate":           nil,
 	"stop":                  {(*string)(nil)},
 	"submitblock":           {nil, (*string)(nil)},
 	"uptime":                {(*int64)(nil)},
-	"validateaddress":       {(*btcjson.ValidateAddressChainResult)(nil)},
+	"validateaddress":       {(*soterjson.ValidateAddressChainResult)(nil)},
 	"verifychain":           {(*bool)(nil)},
 	"verifymessage":         {(*bool)(nil)},
-	"version":               {(*map[string]btcjson.VersionResult)(nil)},
+	"version":               {(*map[string]soterjson.VersionResult)(nil)},
 
 	// Websocket commands.
 	"loadtxfilter":              nil,
-	"session":                   {(*btcjson.SessionResult)(nil)},
+	"session":                   {(*soterjson.SessionResult)(nil)},
 	"notifyblocks":              nil,
 	"stopnotifyblocks":          nil,
 	"notifynewtransactions":     nil,
@@ -733,7 +789,7 @@ var rpcResultTypes = map[string][]interface{}{
 	"notifyspent":               nil,
 	"stopnotifyspent":           nil,
 	"rescan":                    nil,
-	"rescanblocks":              {(*[]btcjson.RescannedBlock)(nil)},
+	"rescanblocks":              {(*[]soterjson.RescannedBlock)(nil)},
 }
 
 // helpCacher provides a concurrent safe type that provides help and usage for
@@ -764,7 +820,7 @@ func (c *helpCacher) rpcMethodHelp(method string) (string, error) {
 	}
 
 	// Generate, cache, and return the help.
-	help, err := btcjson.GenerateHelp(method, helpDescsEnUS, resultTypes...)
+	help, err := soterjson.GenerateHelp(method, helpDescsEnUS, resultTypes...)
 	if err != nil {
 		return "", err
 	}
@@ -787,7 +843,7 @@ func (c *helpCacher) rpcUsage(includeWebsockets bool) (string, error) {
 	// Generate a list of one-line usage for every command.
 	usageTexts := make([]string, 0, len(rpcHandlers))
 	for k := range rpcHandlers {
-		usage, err := btcjson.MethodUsageText(k)
+		usage, err := soterjson.MethodUsageText(k)
 		if err != nil {
 			return "", err
 		}
@@ -797,7 +853,7 @@ func (c *helpCacher) rpcUsage(includeWebsockets bool) (string, error) {
 	// Include websockets commands if requested.
 	if includeWebsockets {
 		for k := range wsHandlers {
-			usage, err := btcjson.MethodUsageText(k)
+			usage, err := soterjson.MethodUsageText(k)
 			if err != nil {
 				return "", err
 			}

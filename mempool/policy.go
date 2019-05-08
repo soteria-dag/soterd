@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -8,10 +9,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/blockdag"
+	"github.com/soteria-dag/soterd/soterutil"
+	"github.com/soteria-dag/soterd/txscript"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 const (
@@ -42,12 +43,12 @@ const (
 	// (1 + 15*74 + 3) + (15*34 + 3) + 23 = 1650
 	maxStandardSigScriptSize = 1650
 
-	// DefaultMinRelayTxFee is the minimum fee in satoshi that is required
+	// DefaultMinRelayTxFee is the minimum fee in nanoSoter that is required
 	// for a transaction to be treated as free for relay and mining
 	// purposes.  It is also used to help determine if a transaction is
 	// considered dust and as a base for calculating minimum required fees
-	// for larger transactions.  This value is in Satoshi/1000 bytes.
-	DefaultMinRelayTxFee = btcutil.Amount(1000)
+	// for larger transactions.  This value is in nanoSoter/1000 bytes.
+	DefaultMinRelayTxFee = soterutil.Amount(1000)
 
 	// maxStandardMultiSigKeys is the maximum number of public keys allowed
 	// in a multi-signature transaction output script for it to be
@@ -58,12 +59,12 @@ const (
 // calcMinRequiredTxRelayFee returns the minimum transaction fee required for a
 // transaction with the passed serialized size to be accepted into the memory
 // pool and relayed.
-func calcMinRequiredTxRelayFee(serializedSize int64, minRelayTxFee btcutil.Amount) int64 {
+func calcMinRequiredTxRelayFee(serializedSize int64, minRelayTxFee soterutil.Amount) int64 {
 	// Calculate the minimum fee for a transaction to be allowed into the
 	// mempool and relayed by scaling the base fee (which is the minimum
-	// free transaction relay fee).  minTxRelayFee is in Satoshi/kB so
+	// free transaction relay fee).  minTxRelayFee is in nanoSoter/kB so
 	// multiply by serializedSize (which is in bytes) and divide by 1000 to
-	// get minimum Satoshis.
+	// get minimum nanoSoters.
 	minFee := (serializedSize * int64(minRelayTxFee)) / 1000
 
 	if minFee == 0 && minRelayTxFee > 0 {
@@ -72,8 +73,8 @@ func calcMinRequiredTxRelayFee(serializedSize int64, minRelayTxFee btcutil.Amoun
 
 	// Set the minimum fee to the maximum possible value if the calculated
 	// fee is not in the valid range for monetary amounts.
-	if minFee < 0 || minFee > btcutil.MaxSatoshi {
-		minFee = btcutil.MaxSatoshi
+	if minFee < 0 || minFee > soterutil.MaxNanoSoter {
+		minFee = soterutil.MaxNanoSoter
 	}
 
 	return minFee
@@ -89,7 +90,7 @@ func calcMinRequiredTxRelayFee(serializedSize int64, minRelayTxFee btcutil.Amoun
 // not perform those checks because the script engine already does this more
 // accurately and concisely via the txscript.ScriptVerifyCleanStack and
 // txscript.ScriptVerifySigPushOnly flags.
-func checkInputsStandard(tx *btcutil.Tx, utxoView *blockchain.UtxoViewpoint) error {
+func checkInputsStandard(tx *soterutil.Tx, utxoView *blockdag.UtxoViewpoint) error {
 	// NOTE: The reference implementation also does a coinbase check here,
 	// but coinbases have already been rejected prior to calling this
 	// function so no need to recheck.
@@ -177,7 +178,7 @@ func checkPkScriptStandard(pkScript []byte, scriptClass txscript.ScriptClass) er
 // Dust is defined in terms of the minimum transaction relay fee.  In
 // particular, if the cost to the network to spend coins is more than 1/3 of the
 // minimum transaction relay fee, it is considered dust.
-func isDust(txOut *wire.TxOut, minRelayTxFee btcutil.Amount) bool {
+func isDust(txOut *wire.TxOut, minRelayTxFee soterutil.Amount) bool {
 	// Unspendable outputs are considered dust.
 	if txscript.IsUnspendable(txOut.PkScript) {
 		return true
@@ -248,19 +249,19 @@ func isDust(txOut *wire.TxOut, minRelayTxFee btcutil.Amount) bool {
 	// being spent and the sequence number of the input.
 	totalSize := txOut.SerializeSize() + 41
 	if txscript.IsWitnessProgram(txOut.PkScript) {
-		totalSize += (107 / blockchain.WitnessScaleFactor)
+		totalSize += (107 / blockdag.WitnessScaleFactor)
 	} else {
 		totalSize += 107
 	}
 
 	// The output is considered dust if the cost to the network to spend the
 	// coins is more than 1/3 of the minimum free transaction relay fee.
-	// minFreeTxRelayFee is in Satoshi/KB, so multiply by 1000 to
+	// minFreeTxRelayFee is in nanoSoter/KB, so multiply by 1000 to
 	// convert to bytes.
 	//
 	// Using the typical values for a pay-to-pubkey-hash transaction from
 	// the breakdown above and the default minimum free transaction relay
-	// fee of 1000, this equates to values less than 546 satoshi being
+	// fee of 1000, this equates to values less than 546 nanoSoter being
 	// considered dust.
 	//
 	// The following is equivalent to (value/totalSize) * (1/3) * 1000
@@ -275,8 +276,8 @@ func isDust(txOut *wire.TxOut, minRelayTxFee btcutil.Amount) bool {
 // finalized, conforming to more stringent size constraints, having scripts
 // of recognized forms, and not containing "dust" outputs (those that are
 // so small it costs more to process them than they are worth).
-func checkTransactionStandard(tx *btcutil.Tx, height int32,
-	medianTimePast time.Time, minRelayTxFee btcutil.Amount,
+func checkTransactionStandard(tx *soterutil.Tx, height int32,
+	medianTimePast time.Time, minRelayTxFee soterutil.Amount,
 	maxTxVersion int32) error {
 
 	// The transaction must be a currently supported version.
@@ -290,7 +291,7 @@ func checkTransactionStandard(tx *btcutil.Tx, height int32,
 
 	// The transaction must be finalized to be standard and therefore
 	// considered for inclusion in a block.
-	if !blockchain.IsFinalizedTransaction(tx, height, medianTimePast) {
+	if !blockdag.IsFinalizedTransaction(tx, height, medianTimePast) {
 		return txRuleError(wire.RejectNonstandard,
 			"transaction is not finalized")
 	}
@@ -299,7 +300,7 @@ func checkTransactionStandard(tx *btcutil.Tx, height int32,
 	// almost as much to process as the sender fees, limit the maximum
 	// size of a transaction.  This also helps mitigate CPU exhaustion
 	// attacks.
-	txWeight := blockchain.GetTransactionWeight(tx)
+	txWeight := blockdag.GetTransactionWeight(tx)
 	if txWeight > maxStandardTxWeight {
 		str := fmt.Sprintf("weight of transaction %v is larger than max "+
 			"allowed weight of %v", txWeight, maxStandardTxWeight)
@@ -372,11 +373,11 @@ func checkTransactionStandard(tx *btcutil.Tx, height int32,
 // transaction's virtual size is based off its weight, creating a discount for
 // any witness data it contains, proportional to the current
 // blockchain.WitnessScaleFactor value.
-func GetTxVirtualSize(tx *btcutil.Tx) int64 {
+func GetTxVirtualSize(tx *soterutil.Tx) int64 {
 	// vSize := (weight(tx) + 3) / 4
 	//       := (((baseSize * 3) + totalSize) + 3) / 4
 	// We add 3 here as a way to compute the ceiling of the prior arithmetic
 	// to 4. The division by 4 creates a discount for wit witness data.
-	return (blockchain.GetTransactionWeight(tx) + (blockchain.WitnessScaleFactor - 1)) /
-		blockchain.WitnessScaleFactor
+	return (blockdag.GetTransactionWeight(tx) + (blockdag.WitnessScaleFactor - 1)) /
+		blockdag.WitnessScaleFactor
 }

@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -22,12 +23,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 // AddrManager provides a concurrency safe address manager for caching potential
-// peers on the bitcoin network.
+// peers on the soter network.
 type AddrManager struct {
 	mtx            sync.Mutex
 	peersFile      string
@@ -665,6 +666,24 @@ func (a *AddrManager) AddressCache() []*wire.NetAddress {
 	return allAddr[0:numAddresses]
 }
 
+// EntireAddressCache returns the whole address cache
+func (a *AddrManager) EntireAddressCache() []*wire.NetAddress {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+
+	addrIndexLen := len(a.addrIndex)
+	if addrIndexLen == 0 {
+		return nil
+	}
+
+	allAddr := make([]*wire.NetAddress, 0, addrIndexLen)
+	for _, v := range a.addrIndex {
+		allAddr = append(allAddr, v.na)
+	}
+
+	return allAddr
+}
+
 // reset resets the address manager by reinitialising the random source
 // and allocating fresh empty bucket storage.
 func (a *AddrManager) reset() {
@@ -1080,7 +1099,7 @@ func (a *AddrManager) GetBestLocalAddress(remoteAddr *wire.NetAddress) *wire.Net
 	return bestAddress
 }
 
-// New returns a new bitcoin address manager.
+// New returns a new soter address manager.
 // Use Start to begin processing asynchronous address updates.
 func New(dataDir string, lookupFunc func(string) ([]net.IP, error)) *AddrManager {
 	am := AddrManager{

@@ -1,4 +1,5 @@
 // Copyright (c) 2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -9,7 +10,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 // TestTxFeePrioHeap ensures the priority queue for transaction fees and
@@ -43,7 +44,7 @@ func TestTxFeePrioHeap(t *testing.T) {
 	prng := rand.New(rand.NewSource(randSeed))
 	for i := 0; i < 1000; i++ {
 		testItems = append(testItems, &txPrioItem{
-			feePerKB: int64(prng.Float64() * btcutil.SatoshiPerBitcoin),
+			feePerKB: int64(prng.Float64() * soterutil.NanoSoterPerSoter),
 			priority: prng.Float64() * 100,
 		})
 	}

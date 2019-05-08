@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -9,8 +10,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 // TestMruInventoryMap ensures the MruInventoryMap behaves as expected including
@@ -23,7 +24,7 @@ func TestMruInventoryMap(t *testing.T) {
 	invVects := make([]*wire.InvVect, 0, numInvVects)
 	for i := 0; i < numInvVects; i++ {
 		hash := &chainhash.Hash{byte(i)}
-		iv := wire.NewInvVect(wire.InvTypeBlock, hash)
+		iv := wire.NewInvVect(wire.InvTypeBlock, hash, 1)
 		invVects = append(invVects, iv)
 	}
 
@@ -82,7 +83,7 @@ testLoop:
 			mruInvMap.Add(invVects[origLruIndex])
 
 			iv := wire.NewInvVect(wire.InvTypeBlock,
-				&chainhash.Hash{0x00, 0x01})
+				&chainhash.Hash{0x00, 0x01}, 1)
 			mruInvMap.Add(iv)
 
 			// Ensure the original lru entry still exists since it
@@ -124,8 +125,8 @@ func TestMruInventoryMapStringer(t *testing.T) {
 	// inventory stringer code.
 	hash1 := &chainhash.Hash{0x01}
 	hash2 := &chainhash.Hash{0x02}
-	iv1 := wire.NewInvVect(wire.InvTypeBlock, hash1)
-	iv2 := wire.NewInvVect(wire.InvTypeBlock, hash2)
+	iv1 := wire.NewInvVect(wire.InvTypeBlock, hash1, 1)
+	iv2 := wire.NewInvVect(wire.InvTypeBlock, hash2, 1)
 
 	// Create new mru inventory map and add the inventory vectors.
 	mruInvMap := newMruInventoryMap(uint(2))
@@ -156,7 +157,7 @@ func BenchmarkMruInventoryList(b *testing.B) {
 		hashBytes := make([]byte, chainhash.HashSize)
 		rand.Read(hashBytes)
 		hash, _ := chainhash.NewHash(hashBytes)
-		iv := wire.NewInvVect(wire.InvTypeBlock, hash)
+		iv := wire.NewInvVect(wire.InvTypeBlock, hash, 1)
 		invVects = append(invVects, iv)
 	}
 	b.StartTimer()

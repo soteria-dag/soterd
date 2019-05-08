@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -31,7 +32,7 @@ const (
 	ErrInvalidIndex
 
 	// ErrUnsupportedAddress is returned when a concrete type that
-	// implements a btcutil.Address is not a supported type.
+	// implements a soterutil.Address is not a supported type.
 	ErrUnsupportedAddress
 
 	// ErrNotMultisigScript is returned from CalcMultiSigStats when the

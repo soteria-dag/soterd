@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2015 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -38,7 +39,7 @@ const (
 	MaxFilterLoadFilterSize = 36000
 )
 
-// MsgFilterLoad implements the Message interface and represents a bitcoin
+// MsgFilterLoad implements the Message interface and represents a soter
 // filterload message which is used to reset a Bloom filter.
 //
 // This message was not added until protocol version BIP0037Version.
@@ -49,13 +50,13 @@ type MsgFilterLoad struct {
 	Flags     BloomUpdateType
 }
 
-// BtcDecode decodes r using the bitcoin protocol encoding into the receiver.
+// SotoDecode decodes r using the soter protocol encoding into the receiver.
 // This is part of the Message interface implementation.
-func (msg *MsgFilterLoad) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
+func (msg *MsgFilterLoad) SotoDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
 	if pver < BIP0037Version {
 		str := fmt.Sprintf("filterload message invalid for protocol "+
 			"version %d", pver)
-		return messageError("MsgFilterLoad.BtcDecode", str)
+		return messageError("MsgFilterLoad.SotoDecode", str)
 	}
 
 	var err error
@@ -73,32 +74,32 @@ func (msg *MsgFilterLoad) BtcDecode(r io.Reader, pver uint32, enc MessageEncodin
 	if msg.HashFuncs > MaxFilterLoadHashFuncs {
 		str := fmt.Sprintf("too many filter hash functions for message "+
 			"[count %v, max %v]", msg.HashFuncs, MaxFilterLoadHashFuncs)
-		return messageError("MsgFilterLoad.BtcDecode", str)
+		return messageError("MsgFilterLoad.SotoDecode", str)
 	}
 
 	return nil
 }
 
-// BtcEncode encodes the receiver to w using the bitcoin protocol encoding.
+// SotoEncode encodes the receiver to w using the soter protocol encoding.
 // This is part of the Message interface implementation.
-func (msg *MsgFilterLoad) BtcEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
+func (msg *MsgFilterLoad) SotoEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
 	if pver < BIP0037Version {
 		str := fmt.Sprintf("filterload message invalid for protocol "+
 			"version %d", pver)
-		return messageError("MsgFilterLoad.BtcEncode", str)
+		return messageError("MsgFilterLoad.SotoEncode", str)
 	}
 
 	size := len(msg.Filter)
 	if size > MaxFilterLoadFilterSize {
 		str := fmt.Sprintf("filterload filter size too large for message "+
 			"[size %v, max %v]", size, MaxFilterLoadFilterSize)
-		return messageError("MsgFilterLoad.BtcEncode", str)
+		return messageError("MsgFilterLoad.SotoEncode", str)
 	}
 
 	if msg.HashFuncs > MaxFilterLoadHashFuncs {
 		str := fmt.Sprintf("too many filter hash functions for message "+
 			"[count %v, max %v]", msg.HashFuncs, MaxFilterLoadHashFuncs)
-		return messageError("MsgFilterLoad.BtcEncode", str)
+		return messageError("MsgFilterLoad.SotoEncode", str)
 	}
 
 	err := WriteVarBytes(w, pver, msg.Filter)
@@ -124,7 +125,7 @@ func (msg *MsgFilterLoad) MaxPayloadLength(pver uint32) uint32 {
 		MaxFilterLoadFilterSize + 9
 }
 
-// NewMsgFilterLoad returns a new bitcoin filterload message that conforms to
+// NewMsgFilterLoad returns a new soter filterload message that conforms to
 // the Message interface.  See MsgFilterLoad for details.
 func NewMsgFilterLoad(filter []byte, hashFuncs uint32, tweak uint32, flags BloomUpdateType) *MsgFilterLoad {
 	return &MsgFilterLoad{

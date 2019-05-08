@@ -1,4 +1,5 @@
 // Copyright (c) 2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -16,9 +17,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/mining"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/miningdag"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 // TODO incorporate Alex Morcos' modifications to Gavin's initial model
@@ -46,8 +47,6 @@ const (
 	DefaultEstimateFeeMinRegisteredBlocks = 3
 
 	bytePerKb = 1000
-
-	btcPerSatoshi = 1E-8
 )
 
 var (
@@ -56,38 +55,38 @@ var (
 	EstimateFeeDatabaseKey = []byte("estimatefee")
 )
 
-// SatoshiPerByte is number with units of satoshis per byte.
-type SatoshiPerByte float64
+// nanoSoterPerByte is number with units of nanoSoters per byte.
+type nanoSoterPerByte float64
 
-// BtcPerKilobyte is number with units of bitcoins per kilobyte.
-type BtcPerKilobyte float64
+// SotoPerKilobyte is number with units of soter tokens per kilobyte.
+type SotoPerKilobyte float64
 
-// ToBtcPerKb returns a float value that represents the given
-// SatoshiPerByte converted to satoshis per kb.
-func (rate SatoshiPerByte) ToBtcPerKb() BtcPerKilobyte {
+// ToSotoPerKb returns a float value that represents the given
+// nanoSoterPerByte converted to nanoSoters per kb.
+func (rate nanoSoterPerByte) ToSotoPerKb() SotoPerKilobyte {
 	// If our rate is the error value, return that.
-	if rate == SatoshiPerByte(-1.0) {
+	if rate == nanoSoterPerByte(-1.0) {
 		return -1.0
 	}
 
-	return BtcPerKilobyte(float64(rate) * bytePerKb * btcPerSatoshi)
+	return SotoPerKilobyte(float64(rate) * bytePerKb * soterutil.NanoSoter)
 }
 
 // Fee returns the fee for a transaction of a given size for
 // the given fee rate.
-func (rate SatoshiPerByte) Fee(size uint32) btcutil.Amount {
+func (rate nanoSoterPerByte) Fee(size uint32) soterutil.Amount {
 	// If our rate is the error value, return that.
-	if rate == SatoshiPerByte(-1) {
-		return btcutil.Amount(-1)
+	if rate == nanoSoterPerByte(-1) {
+		return soterutil.Amount(-1)
 	}
 
-	return btcutil.Amount(float64(rate) * float64(size))
+	return soterutil.Amount(float64(rate) * float64(size))
 }
 
-// NewSatoshiPerByte creates a SatoshiPerByte from an Amount and a
+// NewNanoSoterPerByte creates a nanoSoterPerByte from an Amount and a
 // size in bytes.
-func NewSatoshiPerByte(fee btcutil.Amount, size uint32) SatoshiPerByte {
-	return SatoshiPerByte(float64(fee) / float64(size))
+func NewNanoSoterPerByte(fee soterutil.Amount, size uint32) nanoSoterPerByte {
+	return nanoSoterPerByte(float64(fee) / float64(size))
 }
 
 // observedTransaction represents an observed transaction and some
@@ -96,8 +95,8 @@ type observedTransaction struct {
 	// A transaction hash.
 	hash chainhash.Hash
 
-	// The fee per byte of the transaction in satoshis.
-	feeRate SatoshiPerByte
+	// The fee per byte of the transaction in nanoSoters.
+	feeRate nanoSoterPerByte
 
 	// The block height when it was observed.
 	observed int32
@@ -120,7 +119,7 @@ func deserializeObservedTransaction(r io.Reader) (*observedTransaction, error) {
 	// The first 32 bytes should be a hash.
 	binary.Read(r, binary.BigEndian, &ot.hash)
 
-	// The next 8 are SatoshiPerByte
+	// The next 8 are nanoSoterPerByte
 	binary.Read(r, binary.BigEndian, &ot.feeRate)
 
 	// And next there are two uint32's.
@@ -173,7 +172,7 @@ type FeeEstimator struct {
 	bin      [estimateFeeDepth][]*observedTransaction
 
 	// The cached estimates.
-	cached []SatoshiPerByte
+	cached []nanoSoterPerByte
 
 	// Transactions that have been removed from the bins. This allows us to
 	// revert in case of an orphaned block.
@@ -187,7 +186,7 @@ func NewFeeEstimator(maxRollback, minRegisteredBlocks uint32) *FeeEstimator {
 	return &FeeEstimator{
 		maxRollback:         maxRollback,
 		minRegisteredBlocks: minRegisteredBlocks,
-		lastKnownHeight:     mining.UnminedHeight,
+		lastKnownHeight:     miningdag.UnminedHeight,
 		binSize:             estimateFeeBinSize,
 		maxReplacements:     estimateFeeMaxReplacements,
 		observed:            make(map[chainhash.Hash]*observedTransaction),
@@ -202,7 +201,7 @@ func (ef *FeeEstimator) ObserveTransaction(t *TxDesc) {
 
 	// If we haven't seen a block yet we don't know when this one arrived,
 	// so we ignore it.
-	if ef.lastKnownHeight == mining.UnminedHeight {
+	if ef.lastKnownHeight == miningdag.UnminedHeight {
 		return
 	}
 
@@ -212,15 +211,15 @@ func (ef *FeeEstimator) ObserveTransaction(t *TxDesc) {
 
 		ef.observed[hash] = &observedTransaction{
 			hash:     hash,
-			feeRate:  NewSatoshiPerByte(btcutil.Amount(t.Fee), size),
+			feeRate:  NewNanoSoterPerByte(soterutil.Amount(t.Fee), size),
 			observed: t.Height,
-			mined:    mining.UnminedHeight,
+			mined:    miningdag.UnminedHeight,
 		}
 	}
 }
 
 // RegisterBlock informs the fee estimator of a new block to take into account.
-func (ef *FeeEstimator) RegisterBlock(block *btcutil.Block) error {
+func (ef *FeeEstimator) RegisterBlock(block *soterutil.Block) error {
 	ef.mtx.Lock()
 	defer ef.mtx.Unlock()
 
@@ -228,7 +227,7 @@ func (ef *FeeEstimator) RegisterBlock(block *btcutil.Block) error {
 	ef.cached = nil
 
 	height := block.Height()
-	if height != ef.lastKnownHeight+1 && ef.lastKnownHeight != mining.UnminedHeight {
+	if height != ef.lastKnownHeight+1 && ef.lastKnownHeight != miningdag.UnminedHeight {
 		return fmt.Errorf("intermediate block not recorded; current height is %d; new height is %d",
 			ef.lastKnownHeight, height)
 	}
@@ -238,7 +237,7 @@ func (ef *FeeEstimator) RegisterBlock(block *btcutil.Block) error {
 	ef.numBlocksRegistered++
 
 	// Randomly order txs in block.
-	transactions := make(map[*btcutil.Tx]struct{})
+	transactions := make(map[*soterutil.Tx]struct{})
 	for _, t := range block.Transactions() {
 		transactions[t] = struct{}{}
 	}
@@ -268,7 +267,7 @@ func (ef *FeeEstimator) RegisterBlock(block *btcutil.Block) error {
 
 		// This shouldn't happen if the fee estimator works correctly,
 		// but return an error if it does.
-		if o.mined != mining.UnminedHeight {
+		if o.mined != miningdag.UnminedHeight {
 			log.Error("Estimate fee: transaction ", hash.String(), " has already been mined")
 			return errors.New("Transaction has already been mined")
 		}
@@ -307,7 +306,7 @@ func (ef *FeeEstimator) RegisterBlock(block *btcutil.Block) error {
 
 	// Go through the mempool for txs that have been in too long.
 	for hash, o := range ef.observed {
-		if o.mined == mining.UnminedHeight && height-o.observed >= estimateFeeDepth {
+		if o.mined == miningdag.UnminedHeight && height-o.observed >= estimateFeeDepth {
 			delete(ef.observed, hash)
 		}
 	}
@@ -405,7 +404,7 @@ func (ef *FeeEstimator) rollback() {
 			prev := bin[counter]
 
 			if prev.mined == ef.lastKnownHeight {
-				prev.mined = mining.UnminedHeight
+				prev.mined = miningdag.UnminedHeight
 
 				bin[counter] = o
 
@@ -431,7 +430,7 @@ func (ef *FeeEstimator) rollback() {
 			prev := ef.bin[i][j]
 
 			if prev.mined == ef.lastKnownHeight {
-				prev.mined = mining.UnminedHeight
+				prev.mined = miningdag.UnminedHeight
 
 				newBin := append(ef.bin[i][0:j], ef.bin[i][j+1:l]...)
 				// TODO This line should prevent an unintentional memory
@@ -456,7 +455,7 @@ func (ef *FeeEstimator) rollback() {
 // estimateFeeSet is a set of txs that can that is sorted
 // by the fee per kb rate.
 type estimateFeeSet struct {
-	feeRate []SatoshiPerByte
+	feeRate []nanoSoterPerByte
 	bin     [estimateFeeDepth]uint32
 }
 
@@ -473,9 +472,9 @@ func (b *estimateFeeSet) Swap(i, j int) {
 // estimateFee returns the estimated fee for a transaction
 // to confirm in confirmations blocks from now, given
 // the data set we have collected.
-func (b *estimateFeeSet) estimateFee(confirmations int) SatoshiPerByte {
+func (b *estimateFeeSet) estimateFee(confirmations int) nanoSoterPerByte {
 	if confirmations <= 0 {
-		return SatoshiPerByte(math.Inf(1))
+		return nanoSoterPerByte(math.Inf(1))
 	}
 
 	if confirmations > estimateFeeDepth {
@@ -516,7 +515,7 @@ func (ef *FeeEstimator) newEstimateFeeSet() *estimateFeeSet {
 		capacity += l
 	}
 
-	set.feeRate = make([]SatoshiPerByte, capacity)
+	set.feeRate = make([]nanoSoterPerByte, capacity)
 
 	i := 0
 	for _, b := range ef.bin {
@@ -533,10 +532,10 @@ func (ef *FeeEstimator) newEstimateFeeSet() *estimateFeeSet {
 
 // estimates returns the set of all fee estimates from 1 to estimateFeeDepth
 // confirmations from now.
-func (ef *FeeEstimator) estimates() []SatoshiPerByte {
+func (ef *FeeEstimator) estimates() []nanoSoterPerByte {
 	set := ef.newEstimateFeeSet()
 
-	estimates := make([]SatoshiPerByte, estimateFeeDepth)
+	estimates := make([]nanoSoterPerByte, estimateFeeDepth)
 	for i := 0; i < estimateFeeDepth; i++ {
 		estimates[i] = set.estimateFee(i + 1)
 	}
@@ -546,7 +545,7 @@ func (ef *FeeEstimator) estimates() []SatoshiPerByte {
 
 // EstimateFee estimates the fee per byte to have a tx confirmed a given
 // number of blocks from now.
-func (ef *FeeEstimator) EstimateFee(numBlocks uint32) (BtcPerKilobyte, error) {
+func (ef *FeeEstimator) EstimateFee(numBlocks uint32) (SotoPerKilobyte, error) {
 	ef.mtx.Lock()
 	defer ef.mtx.Unlock()
 
@@ -571,7 +570,7 @@ func (ef *FeeEstimator) EstimateFee(numBlocks uint32) (BtcPerKilobyte, error) {
 		ef.cached = ef.estimates()
 	}
 
-	return ef.cached[int(numBlocks)-1].ToBtcPerKb(), nil
+	return ef.cached[int(numBlocks)-1].ToSotoPerKb(), nil
 }
 
 // In case the format for the serialized version of the FeeEstimator changes,

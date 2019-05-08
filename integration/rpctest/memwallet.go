@@ -1,4 +1,5 @@
 // Copyright (c) 2016-2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -10,15 +11,15 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/rpcclient"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
-	"github.com/btcsuite/btcutil/hdkeychain"
+	"github.com/soteria-dag/soterd/blockdag"
+	"github.com/soteria-dag/soterd/soterec"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/rpcclient"
+	"github.com/soteria-dag/soterd/txscript"
+	"github.com/soteria-dag/soterd/wire"
+	"github.com/soteria-dag/soterd/soterutil"
+	"github.com/soteria-dag/soterd/soterutil/hdkeychain"
 )
 
 var (
@@ -38,7 +39,7 @@ var (
 // maturity period of direct coinbase outputs.
 type utxo struct {
 	pkScript       []byte
-	value          btcutil.Amount
+	value          soterutil.Amount
 	keyIndex       uint32
 	maturityHeight int32
 	isLocked       bool
@@ -55,7 +56,7 @@ func (u *utxo) isMature(height int32) bool {
 // chain.
 type chainUpdate struct {
 	blockHeight  int32
-	filteredTxns []*btcutil.Tx
+	filteredTxns []*soterutil.Tx
 	isConnect    bool // True if connect, false if disconnect
 }
 
@@ -71,8 +72,8 @@ type undoEntry struct {
 // wallet functionality to the harness. The wallet uses a hard-coded HD key
 // hierarchy which promotes reproducibility between harness test runs.
 type memWallet struct {
-	coinbaseKey  *btcec.PrivateKey
-	coinbaseAddr btcutil.Address
+	coinbaseKey  *soterec.PrivateKey
+	coinbaseAddr soterutil.Address
 
 	// hdRoot is the root master private key for the wallet.
 	hdRoot *hdkeychain.ExtendedKey
@@ -86,7 +87,7 @@ type memWallet struct {
 
 	// addrs tracks all addresses belonging to the wallet. The addresses
 	// are indexed by their keypath from the hdRoot.
-	addrs map[uint32]btcutil.Address
+	addrs map[uint32]soterutil.Address
 
 	// utxos is the set of utxos spendable by the wallet.
 	utxos map[wire.OutPoint]*utxo
@@ -139,8 +140,8 @@ func newMemWallet(net *chaincfg.Params, harnessID uint32) (*memWallet, error) {
 	}
 
 	// Track the coinbase generation address to ensure we properly track
-	// newly generated bitcoin we can spend.
-	addrs := make(map[uint32]btcutil.Address)
+	// newly generated soter we can spend.
+	addrs := make(map[uint32]soterutil.Address)
 	addrs[0] = coinbaseAddr
 
 	return &memWallet{
@@ -170,7 +171,7 @@ func (m *memWallet) SyncedHeight() int32 {
 	return m.currentHeight
 }
 
-// SetRPCClient saves the passed rpc connection to btcd as the wallet's
+// SetRPCClient saves the passed rpc connection to soterd as the wallet's
 // personal rpc connection.
 func (m *memWallet) SetRPCClient(rpcClient *rpcclient.Client) {
 	m.rpc = rpcClient
@@ -179,7 +180,7 @@ func (m *memWallet) SetRPCClient(rpcClient *rpcclient.Client) {
 // IngestBlock is a call-back which is to be triggered each time a new block is
 // connected to the main chain. It queues the update for the chain syncer,
 // calling the private version in sequential order.
-func (m *memWallet) IngestBlock(height int32, header *wire.BlockHeader, filteredTxns []*btcutil.Tx) {
+func (m *memWallet) IngestBlock(height int32, header *wire.BlockHeader, filteredTxns []*soterutil.Tx) {
 	// Append this new chain update to the end of the queue of new chain
 	// updates.
 	m.chainMtx.Lock()
@@ -207,7 +208,7 @@ func (m *memWallet) ingestBlock(update *chainUpdate) {
 	}
 	for _, tx := range update.filteredTxns {
 		mtx := tx.MsgTx()
-		isCoinbase := blockchain.IsCoinBaseTx(mtx)
+		isCoinbase := blockdag.IsCoinBaseTx(mtx)
 		txHash := mtx.TxHash()
 		m.evalOutputs(mtx.TxOut, &txHash, isCoinbase, undo)
 		m.evalInputs(mtx.TxIn, undo)
@@ -271,7 +272,7 @@ func (m *memWallet) evalOutputs(outputs []*wire.TxOut, txHash *chainhash.Hash,
 
 			op := wire.OutPoint{Hash: *txHash, Index: uint32(i)}
 			m.utxos[op] = &utxo{
-				value:          btcutil.Amount(output.Value),
+				value:          soterutil.Amount(output.Value),
 				keyIndex:       keyIndex,
 				maturityHeight: maturityHeight,
 				pkScript:       pkScript,
@@ -334,7 +335,7 @@ func (m *memWallet) unwindBlock(update *chainUpdate) {
 // newAddress returns a new address from the wallet's hd key chain.  It also
 // loads the address into the RPC client's transaction filter to ensure any
 // transactions that involve it are delivered via the notifications.
-func (m *memWallet) newAddress() (btcutil.Address, error) {
+func (m *memWallet) newAddress() (soterutil.Address, error) {
 	index := m.hdIndex
 
 	childKey, err := m.hdRoot.Child(index)
@@ -351,7 +352,7 @@ func (m *memWallet) newAddress() (btcutil.Address, error) {
 		return nil, err
 	}
 
-	err = m.rpc.LoadTxFilter(false, []btcutil.Address{addr}, nil)
+	err = m.rpc.LoadTxFilter(false, []soterutil.Address{addr}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -366,22 +367,22 @@ func (m *memWallet) newAddress() (btcutil.Address, error) {
 // NewAddress returns a fresh address spendable by the wallet.
 //
 // This function is safe for concurrent access.
-func (m *memWallet) NewAddress() (btcutil.Address, error) {
+func (m *memWallet) NewAddress() (soterutil.Address, error) {
 	m.Lock()
 	defer m.Unlock()
 
 	return m.newAddress()
 }
 
-// fundTx attempts to fund a transaction sending amt bitcoin. The coins are
+// fundTx attempts to fund a transaction sending amt soter. The coins are
 // selected such that the final amount spent pays enough fees as dictated by the
 // passed fee rate. The passed fee rate should be expressed in
-// satoshis-per-byte. The transaction being funded can optionally include a
+// nanoSoters-per-byte. The transaction being funded can optionally include a
 // change output indicated by the change boolean.
 //
 // NOTE: The memWallet's mutex must be held when this function is called.
-func (m *memWallet) fundTx(tx *wire.MsgTx, amt btcutil.Amount,
-	feeRate btcutil.Amount, change bool) error {
+func (m *memWallet) fundTx(tx *wire.MsgTx, amt soterutil.Amount,
+	feeRate soterutil.Amount, change bool) error {
 
 	const (
 		// spendSize is the largest number of bytes of a sigScript
@@ -390,7 +391,7 @@ func (m *memWallet) fundTx(tx *wire.MsgTx, amt btcutil.Amount,
 	)
 
 	var (
-		amtSelected btcutil.Amount
+		amtSelected soterutil.Amount
 		txSize      int
 	)
 
@@ -413,7 +414,7 @@ func (m *memWallet) fundTx(tx *wire.MsgTx, amt btcutil.Amount,
 		// observing the specified fee rate. If we don't have enough
 		// coins from he current amount selected to pay the fee, then
 		// continue to grab more coins.
-		reqFee := btcutil.Amount(txSize * int(feeRate))
+		reqFee := soterutil.Amount(txSize * int(feeRate))
 		if amtSelected-reqFee < amt {
 			continue
 		}
@@ -448,9 +449,9 @@ func (m *memWallet) fundTx(tx *wire.MsgTx, amt btcutil.Amount,
 
 // SendOutputs creates, then sends a transaction paying to the specified output
 // while observing the passed fee rate. The passed fee rate should be expressed
-// in satoshis-per-byte.
+// in nanoSoters-per-byte.
 func (m *memWallet) SendOutputs(outputs []*wire.TxOut,
-	feeRate btcutil.Amount) (*chainhash.Hash, error) {
+	feeRate soterutil.Amount) (*chainhash.Hash, error) {
 
 	tx, err := m.CreateTransaction(outputs, feeRate, true)
 	if err != nil {
@@ -464,7 +465,7 @@ func (m *memWallet) SendOutputs(outputs []*wire.TxOut,
 // specified outputs while observing the passed fee rate and ignoring a change
 // output. The passed fee rate should be expressed in sat/b.
 func (m *memWallet) SendOutputsWithoutChange(outputs []*wire.TxOut,
-	feeRate btcutil.Amount) (*chainhash.Hash, error) {
+	feeRate soterutil.Amount) (*chainhash.Hash, error) {
 
 	tx, err := m.CreateTransaction(outputs, feeRate, false)
 	if err != nil {
@@ -476,12 +477,12 @@ func (m *memWallet) SendOutputsWithoutChange(outputs []*wire.TxOut,
 
 // CreateTransaction returns a fully signed transaction paying to the specified
 // outputs while observing the desired fee rate. The passed fee rate should be
-// expressed in satoshis-per-byte. The transaction being created can optionally
+// expressed in nanoSoters-per-byte. The transaction being created can optionally
 // include a change output indicated by the change boolean.
 //
 // This function is safe for concurrent access.
 func (m *memWallet) CreateTransaction(outputs []*wire.TxOut,
-	feeRate btcutil.Amount, change bool) (*wire.MsgTx, error) {
+	feeRate soterutil.Amount, change bool) (*wire.MsgTx, error) {
 
 	m.Lock()
 	defer m.Unlock()
@@ -490,9 +491,9 @@ func (m *memWallet) CreateTransaction(outputs []*wire.TxOut,
 
 	// Tally up the total amount to be sent in order to perform coin
 	// selection shortly below.
-	var outputAmt btcutil.Amount
+	var outputAmt soterutil.Amount
 	for _, output := range outputs {
-		outputAmt += btcutil.Amount(output.Value)
+		outputAmt += soterutil.Amount(output.Value)
 		tx.AddTxOut(output)
 	}
 
@@ -562,11 +563,11 @@ func (m *memWallet) UnlockOutputs(inputs []*wire.TxIn) {
 // ConfirmedBalance returns the confirmed balance of the wallet.
 //
 // This function is safe for concurrent access.
-func (m *memWallet) ConfirmedBalance() btcutil.Amount {
+func (m *memWallet) ConfirmedBalance() soterutil.Amount {
 	m.RLock()
 	defer m.RUnlock()
 
-	var balance btcutil.Amount
+	var balance soterutil.Amount
 	for _, utxo := range m.utxos {
 		// Prevent any immature or locked outputs from contributing to
 		// the wallet's total confirmed balance.
@@ -581,9 +582,9 @@ func (m *memWallet) ConfirmedBalance() btcutil.Amount {
 }
 
 // keyToAddr maps the passed private to corresponding p2pkh address.
-func keyToAddr(key *btcec.PrivateKey, net *chaincfg.Params) (btcutil.Address, error) {
+func keyToAddr(key *soterec.PrivateKey, net *chaincfg.Params) (soterutil.Address, error) {
 	serializedKey := key.PubKey().SerializeCompressed()
-	pubKeyAddr, err := btcutil.NewAddressPubKey(serializedKey, net)
+	pubKeyAddr, err := soterutil.NewAddressPubKey(serializedKey, net)
 	if err != nil {
 		return nil, err
 	}

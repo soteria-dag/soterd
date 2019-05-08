@@ -1,4 +1,5 @@
 // Copyright (c) 2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -9,7 +10,7 @@ import (
 	"io"
 )
 
-// MsgFeeFilter implements the Message interface and represents a bitcoin
+// MsgFeeFilter implements the Message interface and represents a soter
 // feefilter message.  It is used to request the receiving peer does not
 // announce any transactions below the specified minimum fee rate.
 //
@@ -19,25 +20,25 @@ type MsgFeeFilter struct {
 	MinFee int64
 }
 
-// BtcDecode decodes r using the bitcoin protocol encoding into the receiver.
+// SotoDecode decodes r using the soter protocol encoding into the receiver.
 // This is part of the Message interface implementation.
-func (msg *MsgFeeFilter) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
+func (msg *MsgFeeFilter) SotoDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
 	if pver < FeeFilterVersion {
 		str := fmt.Sprintf("feefilter message invalid for protocol "+
 			"version %d", pver)
-		return messageError("MsgFeeFilter.BtcDecode", str)
+		return messageError("MsgFeeFilter.SotoDecode", str)
 	}
 
 	return readElement(r, &msg.MinFee)
 }
 
-// BtcEncode encodes the receiver to w using the bitcoin protocol encoding.
+// SotoEncode encodes the receiver to w using the soter protocol encoding.
 // This is part of the Message interface implementation.
-func (msg *MsgFeeFilter) BtcEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
+func (msg *MsgFeeFilter) SotoEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
 	if pver < FeeFilterVersion {
 		str := fmt.Sprintf("feefilter message invalid for protocol "+
 			"version %d", pver)
-		return messageError("MsgFeeFilter.BtcEncode", str)
+		return messageError("MsgFeeFilter.SotoEncode", str)
 	}
 
 	return writeElement(w, msg.MinFee)
@@ -55,7 +56,7 @@ func (msg *MsgFeeFilter) MaxPayloadLength(pver uint32) uint32 {
 	return 8
 }
 
-// NewMsgFeeFilter returns a new bitcoin feefilter message that conforms to
+// NewMsgFeeFilter returns a new soter feefilter message that conforms to
 // the Message interface.  See MsgFeeFilter for details.
 func NewMsgFeeFilter(minfee int64) *MsgFeeFilter {
 	return &MsgFeeFilter{

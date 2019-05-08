@@ -1,4 +1,5 @@
 // Copyright (c) 2015-2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -12,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/database"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/database"
+	"github.com/soteria-dag/soterd/wire"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 const (
@@ -259,7 +260,7 @@ type SpentTxOut struct {
 // main chain.
 //
 // This function is safe for concurrent access.
-func (b *BlockChain) FetchSpendJournal(targetBlock *btcutil.Block) ([]SpentTxOut, error) {
+func (b *BlockChain) FetchSpendJournal(targetBlock *soterutil.Block) ([]SpentTxOut, error) {
 	b.chainLock.RLock()
 	defer b.chainLock.RUnlock()
 
@@ -453,7 +454,7 @@ func serializeSpendJournalEntry(stxos []SpentTxOut) []byte {
 // NOTE: Legacy entries will not have the coinbase flag or height set unless it
 // was the final output spend in the containing transaction.  It is up to the
 // caller to handle this properly by looking the information up in the utxo set.
-func dbFetchSpendJournalEntry(dbTx database.Tx, block *btcutil.Block) ([]SpentTxOut, error) {
+func dbFetchSpendJournalEntry(dbTx database.Tx, block *soterutil.Block) ([]SpentTxOut, error) {
 	// Exclude the coinbase transaction since it can't spend anything.
 	spendBucket := dbTx.Metadata().Bucket(spendJournalBucketName)
 	serialized := spendBucket.Get(block.Hash()[:])
@@ -1004,7 +1005,7 @@ func dbPutBestState(dbTx database.Tx, snapshot *BestState, workSum *big.Int) err
 // the genesis block, so it must only be called on an uninitialized database.
 func (b *BlockChain) createChainState() error {
 	// Create a new node from the genesis block and set it as the best node.
-	genesisBlock := btcutil.NewBlock(b.chainParams.GenesisBlock)
+	genesisBlock := soterutil.NewBlock(b.chainParams.GenesisBlock)
 	genesisBlock.SetHeight(0)
 	header := &genesisBlock.MsgBlock().Header
 	node := newBlockNode(header, nil)
@@ -1242,7 +1243,7 @@ func (b *BlockChain) initChainState() error {
 
 		// Initialize the state related to the best block.
 		blockSize := uint64(len(blockBytes))
-		blockWeight := uint64(GetBlockWeight(btcutil.NewBlock(&block)))
+		blockWeight := uint64(GetBlockWeight(soterutil.NewBlock(&block)))
 		numTxns := uint64(len(block.Transactions))
 		b.stateSnapshot = newBestState(tip, blockSize, blockWeight,
 			numTxns, state.totalTxns, tip.CalcPastMedianTime())
@@ -1307,9 +1308,9 @@ func dbFetchHeaderByHeight(dbTx database.Tx, height int32) (*wire.BlockHeader, e
 }
 
 // dbFetchBlockByNode uses an existing database transaction to retrieve the
-// raw block for the provided node, deserialize it, and return a btcutil.Block
+// raw block for the provided node, deserialize it, and return a soterutil.Block
 // with the height set.
-func dbFetchBlockByNode(dbTx database.Tx, node *blockNode) (*btcutil.Block, error) {
+func dbFetchBlockByNode(dbTx database.Tx, node *blockNode) (*soterutil.Block, error) {
 	// Load the raw block bytes from the database.
 	blockBytes, err := dbTx.FetchBlock(&node.hash)
 	if err != nil {
@@ -1317,7 +1318,7 @@ func dbFetchBlockByNode(dbTx database.Tx, node *blockNode) (*btcutil.Block, erro
 	}
 
 	// Create the encapsulated block and set the height appropriately.
-	block, err := btcutil.NewBlockFromBytes(blockBytes)
+	block, err := soterutil.NewBlockFromBytes(blockBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -1350,7 +1351,7 @@ func dbStoreBlockNode(dbTx database.Tx, node *blockNode) error {
 
 // dbStoreBlock stores the provided block in the database if it is not already
 // there. The full block data is written to ffldb.
-func dbStoreBlock(dbTx database.Tx, block *btcutil.Block) error {
+func dbStoreBlock(dbTx database.Tx, block *soterutil.Block) error {
 	hasBlock, err := dbTx.HasBlock(block.Hash())
 	if err != nil {
 		return err
@@ -1374,7 +1375,7 @@ func blockIndexKey(blockHash *chainhash.Hash, blockHeight uint32) []byte {
 // BlockByHeight returns the block at the given height in the main chain.
 //
 // This function is safe for concurrent access.
-func (b *BlockChain) BlockByHeight(blockHeight int32) (*btcutil.Block, error) {
+func (b *BlockChain) BlockByHeight(blockHeight int32) (*soterutil.Block, error) {
 	// Lookup the block height in the best chain.
 	node := b.bestChain.NodeByHeight(blockHeight)
 	if node == nil {
@@ -1383,7 +1384,7 @@ func (b *BlockChain) BlockByHeight(blockHeight int32) (*btcutil.Block, error) {
 	}
 
 	// Load the block from the database and return it.
-	var block *btcutil.Block
+	var block *soterutil.Block
 	err := b.db.View(func(dbTx database.Tx) error {
 		var err error
 		block, err = dbFetchBlockByNode(dbTx, node)
@@ -1396,7 +1397,7 @@ func (b *BlockChain) BlockByHeight(blockHeight int32) (*btcutil.Block, error) {
 // the appropriate chain height set.
 //
 // This function is safe for concurrent access.
-func (b *BlockChain) BlockByHash(hash *chainhash.Hash) (*btcutil.Block, error) {
+func (b *BlockChain) BlockByHash(hash *chainhash.Hash) (*soterutil.Block, error) {
 	// Lookup the block hash in block index and ensure it is in the best
 	// chain.
 	node := b.index.LookupNode(hash)
@@ -1406,7 +1407,7 @@ func (b *BlockChain) BlockByHash(hash *chainhash.Hash) (*btcutil.Block, error) {
 	}
 
 	// Load the block from the database and return it.
-	var block *btcutil.Block
+	var block *soterutil.Block
 	err := b.db.View(func(dbTx database.Tx) error {
 		var err error
 		block, err = dbFetchBlockByNode(dbTx, node)

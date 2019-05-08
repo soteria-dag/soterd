@@ -1,4 +1,5 @@
 // Copyright (c) 2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -14,14 +15,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/integration/rpctest"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/blockdag"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/integration/rpctest"
+	"github.com/soteria-dag/soterd/soterec"
+	"github.com/soteria-dag/soterd/soterutil"
+	"github.com/soteria-dag/soterd/txscript"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 const (
@@ -31,18 +32,18 @@ const (
 // makeTestOutput creates an on-chain output paying to a freshly generated
 // p2pkh output with the specified amount.
 func makeTestOutput(r *rpctest.Harness, t *testing.T,
-	amt btcutil.Amount) (*btcec.PrivateKey, *wire.OutPoint, []byte, error) {
+	amt soterutil.Amount) (*soterec.PrivateKey, *wire.OutPoint, []byte, error) {
 
 	// Create a fresh key, then send some coins to an address spendable by
 	// that key.
-	key, err := btcec.NewPrivateKey(btcec.S256())
+	key, err := soterec.NewPrivateKey(soterec.S256())
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
 	// Using the key created above, generate a pkScript which it's able to
 	// spend.
-	a, err := btcutil.NewAddressPubKey(key.PubKey().SerializeCompressed(), r.ActiveNet)
+	a, err := soterutil.NewAddressPubKey(key.PubKey().SerializeCompressed(), r.ActiveNet)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -50,7 +51,7 @@ func makeTestOutput(r *rpctest.Harness, t *testing.T,
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	output := &wire.TxOut{PkScript: selfAddrScript, Value: 1e8}
+	output := &wire.TxOut{PkScript: selfAddrScript, Value: soterutil.NanoSoterPerSoter}
 
 	// Next, create and broadcast a transaction paying to the output.
 	fundTx, err := r.CreateTransaction([]*wire.TxOut{output}, 10, true)
@@ -108,8 +109,8 @@ func makeTestOutput(r *rpctest.Harness, t *testing.T,
 func TestBIP0113Activation(t *testing.T) {
 	t.Parallel()
 
-	btcdCfg := []string{"--rejectnonstd"}
-	r, err := rpctest.New(&chaincfg.SimNetParams, nil, btcdCfg)
+	soterdCfg := []string{"--rejectnonstd"}
+	r, err := rpctest.New(&chaincfg.SimNetParams, nil, soterdCfg, false)
 	if err != nil {
 		t.Fatal("unable to create primary harness: ", err)
 	}
@@ -119,7 +120,7 @@ func TestBIP0113Activation(t *testing.T) {
 	defer r.TearDown()
 
 	// Create a fresh output for usage within the test below.
-	const outputValue = btcutil.SatoshiPerBitcoin
+	const outputValue = soterutil.NanoSoterPerSoter
 	outputKey, testOutput, testPkScript, err := makeTestOutput(r, t,
 		outputValue)
 	if err != nil {
@@ -177,7 +178,7 @@ func TestBIP0113Activation(t *testing.T) {
 
 	// However, since the block validation consensus rules haven't yet
 	// activated, a block including the transaction should be accepted.
-	txns := []*btcutil.Tx{btcutil.NewTx(tx)}
+	txns := []*soterutil.Tx{soterutil.NewTx(tx)}
 	block, err := r.GenerateAndSubmitBlock(txns, -1, time.Time{})
 	if err != nil {
 		t.Fatalf("unable to submit block: %v", err)
@@ -206,7 +207,7 @@ func TestBIP0113Activation(t *testing.T) {
 	}
 
 	assertChainHeight(r, t, 299)
-	assertSoftForkStatus(r, t, csvKey, blockchain.ThresholdActive)
+	assertSoftForkStatus(r, t, csvKey, blockdag.ThresholdActive)
 
 	// The timeLockDeltas slice represents a series of deviations from the
 	// current MTP which will be used to test border conditions w.r.t
@@ -266,7 +267,7 @@ func TestBIP0113Activation(t *testing.T) {
 				"due to being  non-final, instead: %v", err)
 		}
 
-		txns = []*btcutil.Tx{btcutil.NewTx(tx)}
+		txns = []*soterutil.Tx{soterutil.NewTx(tx)}
 		_, err := r.GenerateAndSubmitBlock(txns, -1, time.Time{})
 		if err == nil && timeLockDelta >= 0 {
 			t.Fatal("block should be rejected due to non-final " +
@@ -281,12 +282,12 @@ func TestBIP0113Activation(t *testing.T) {
 // createCSVOutput creates an output paying to a trivially redeemable CSV
 // pkScript with the specified time-lock.
 func createCSVOutput(r *rpctest.Harness, t *testing.T,
-	numSatoshis btcutil.Amount, timeLock int32,
+	numNanoSoters soterutil.Amount, timeLock int32,
 	isSeconds bool) ([]byte, *wire.OutPoint, *wire.MsgTx, error) {
 
 	// Convert the time-lock to the proper sequence lock based according to
 	// if the lock is seconds or time based.
-	sequenceLock := blockchain.LockTimeToSequence(isSeconds,
+	sequenceLock := blockdag.LockTimeToSequence(isSeconds,
 		uint32(timeLock))
 
 	// Our CSV script is simply: <sequenceLock> OP_CSV OP_DROP
@@ -301,7 +302,7 @@ func createCSVOutput(r *rpctest.Harness, t *testing.T,
 
 	// Using the script generated above, create a P2SH output which will be
 	// accepted into the mempool.
-	p2shAddr, err := btcutil.NewAddressScriptHash(csvScript, r.ActiveNet)
+	p2shAddr, err := soterutil.NewAddressScriptHash(csvScript, r.ActiveNet)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -311,7 +312,7 @@ func createCSVOutput(r *rpctest.Harness, t *testing.T,
 	}
 	output := &wire.TxOut{
 		PkScript: p2shScript,
-		Value:    int64(numSatoshis),
+		Value:    int64(numNanoSoters),
 	}
 
 	// Finally create a valid transaction which creates the output crafted
@@ -404,8 +405,8 @@ func TestBIP0068AndBIP0112Activation(t *testing.T) {
 	// (sequence locks) and BIP 112 rule-sets which add input-age based
 	// relative lock times.
 
-	btcdCfg := []string{"--rejectnonstd"}
-	r, err := rpctest.New(&chaincfg.SimNetParams, nil, btcdCfg)
+	soterdCfg := []string{"--rejectnonstd"}
+	r, err := rpctest.New(&chaincfg.SimNetParams, nil, soterdCfg, false)
 	if err != nil {
 		t.Fatal("unable to create primary harness: ", err)
 	}
@@ -414,7 +415,7 @@ func TestBIP0068AndBIP0112Activation(t *testing.T) {
 	}
 	defer r.TearDown()
 
-	assertSoftForkStatus(r, t, csvKey, blockchain.ThresholdStarted)
+	assertSoftForkStatus(r, t, csvKey, blockdag.ThresholdStarted)
 
 	harnessAddr, err := r.NewAddress()
 	if err != nil {
@@ -426,7 +427,7 @@ func TestBIP0068AndBIP0112Activation(t *testing.T) {
 	}
 
 	const (
-		outputAmt         = btcutil.SatoshiPerBitcoin
+		outputAmt         = soterutil.NanoSoterPerSoter
 		relativeBlockLock = 10
 	)
 
@@ -460,7 +461,7 @@ func TestBIP0068AndBIP0112Activation(t *testing.T) {
 		assertTxInBlock(r, t, blocks[0], &txid)
 
 		// Generate a custom transaction which spends the CSV output.
-		sequenceNum := blockchain.LockTimeToSequence(false, 10)
+		sequenceNum := blockdag.LockTimeToSequence(false, 10)
 		spendingTx, err := spendCSVOutput(redeemScript, testUTXO,
 			sequenceNum, sweepOutput, txVersion)
 		if err != nil {
@@ -478,7 +479,7 @@ func TestBIP0068AndBIP0112Activation(t *testing.T) {
 		// However, this transaction should be accepted in a custom
 		// generated block as CSV validation for scripts within blocks
 		// shouldn't yet be active.
-		txns := []*btcutil.Tx{btcutil.NewTx(spendingTx)}
+		txns := []*soterutil.Tx{soterutil.NewTx(spendingTx)}
 		block, err := r.GenerateAndSubmitBlock(txns, -1, time.Time{})
 		if err != nil {
 			t.Fatalf("unable to submit block: %v", err)
@@ -501,7 +502,7 @@ func TestBIP0068AndBIP0112Activation(t *testing.T) {
 	}
 
 	assertChainHeight(r, t, 299)
-	assertSoftForkStatus(r, t, csvKey, blockchain.ThresholdActive)
+	assertSoftForkStatus(r, t, csvKey, blockdag.ThresholdActive)
 
 	// Knowing the number of outputs needed for the tests below, create a
 	// fresh output for use within each of the test-cases below.
@@ -591,7 +592,7 @@ func TestBIP0068AndBIP0112Activation(t *testing.T) {
 		// should be rejected as its version number is 1, and only tx
 		// of version > 2 will trigger the CSV behavior.
 		{
-			tx:     makeTxCase(blockchain.LockTimeToSequence(false, 100), 1),
+			tx:     makeTxCase(blockdag.LockTimeToSequence(false, 100), 1),
 			accept: false,
 		},
 		// A transaction of version 2 spending a single input. The
@@ -599,7 +600,7 @@ func TestBIP0068AndBIP0112Activation(t *testing.T) {
 		// bit it set. The transaction should be rejected as a result.
 		{
 			tx: makeTxCase(
-				blockchain.LockTimeToSequence(false, 1)|wire.SequenceLockTimeDisabled,
+				blockdag.LockTimeToSequence(false, 1)|wire.SequenceLockTimeDisabled,
 				2,
 			),
 			accept: false,
@@ -609,14 +610,14 @@ func TestBIP0068AndBIP0112Activation(t *testing.T) {
 		// but the CSV output requires a 10 block relative lock-time.
 		// Therefore, the transaction should be rejected.
 		{
-			tx:     makeTxCase(blockchain.LockTimeToSequence(false, 9), 2),
+			tx:     makeTxCase(blockdag.LockTimeToSequence(false, 9), 2),
 			accept: false,
 		},
 		// A v2 transaction with a single input having a 10 block
 		// relative time lock. The referenced input is 11 blocks old so
 		// the transaction should be accepted.
 		{
-			tx:     makeTxCase(blockchain.LockTimeToSequence(false, 10), 2),
+			tx:     makeTxCase(blockdag.LockTimeToSequence(false, 10), 2),
 			accept: true,
 		},
 		// A v2 transaction with a single input having a 11 block
@@ -624,14 +625,14 @@ func TestBIP0068AndBIP0112Activation(t *testing.T) {
 		// 11 and the CSV op-code requires 10 blocks to have passed, so
 		// this transaction should be accepted.
 		{
-			tx:     makeTxCase(blockchain.LockTimeToSequence(false, 11), 2),
+			tx:     makeTxCase(blockdag.LockTimeToSequence(false, 11), 2),
 			accept: true,
 		},
 		// A v2 transaction whose input has a 1000 blck relative time
 		// lock.  This should be rejected as the input's age is only 11
 		// blocks.
 		{
-			tx:     makeTxCase(blockchain.LockTimeToSequence(false, 1000), 2),
+			tx:     makeTxCase(blockdag.LockTimeToSequence(false, 1000), 2),
 			accept: false,
 		},
 		// A v2 transaction with a single input having a 512,000 second
@@ -639,14 +640,14 @@ func TestBIP0068AndBIP0112Activation(t *testing.T) {
 		// days worth of blocks haven't yet been mined. The referenced
 		// input doesn't have sufficient age.
 		{
-			tx:     makeTxCase(blockchain.LockTimeToSequence(true, 512000), 2),
+			tx:     makeTxCase(blockdag.LockTimeToSequence(true, 512000), 2),
 			accept: false,
 		},
 		// A v2 transaction whose single input has a 512 second
 		// relative time-lock. This transaction should be accepted as
 		// finalized.
 		{
-			tx:     makeTxCase(blockchain.LockTimeToSequence(true, 512), 2),
+			tx:     makeTxCase(blockdag.LockTimeToSequence(true, 512), 2),
 			accept: true,
 		},
 	}
@@ -675,7 +676,7 @@ func TestBIP0068AndBIP0112Activation(t *testing.T) {
 		// If the transaction should be rejected, manually mine a block
 		// with the non-final transaction. It should be rejected.
 		if !test.accept {
-			txns := []*btcutil.Tx{btcutil.NewTx(test.tx)}
+			txns := []*soterutil.Tx{soterutil.NewTx(test.tx)}
 			_, err := r.GenerateAndSubmitBlock(txns, -1, time.Time{})
 			if err == nil {
 				t.Fatalf("test #%d, invalid block accepted", i)

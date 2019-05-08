@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -10,7 +11,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 	"github.com/davecgh/go-spew/spew"
 )
 
@@ -38,7 +39,7 @@ func TestNotFound(t *testing.T) {
 
 	// Ensure inventory vectors are added properly.
 	hash := chainhash.Hash{}
-	iv := NewInvVect(InvTypeBlock, &hash)
+	iv := NewInvVect(InvTypeBlock, &hash, 1)
 	err := msg.AddInvVect(iv)
 	if err != nil {
 		t.Errorf("AddInvVect: %v", err)
@@ -76,8 +77,8 @@ func TestNotFoundWire(t *testing.T) {
 		t.Errorf("NewHashFromStr: %v", err)
 	}
 
-	iv := NewInvVect(InvTypeBlock, blockHash)
-	iv2 := NewInvVect(InvTypeTx, txHash)
+	iv := NewInvVect(InvTypeBlock, blockHash, 1)
+	iv2 := NewInvVect(InvTypeTx, txHash, 1)
 
 	// Empty notfound message.
 	NoInv := NewMsgNotFound()
@@ -96,11 +97,13 @@ func TestNotFoundWire(t *testing.T) {
 		0xe7, 0x67, 0x13, 0xd0, 0x75, 0xd4, 0xa1, 0x0b,
 		0x79, 0x40, 0x08, 0xa6, 0x36, 0xac, 0xc2, 0x4b,
 		0x26, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Block 203707 hash
+		0x01, 0x00, 0x00, 0x00, // Block 203707 height
 		0x01, 0x00, 0x00, 0x00, // InvTypeTx
 		0xf0, 0xfa, 0xcc, 0x7a, 0x48, 0x1b, 0xe7, 0xcf,
 		0x42, 0xbd, 0x7f, 0xe5, 0x4f, 0x2c, 0x2a, 0xf8,
 		0xef, 0x81, 0x9a, 0xdd, 0x93, 0xee, 0x55, 0x98,
 		0x0a, 0xf0, 0x2b, 0x39, 0xc7, 0x3d, 0x8a, 0xd2, // Tx 1 of block 203707 hash
+		0x01, 0x00, 0x00, 0x00, // Tx 1 of block 203707 height
 	}
 
 	tests := []struct {
@@ -205,13 +208,13 @@ func TestNotFoundWire(t *testing.T) {
 	for i, test := range tests {
 		// Encode the message to wire format.
 		var buf bytes.Buffer
-		err := test.in.BtcEncode(&buf, test.pver, test.enc)
+		err := test.in.SotoEncode(&buf, test.pver, test.enc)
 		if err != nil {
-			t.Errorf("BtcEncode #%d error %v", i, err)
+			t.Errorf("SotoEncode #%d error %v", i, err)
 			continue
 		}
 		if !bytes.Equal(buf.Bytes(), test.buf) {
-			t.Errorf("BtcEncode #%d\n got: %s want: %s", i,
+			t.Errorf("SotoEncode #%d\n got: %s want: %s", i,
 				spew.Sdump(buf.Bytes()), spew.Sdump(test.buf))
 			continue
 		}
@@ -219,13 +222,13 @@ func TestNotFoundWire(t *testing.T) {
 		// Decode the message from wire format.
 		var msg MsgNotFound
 		rbuf := bytes.NewReader(test.buf)
-		err = msg.BtcDecode(rbuf, test.pver, test.enc)
+		err = msg.SotoDecode(rbuf, test.pver, test.enc)
 		if err != nil {
-			t.Errorf("BtcDecode #%d error %v", i, err)
+			t.Errorf("SotoDecode #%d error %v", i, err)
 			continue
 		}
 		if !reflect.DeepEqual(&msg, test.out) {
-			t.Errorf("BtcDecode #%d\n got: %s want: %s", i,
+			t.Errorf("SotoDecode #%d\n got: %s want: %s", i,
 				spew.Sdump(msg), spew.Sdump(test.out))
 			continue
 		}
@@ -245,7 +248,7 @@ func TestNotFoundWireErrors(t *testing.T) {
 		t.Errorf("NewHashFromStr: %v", err)
 	}
 
-	iv := NewInvVect(InvTypeBlock, blockHash)
+	iv := NewInvVect(InvTypeBlock, blockHash, 1)
 
 	// Base message used to induce errors.
 	baseNotFound := NewMsgNotFound()
@@ -257,6 +260,7 @@ func TestNotFoundWireErrors(t *testing.T) {
 		0xe7, 0x67, 0x13, 0xd0, 0x75, 0xd4, 0xa1, 0x0b,
 		0x79, 0x40, 0x08, 0xa6, 0x36, 0xac, 0xc2, 0x4b,
 		0x26, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Block 203707 hash
+		0x01, 0x00, 0x00, 0x00, // Block 203707 height
 	}
 
 	// Message that forces an error by having more than the max allowed inv
@@ -291,9 +295,9 @@ func TestNotFoundWireErrors(t *testing.T) {
 	for i, test := range tests {
 		// Encode to wire format.
 		w := newFixedWriter(test.max)
-		err := test.in.BtcEncode(w, test.pver, test.enc)
+		err := test.in.SotoEncode(w, test.pver, test.enc)
 		if reflect.TypeOf(err) != reflect.TypeOf(test.writeErr) {
-			t.Errorf("BtcEncode #%d wrong error got: %v, want: %v",
+			t.Errorf("SotoEncode #%d wrong error got: %v, want: %v",
 				i, err, test.writeErr)
 			continue
 		}
@@ -302,7 +306,7 @@ func TestNotFoundWireErrors(t *testing.T) {
 		// equality.
 		if _, ok := err.(*MessageError); !ok {
 			if err != test.writeErr {
-				t.Errorf("BtcEncode #%d wrong error got: %v, "+
+				t.Errorf("SotoEncode #%d wrong error got: %v, "+
 					"want: %v", i, err, test.writeErr)
 				continue
 			}
@@ -311,9 +315,9 @@ func TestNotFoundWireErrors(t *testing.T) {
 		// Decode from wire format.
 		var msg MsgNotFound
 		r := newFixedReader(test.max, test.buf)
-		err = msg.BtcDecode(r, test.pver, test.enc)
+		err = msg.SotoDecode(r, test.pver, test.enc)
 		if reflect.TypeOf(err) != reflect.TypeOf(test.readErr) {
-			t.Errorf("BtcDecode #%d wrong error got: %v, want: %v",
+			t.Errorf("SotoDecode #%d wrong error got: %v, want: %v",
 				i, err, test.readErr)
 			continue
 		}
@@ -322,7 +326,7 @@ func TestNotFoundWireErrors(t *testing.T) {
 		// equality.
 		if _, ok := err.(*MessageError); !ok {
 			if err != test.readErr {
-				t.Errorf("BtcDecode #%d wrong error got: %v, "+
+				t.Errorf("SotoDecode #%d wrong error got: %v, "+
 					"want: %v", i, err, test.readErr)
 				continue
 			}

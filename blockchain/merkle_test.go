@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -7,12 +8,12 @@ package blockchain
 import (
 	"testing"
 
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 // TestMerkle tests the BuildMerkleTreeStore API.
 func TestMerkle(t *testing.T) {
-	block := btcutil.NewBlock(&Block100000)
+	block := soterutil.NewBlock(&Block100000)
 	merkles := BuildMerkleTreeStore(block.Transactions(), false)
 	calculatedMerkleRoot := merkles[len(merkles)-1]
 	wantMerkle := &Block100000.Header.MerkleRoot

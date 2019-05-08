@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -9,9 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/btcsuite/btcd/btcjson"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/soterjson"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 // FutureGenerateResult is a future promise to deliver the result of a
@@ -52,7 +53,7 @@ func (r FutureGenerateResult) Receive() ([]*chainhash.Hash, error) {
 //
 // See Generate for the blocking version and more details.
 func (c *Client) GenerateAsync(numBlocks uint32) FutureGenerateResult {
-	cmd := btcjson.NewGenerateCmd(numBlocks)
+	cmd := soterjson.NewGenerateCmd(numBlocks)
 	return c.sendCmd(cmd)
 }
 
@@ -89,7 +90,7 @@ func (r FutureGetGenerateResult) Receive() (bool, error) {
 //
 // See GetGenerate for the blocking version and more details.
 func (c *Client) GetGenerateAsync() FutureGetGenerateResult {
-	cmd := btcjson.NewGetGenerateCmd()
+	cmd := soterjson.NewGetGenerateCmd()
 	return c.sendCmd(cmd)
 }
 
@@ -115,7 +116,7 @@ func (r FutureSetGenerateResult) Receive() error {
 //
 // See SetGenerate for the blocking version and more details.
 func (c *Client) SetGenerateAsync(enable bool, numCPUs int) FutureSetGenerateResult {
-	cmd := btcjson.NewSetGenerateCmd(enable, &numCPUs)
+	cmd := soterjson.NewSetGenerateCmd(enable, &numCPUs)
 	return c.sendCmd(cmd)
 }
 
@@ -153,7 +154,7 @@ func (r FutureGetHashesPerSecResult) Receive() (int64, error) {
 //
 // See GetHashesPerSec for the blocking version and more details.
 func (c *Client) GetHashesPerSecAsync() FutureGetHashesPerSecResult {
-	cmd := btcjson.NewGetHashesPerSecCmd()
+	cmd := soterjson.NewGetHashesPerSecCmd()
 	return c.sendCmd(cmd)
 }
 
@@ -164,20 +165,49 @@ func (c *Client) GetHashesPerSec() (int64, error) {
 	return c.GetHashesPerSecAsync().Receive()
 }
 
+// FutureGetBlockMetricsResult is a promise to deliver the result of a GetBlockMetricsAsync RPC call (or an error)
+type FutureGetBlockMetricsResult chan *response
+
+// Receive waits for the response promised by the future and returns the block-generation information
+func (r FutureGetBlockMetricsResult) Receive() (*soterjson.GetBlockMetricsResult, error) {
+	res, err := receiveFuture(r)
+	if err != nil {
+		return nil, err
+	}
+
+	var blkTimes soterjson.GetBlockMetricsResult
+	if err := json.Unmarshal(res, &blkTimes); err != nil {
+		return nil, err
+	}
+	return &blkTimes, nil
+}
+
+// GetBlockMetricsAsync returns an instance of a type that can be used to get the results of the RPC call at some
+// future time by invoking the Receive function on the returned instance.
+func (c *Client) GetBlockMetricsAsync() FutureGetBlockMetricsResult {
+	cmd := soterjson.NewGetBlockMetricsCmd()
+	return c.sendCmd(cmd)
+}
+
+// GetBlockMetrics returns the block generation time in milliseconds for newly-generated blocks
+func (c *Client) GetBlockMetrics() (*soterjson.GetBlockMetricsResult, error) {
+	return c.GetBlockMetricsAsync().Receive()
+}
+
 // FutureGetMiningInfoResult is a future promise to deliver the result of a
 // GetMiningInfoAsync RPC invocation (or an applicable error).
 type FutureGetMiningInfoResult chan *response
 
 // Receive waits for the response promised by the future and returns the mining
 // information.
-func (r FutureGetMiningInfoResult) Receive() (*btcjson.GetMiningInfoResult, error) {
+func (r FutureGetMiningInfoResult) Receive() (*soterjson.GetMiningInfoResult, error) {
 	res, err := receiveFuture(r)
 	if err != nil {
 		return nil, err
 	}
 
 	// Unmarshal result as a getmininginfo result object.
-	var infoResult btcjson.GetMiningInfoResult
+	var infoResult soterjson.GetMiningInfoResult
 	err = json.Unmarshal(res, &infoResult)
 	if err != nil {
 		return nil, err
@@ -192,12 +222,12 @@ func (r FutureGetMiningInfoResult) Receive() (*btcjson.GetMiningInfoResult, erro
 //
 // See GetMiningInfo for the blocking version and more details.
 func (c *Client) GetMiningInfoAsync() FutureGetMiningInfoResult {
-	cmd := btcjson.NewGetMiningInfoCmd()
+	cmd := soterjson.NewGetMiningInfoCmd()
 	return c.sendCmd(cmd)
 }
 
 // GetMiningInfo returns mining information.
-func (c *Client) GetMiningInfo() (*btcjson.GetMiningInfoResult, error) {
+func (c *Client) GetMiningInfo() (*soterjson.GetMiningInfoResult, error) {
 	return c.GetMiningInfoAsync().Receive()
 }
 
@@ -230,7 +260,7 @@ func (r FutureGetNetworkHashPS) Receive() (int64, error) {
 //
 // See GetNetworkHashPS for the blocking version and more details.
 func (c *Client) GetNetworkHashPSAsync() FutureGetNetworkHashPS {
-	cmd := btcjson.NewGetNetworkHashPSCmd(nil, nil)
+	cmd := soterjson.NewGetNetworkHashPSCmd(nil, nil)
 	return c.sendCmd(cmd)
 }
 
@@ -249,7 +279,7 @@ func (c *Client) GetNetworkHashPS() (int64, error) {
 //
 // See GetNetworkHashPS2 for the blocking version and more details.
 func (c *Client) GetNetworkHashPS2Async(blocks int) FutureGetNetworkHashPS {
-	cmd := btcjson.NewGetNetworkHashPSCmd(&blocks, nil)
+	cmd := soterjson.NewGetNetworkHashPSCmd(&blocks, nil)
 	return c.sendCmd(cmd)
 }
 
@@ -270,7 +300,7 @@ func (c *Client) GetNetworkHashPS2(blocks int) (int64, error) {
 //
 // See GetNetworkHashPS3 for the blocking version and more details.
 func (c *Client) GetNetworkHashPS3Async(blocks, height int) FutureGetNetworkHashPS {
-	cmd := btcjson.NewGetNetworkHashPSCmd(&blocks, &height)
+	cmd := soterjson.NewGetNetworkHashPSCmd(&blocks, &height)
 	return c.sendCmd(cmd)
 }
 
@@ -290,14 +320,14 @@ type FutureGetWork chan *response
 
 // Receive waits for the response promised by the future and returns the hash
 // data to work on.
-func (r FutureGetWork) Receive() (*btcjson.GetWorkResult, error) {
+func (r FutureGetWork) Receive() (*soterjson.GetWorkResult, error) {
 	res, err := receiveFuture(r)
 	if err != nil {
 		return nil, err
 	}
 
 	// Unmarshal result as a getwork result object.
-	var result btcjson.GetWorkResult
+	var result soterjson.GetWorkResult
 	err = json.Unmarshal(res, &result)
 	if err != nil {
 		return nil, err
@@ -312,14 +342,14 @@ func (r FutureGetWork) Receive() (*btcjson.GetWorkResult, error) {
 //
 // See GetWork for the blocking version and more details.
 func (c *Client) GetWorkAsync() FutureGetWork {
-	cmd := btcjson.NewGetWorkCmd(nil)
+	cmd := soterjson.NewGetWorkCmd(nil)
 	return c.sendCmd(cmd)
 }
 
 // GetWork returns hash data to work on.
 //
 // See GetWorkSubmit to submit the found solution.
-func (c *Client) GetWork() (*btcjson.GetWorkResult, error) {
+func (c *Client) GetWork() (*soterjson.GetWorkResult, error) {
 	return c.GetWorkAsync().Receive()
 }
 
@@ -351,7 +381,7 @@ func (r FutureGetWorkSubmit) Receive() (bool, error) {
 //
 // See GetWorkSubmit for the blocking version and more details.
 func (c *Client) GetWorkSubmitAsync(data string) FutureGetWorkSubmit {
-	cmd := btcjson.NewGetWorkCmd(&data)
+	cmd := soterjson.NewGetWorkCmd(&data)
 	return c.sendCmd(cmd)
 }
 
@@ -394,7 +424,7 @@ func (r FutureSubmitBlockResult) Receive() error {
 // returned instance.
 //
 // See SubmitBlock for the blocking version and more details.
-func (c *Client) SubmitBlockAsync(block *btcutil.Block, options *btcjson.SubmitBlockOptions) FutureSubmitBlockResult {
+func (c *Client) SubmitBlockAsync(block *soterutil.Block, options *soterjson.SubmitBlockOptions) FutureSubmitBlockResult {
 	blockHex := ""
 	if block != nil {
 		blockBytes, err := block.Bytes()
@@ -405,12 +435,12 @@ func (c *Client) SubmitBlockAsync(block *btcutil.Block, options *btcjson.SubmitB
 		blockHex = hex.EncodeToString(blockBytes)
 	}
 
-	cmd := btcjson.NewSubmitBlockCmd(blockHex, options)
+	cmd := soterjson.NewSubmitBlockCmd(blockHex, options)
 	return c.sendCmd(cmd)
 }
 
-// SubmitBlock attempts to submit a new block into the bitcoin network.
-func (c *Client) SubmitBlock(block *btcutil.Block, options *btcjson.SubmitBlockOptions) error {
+// SubmitBlock attempts to submit a new block into the soter network.
+func (c *Client) SubmitBlock(block *soterutil.Block, options *soterjson.SubmitBlockOptions) error {
 	return c.SubmitBlockAsync(block, options).Receive()
 }
 

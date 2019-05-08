@@ -144,7 +144,7 @@ Changes in 0.11.1 (Wed May 27 2015)
     - Add gettxoutproof command (#428)
     - Add verifytxoutproof command (#428)
   - Notable developer-related package changes:
-    - The btcec package now provides the ability to perform ECDH
+    - The soterec package now provides the ability to perform ECDH
       encryption and decryption (#375)
     - The block and header validation in the blockchain package has been
       split to help pave the way toward concurrent downloads (#386)
@@ -210,7 +210,7 @@ Changes in 0.11.0 (Wed May 06 2015)
   - Notable developer-related package changes:
     - The new version 2 btcjson package has now replaced the deprecated
       version 1 package (#368)
-    - The btcec package now performs all signing using RFC6979 deterministic
+    - The soterec package now performs all signing using RFC6979 deterministic
       signatures (#358, #360)
     - The txscript package has been significantly cleaned up and had a few
       API changes (#387, #388, #389, #390, #391, #392, #393, #395, #396,
@@ -268,13 +268,13 @@ Changes in 0.10.0 (Sun Mar 01 2015)
   - Crypto changes:
     - Optimize scalar multiplication by the base point by using a
       pre-computed table which results in approximately a 35% speedup
-     (https://github.com/btcsuite/btcec/issues/2)
+     (https://github.com/btcsuite/soterec/issues/2)
     - Optimize general scalar multiplication by using the secp256k1
       endomorphism which results in approximately a 17-20% speedup
-     (https://github.com/btcsuite/btcec/issues/1)
+     (https://github.com/btcsuite/soterec/issues/1)
     - Optimize general scalar multiplication by using non-adjacent form
       which results in approximately an additional 8% speedup
-     (https://github.com/btcsuite/btcec/issues/3)
+     (https://github.com/btcsuite/soterec/issues/3)
   - Implement optional address indexing:
     - Add a new parameter --addrindex which will enable the creation of an
       address index which can be queried to determine all transactions which
@@ -343,7 +343,7 @@ Changes in 0.10.0 (Sun Mar 01 2015)
       is now available in the btcjson/v2/btcjson directory
       - This will ultimately replace the current version so anyone making
         use of this package will need to update their code accordingly
-    - The btcec package now provides better facilities for working directly
+    - The soterec package now provides better facilities for working directly
       with its public and private keys without having to mix elements from
       the ecdsa package
     - Update the script builder to ensure all rules specified by BIP0062 are
@@ -468,9 +468,9 @@ Changes in 0.9.0 (Sat Sep 20 2014)
       and TLS certificates needed to communicate with btcd and btcwallet on
       the simulation test network
   - Notable developer-related package changes:
-    - Provide a new bloom package in btcutil which allows creating and
+    - Provide a new bloom package in soterutil which allows creating and
       working with BIP0037 bloom filters
-    - Provide a new hdkeychain package in btcutil which allows working with
+    - Provide a new hdkeychain package in soterutil which allows working with
       BIP0032 hierarchical deterministic key chains
     - Introduce a new btcnet package which houses network parameters
     - Provide new simnet network (--simnet) which is useful for private

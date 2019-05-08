@@ -1,4 +1,5 @@
 // Copyright (c) 2015-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -8,7 +9,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/btcsuite/btcd/database"
+	"github.com/soteria-dag/soterd/database"
 )
 
 // TestErrorCodeStringer tests the stringized output for the ErrorCode type.

@@ -1,4 +1,5 @@
 // Copyright (c) 2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -13,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/integration/rpctest"
+	"github.com/soteria-dag/soterd/blockdag"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/integration/rpctest"
 )
 
 const (
@@ -66,17 +67,17 @@ func assertChainHeight(r *rpctest.Harness, t *testing.T, expectedHeight uint32) 
 
 // thresholdStateToStatus converts the passed threshold state to the equivalent
 // status string returned in the getblockchaininfo RPC.
-func thresholdStateToStatus(state blockchain.ThresholdState) (string, error) {
+func thresholdStateToStatus(state blockdag.ThresholdState) (string, error) {
 	switch state {
-	case blockchain.ThresholdDefined:
+	case blockdag.ThresholdDefined:
 		return "defined", nil
-	case blockchain.ThresholdStarted:
+	case blockdag.ThresholdStarted:
 		return "started", nil
-	case blockchain.ThresholdLockedIn:
+	case blockdag.ThresholdLockedIn:
 		return "lockedin", nil
-	case blockchain.ThresholdActive:
+	case blockdag.ThresholdActive:
 		return "active", nil
-	case blockchain.ThresholdFailed:
+	case blockdag.ThresholdFailed:
 		return "failed", nil
 	}
 
@@ -86,7 +87,7 @@ func thresholdStateToStatus(state blockchain.ThresholdState) (string, error) {
 // assertSoftForkStatus retrieves the current blockchain info from the given
 // test harness and ensures the provided soft fork key is both available and its
 // status is the equivalent of the passed state.
-func assertSoftForkStatus(r *rpctest.Harness, t *testing.T, forkKey string, state blockchain.ThresholdState) {
+func assertSoftForkStatus(r *rpctest.Harness, t *testing.T, forkKey string, state blockdag.ThresholdState) {
 	// Convert the expected threshold state into the equivalent
 	// getblockchaininfo RPC status string.
 	status, err := thresholdStateToStatus(state)
@@ -110,11 +111,18 @@ func assertSoftForkStatus(r *rpctest.Harness, t *testing.T, forkKey string, stat
 	}
 
 	// Ensure the status it the expected value.
-	if desc.Status != status {
+	statusFound := false
+	for _, statusString := range desc.Statuses {
+		if status == statusString {
+			statusFound = true
+			break
+		}
+	}
+	if !statusFound {
 		_, _, line, _ := runtime.Caller(1)
 		t.Fatalf("assertion failed at line %d: softfork status for %q "+
-			"is %v instead of expected %v", line, forkKey,
-			desc.Status, status)
+			", %v, not found in statuses %v", line, forkKey,
+			status, desc.Statuses)
 	}
 }
 
@@ -129,7 +137,7 @@ func assertSoftForkStatus(r *rpctest.Harness, t *testing.T, forkKey string, stat
 // specific soft fork deployment to test.
 func testBIP0009(t *testing.T, forkKey string, deploymentID uint32) {
 	// Initialize the primary mining node with only the genesis block.
-	r, err := rpctest.New(&chaincfg.RegressionNetParams, nil, nil)
+	r, err := rpctest.New(&chaincfg.RegressionNetParams, nil, nil, false)
 	if err != nil {
 		t.Fatalf("unable to create primary harness: %v", err)
 	}
@@ -143,7 +151,7 @@ func testBIP0009(t *testing.T, forkKey string, deploymentID uint32) {
 	// Assert the chain height is the expected value and the soft fork
 	// status starts out as defined.
 	assertChainHeight(r, t, 0)
-	assertSoftForkStatus(r, t, forkKey, blockchain.ThresholdDefined)
+	assertSoftForkStatus(r, t, forkKey, blockdag.ThresholdDefined)
 
 	// *** ThresholdDefined part 2 - 1 block prior to ThresholdStarted ***
 	//
@@ -168,7 +176,7 @@ func testBIP0009(t *testing.T, forkKey string, deploymentID uint32) {
 		}
 	}
 	assertChainHeight(r, t, confirmationWindow-2)
-	assertSoftForkStatus(r, t, forkKey, blockchain.ThresholdDefined)
+	assertSoftForkStatus(r, t, forkKey, blockdag.ThresholdDefined)
 
 	// *** ThresholdStarted ***
 	//
@@ -181,7 +189,7 @@ func testBIP0009(t *testing.T, forkKey string, deploymentID uint32) {
 		t.Fatalf("failed to generated block: %v", err)
 	}
 	assertChainHeight(r, t, confirmationWindow-1)
-	assertSoftForkStatus(r, t, forkKey, blockchain.ThresholdStarted)
+	assertSoftForkStatus(r, t, forkKey, blockdag.ThresholdStarted)
 
 	// *** ThresholdStarted part 2 - Fail to achieve ThresholdLockedIn ***
 	//
@@ -212,7 +220,7 @@ func testBIP0009(t *testing.T, forkKey string, deploymentID uint32) {
 		}
 	}
 	assertChainHeight(r, t, (confirmationWindow*2)-1)
-	assertSoftForkStatus(r, t, forkKey, blockchain.ThresholdStarted)
+	assertSoftForkStatus(r, t, forkKey, blockdag.ThresholdStarted)
 
 	// *** ThresholdLockedIn ***
 	//
@@ -237,7 +245,7 @@ func testBIP0009(t *testing.T, forkKey string, deploymentID uint32) {
 		}
 	}
 	assertChainHeight(r, t, (confirmationWindow*3)-1)
-	assertSoftForkStatus(r, t, forkKey, blockchain.ThresholdLockedIn)
+	assertSoftForkStatus(r, t, forkKey, blockdag.ThresholdLockedIn)
 
 	// *** ThresholdLockedIn part 2 -- 1 block prior to ThresholdActive ***
 	//
@@ -255,7 +263,7 @@ func testBIP0009(t *testing.T, forkKey string, deploymentID uint32) {
 		}
 	}
 	assertChainHeight(r, t, (confirmationWindow*4)-2)
-	assertSoftForkStatus(r, t, forkKey, blockchain.ThresholdLockedIn)
+	assertSoftForkStatus(r, t, forkKey, blockdag.ThresholdLockedIn)
 
 	// *** ThresholdActive ***
 	//
@@ -269,7 +277,7 @@ func testBIP0009(t *testing.T, forkKey string, deploymentID uint32) {
 		t.Fatalf("failed to generated block: %v", err)
 	}
 	assertChainHeight(r, t, (confirmationWindow*4)-1)
-	assertSoftForkStatus(r, t, forkKey, blockchain.ThresholdActive)
+	assertSoftForkStatus(r, t, forkKey, blockdag.ThresholdActive)
 }
 
 // TestBIP0009 ensures the BIP0009 soft fork mechanism follows the state
@@ -302,7 +310,7 @@ func TestBIP0009(t *testing.T) {
 	testBIP0009(t, "segwit", chaincfg.DeploymentSegwit)
 }
 
-// TestBIP0009Mining ensures blocks built via btcd's CPU miner follow the rules
+// TestBIP0009Mining ensures blocks built via soterd's CPU miner follow the rules
 // set forth by BIP0009 by using the test dummy deployment.
 //
 // Overview:
@@ -320,7 +328,7 @@ func TestBIP0009Mining(t *testing.T) {
 	t.Parallel()
 
 	// Initialize the primary mining node with only the genesis block.
-	r, err := rpctest.New(&chaincfg.SimNetParams, nil, nil)
+	r, err := rpctest.New(&chaincfg.SimNetParams, nil, nil, false)
 	if err != nil {
 		t.Fatalf("unable to create primary harness: %v", err)
 	}
@@ -354,7 +362,7 @@ func TestBIP0009Mining(t *testing.T) {
 	// in the version.
 	//
 	// The last generated block should now have the test bit set in the
-	// version since the btcd mining code will have recognized the test
+	// version since the soterd mining code will have recognized the test
 	// dummy deployment as started.
 	confirmationWindow := r.ActiveNet.MinerConfirmationWindow
 	numNeeded := confirmationWindow - 1
@@ -371,7 +379,7 @@ func TestBIP0009Mining(t *testing.T) {
 	// Generate enough blocks to reach the next state transition.
 	//
 	// The last generated block should still have the test bit set in the
-	// version since the btcd mining code will have recognized the test
+	// version since the soterd mining code will have recognized the test
 	// dummy deployment as locked in.
 	hashes, err = r.Node.Generate(confirmationWindow)
 	if err != nil {
@@ -389,7 +397,7 @@ func TestBIP0009Mining(t *testing.T) {
 	// in the version since it is still locked in.
 	//
 	// The last generated block should NOT have the test bit set in the
-	// version since the btcd mining code will have recognized the test
+	// version since the soterd mining code will have recognized the test
 	// dummy deployment as activated and thus there is no longer any need
 	// to set the bit.
 	hashes, err = r.Node.Generate(confirmationWindow)

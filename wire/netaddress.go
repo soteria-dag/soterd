@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2015 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -11,7 +12,7 @@ import (
 	"time"
 )
 
-// maxNetAddressPayload returns the max payload size for a bitcoin NetAddress
+// maxNetAddressPayload returns the max payload size for a soter NetAddress
 // based on the protocol version.
 func maxNetAddressPayload(pver uint32) uint32 {
 	// Services 8 bytes + ip 16 bytes + port 2 bytes.
@@ -31,7 +32,7 @@ func maxNetAddressPayload(pver uint32) uint32 {
 type NetAddress struct {
 	// Last time the address was seen.  This is, unfortunately, encoded as a
 	// uint32 on the wire and therefore is limited to 2106.  This field is
-	// not present in the bitcoin version message (MsgVersion) nor was it
+	// not present in the soter version message (MsgVersion) nor was it
 	// added until protocol version >= NetAddressTimeVersion.
 	Timestamp time.Time
 
@@ -91,7 +92,7 @@ func NewNetAddress(addr *net.TCPAddr, services ServiceFlag) *NetAddress {
 func readNetAddress(r io.Reader, pver uint32, na *NetAddress, ts bool) error {
 	var ip [16]byte
 
-	// NOTE: The bitcoin protocol uses a uint32 for the timestamp so it will
+	// NOTE: The soter protocol uses a uint32 for the timestamp so it will
 	// stop working somewhere around 2106.  Also timestamp wasn't added until
 	// protocol version >= NetAddressTimeVersion
 	if ts && pver >= NetAddressTimeVersion {
@@ -124,7 +125,7 @@ func readNetAddress(r io.Reader, pver uint32, na *NetAddress, ts bool) error {
 // version and whether or not the timestamp is included per ts.  Some messages
 // like version do not include the timestamp.
 func writeNetAddress(w io.Writer, pver uint32, na *NetAddress, ts bool) error {
-	// NOTE: The bitcoin protocol uses a uint32 for the timestamp so it will
+	// NOTE: The soter protocol uses a uint32 for the timestamp so it will
 	// stop working somewhere around 2106.  Also timestamp wasn't added until
 	// until protocol version >= NetAddressTimeVersion.
 	if ts && pver >= NetAddressTimeVersion {

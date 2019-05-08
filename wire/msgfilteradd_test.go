@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -38,14 +39,14 @@ func TestFilterAddLatest(t *testing.T) {
 
 	// Test encode with latest protocol version.
 	var buf bytes.Buffer
-	err := msg.BtcEncode(&buf, pver, enc)
+	err := msg.SotoEncode(&buf, pver, enc)
 	if err != nil {
 		t.Errorf("encode of MsgFilterAdd failed %v err <%v>", msg, err)
 	}
 
 	// Test decode with latest protocol version.
 	var readmsg MsgFilterAdd
-	err = readmsg.BtcDecode(&buf, pver, enc)
+	err = readmsg.SotoDecode(&buf, pver, enc)
 	if err != nil {
 		t.Errorf("decode of MsgFilterAdd failed [%v] err <%v>", buf, err)
 	}
@@ -62,14 +63,14 @@ func TestFilterAddCrossProtocol(t *testing.T) {
 
 	// Encode with latest protocol version.
 	var buf bytes.Buffer
-	err := msg.BtcEncode(&buf, ProtocolVersion, LatestEncoding)
+	err := msg.SotoEncode(&buf, ProtocolVersion, LatestEncoding)
 	if err != nil {
 		t.Errorf("encode of MsgFilterAdd failed %v err <%v>", msg, err)
 	}
 
 	// Decode with old protocol version.
 	var readmsg MsgFilterAdd
-	err = readmsg.BtcDecode(&buf, BIP0031Version, LatestEncoding)
+	err = readmsg.SotoDecode(&buf, BIP0031Version, LatestEncoding)
 	if err == nil {
 		t.Errorf("decode of MsgFilterAdd succeeded when it shouldn't "+
 			"have %v", msg)
@@ -90,7 +91,7 @@ func TestFilterAddMaxDataSize(t *testing.T) {
 
 	// Encode with latest protocol version.
 	var buf bytes.Buffer
-	err := msg.BtcEncode(&buf, ProtocolVersion, LatestEncoding)
+	err := msg.SotoEncode(&buf, ProtocolVersion, LatestEncoding)
 	if err == nil {
 		t.Errorf("encode of MsgFilterAdd succeeded when it shouldn't "+
 			"have %v", msg)
@@ -98,7 +99,7 @@ func TestFilterAddMaxDataSize(t *testing.T) {
 
 	// Decode with latest protocol version.
 	readbuf := bytes.NewReader(data)
-	err = msg.BtcDecode(readbuf, ProtocolVersion, LatestEncoding)
+	err = msg.SotoDecode(readbuf, ProtocolVersion, LatestEncoding)
 	if err == nil {
 		t.Errorf("decode of MsgFilterAdd succeeded when it shouldn't "+
 			"have %v", msg)
@@ -147,9 +148,9 @@ func TestFilterAddWireErrors(t *testing.T) {
 	for i, test := range tests {
 		// Encode to wire format.
 		w := newFixedWriter(test.max)
-		err := test.in.BtcEncode(w, test.pver, test.enc)
+		err := test.in.SotoEncode(w, test.pver, test.enc)
 		if reflect.TypeOf(err) != reflect.TypeOf(test.writeErr) {
-			t.Errorf("BtcEncode #%d wrong error got: %v, want: %v",
+			t.Errorf("SotoEncode #%d wrong error got: %v, want: %v",
 				i, err, test.writeErr)
 			continue
 		}
@@ -158,7 +159,7 @@ func TestFilterAddWireErrors(t *testing.T) {
 		// equality.
 		if _, ok := err.(*MessageError); !ok {
 			if err != test.writeErr {
-				t.Errorf("BtcEncode #%d wrong error got: %v, "+
+				t.Errorf("SotoEncode #%d wrong error got: %v, "+
 					"want: %v", i, err, test.writeErr)
 				continue
 			}
@@ -167,9 +168,9 @@ func TestFilterAddWireErrors(t *testing.T) {
 		// Decode from wire format.
 		var msg MsgFilterAdd
 		r := newFixedReader(test.max, test.buf)
-		err = msg.BtcDecode(r, test.pver, test.enc)
+		err = msg.SotoDecode(r, test.pver, test.enc)
 		if reflect.TypeOf(err) != reflect.TypeOf(test.readErr) {
-			t.Errorf("BtcDecode #%d wrong error got: %v, want: %v",
+			t.Errorf("SotoDecode #%d wrong error got: %v, want: %v",
 				i, err, test.readErr)
 			continue
 		}
@@ -178,7 +179,7 @@ func TestFilterAddWireErrors(t *testing.T) {
 		// equality.
 		if _, ok := err.(*MessageError); !ok {
 			if err != test.readErr {
-				t.Errorf("BtcDecode #%d wrong error got: %v, "+
+				t.Errorf("SotoDecode #%d wrong error got: %v, "+
 					"want: %v", i, err, test.readErr)
 				continue
 			}

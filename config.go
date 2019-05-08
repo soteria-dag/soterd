@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -20,25 +21,28 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/connmgr"
-	"github.com/btcsuite/btcd/database"
-	_ "github.com/btcsuite/btcd/database/ffldb"
-	"github.com/btcsuite/btcd/mempool"
-	"github.com/btcsuite/btcd/peer"
-	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/go-socks/socks"
 	flags "github.com/jessevdk/go-flags"
+	"github.com/soteria-dag/soterd/blockdag"
+	// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+	// 
+	//
+	// "github.com/soteria-dag/soterd/chaincfg"
+	// "github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/connmgr"
+	"github.com/soteria-dag/soterd/database"
+	_ "github.com/soteria-dag/soterd/database/ffldb"
+	"github.com/soteria-dag/soterd/mempool"
+	"github.com/soteria-dag/soterd/peer"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 const (
-	defaultConfigFilename        = "btcd.conf"
+	defaultConfigFilename        = "soterd.conf"
 	defaultDataDirname           = "data"
 	defaultLogLevel              = "info"
 	defaultLogDirname            = "logs"
-	defaultLogFilename           = "btcd.log"
+	defaultLogFilename           = "soterd.log"
 	defaultMaxPeers              = 125
 	defaultBanDuration           = time.Hour * 24
 	defaultBanThreshold          = 100
@@ -52,22 +56,23 @@ const (
 	defaultBlockMinSize          = 0
 	defaultBlockMaxSize          = 750000
 	defaultBlockMinWeight        = 0
-	defaultBlockMaxWeight        = 3000000
+	defaultBlockMaxWeight        = 3001560
 	blockMaxSizeMin              = 1000
-	blockMaxSizeMax              = blockchain.MaxBlockBaseSize - 1000
+	blockMaxSizeMax              = blockdag.MaxBlockBaseSize - 1000
 	blockMaxWeightMin            = 4000
-	blockMaxWeightMax            = blockchain.MaxBlockWeight - 4000
+	blockMaxWeightMax            = blockdag.MaxBlockWeight - 4000
 	defaultGenerate              = false
 	defaultMaxOrphanTransactions = 100
 	defaultMaxOrphanTxSize       = 100000
 	defaultSigCacheMaxSize       = 100000
-	sampleConfigFilename         = "sample-btcd.conf"
+	sampleConfigFilename         = "sample-soterd.conf"
 	defaultTxIndex               = false
 	defaultAddrIndex             = false
+	defaultNoCFilters            = true
 )
 
 var (
-	defaultHomeDir     = btcutil.AppDataDir("btcd", false)
+	defaultHomeDir     = soterutil.AppDataDir("soterd", false)
 	defaultConfigFile  = filepath.Join(defaultHomeDir, defaultConfigFilename)
 	defaultDataDir     = filepath.Join(defaultHomeDir, defaultDataDirname)
 	knownDbTypes       = database.SupportedDrivers()
@@ -89,7 +94,7 @@ func minUint32(a, b uint32) uint32 {
 	return b
 }
 
-// config defines the configuration options for btcd.
+// config defines the configuration options for soterd.
 //
 // See loadConfig for details on the configuration load process.
 type config struct {
@@ -97,10 +102,13 @@ type config struct {
 	ConfigFile           string        `short:"C" long:"configfile" description:"Path to configuration file"`
 	DataDir              string        `short:"b" long:"datadir" description:"Directory to store data"`
 	LogDir               string        `long:"logdir" description:"Directory to log output."`
+	// See integration/rpctest/rpc_harness.go for example usage of NetCfgFile option
+	// See integration/rpctest/config.go for supported INI file options
+	NetCfgFile           string        `long:"netcfgfile" description:"Path to INI file with custom chaincfg.Params settings"`
 	AddPeers             []string      `short:"a" long:"addpeer" description:"Add a peer to connect with at startup"`
 	ConnectPeers         []string      `long:"connect" description:"Connect only to the specified peers at startup"`
 	DisableListen        bool          `long:"nolisten" description:"Disable listening for incoming connections -- NOTE: Listening is automatically disabled if the --connect or --proxy options are used without also specifying listen interfaces via --listen"`
-	Listeners            []string      `long:"listen" description:"Add an interface/port to listen for connections (default all interfaces port: 8333, testnet: 18333)"`
+	Listeners            []string      `long:"listen" description:"Add an interface/port to listen for connections (default all interfaces port: 8333, testnet: 5070)"`
 	MaxPeers             int           `long:"maxpeers" description:"Max number of inbound and outbound peers"`
 	DisableBanning       bool          `long:"nobanning" description:"Disable banning of misbehaving peers"`
 	BanDuration          time.Duration `long:"banduration" description:"How long to ban misbehaving peers.  Valid time units are {s, m, h}.  Minimum 1 second"`
@@ -110,7 +118,7 @@ type config struct {
 	RPCPass              string        `short:"P" long:"rpcpass" default-mask:"-" description:"Password for RPC connections"`
 	RPCLimitUser         string        `long:"rpclimituser" description:"Username for limited RPC connections"`
 	RPCLimitPass         string        `long:"rpclimitpass" default-mask:"-" description:"Password for limited RPC connections"`
-	RPCListeners         []string      `long:"rpclisten" description:"Add an interface/port to listen for RPC connections (default port: 8334, testnet: 18334)"`
+	RPCListeners         []string      `long:"rpclisten" description:"Add an interface/port to listen for RPC connections (default port: 8334, testnet: 5071)"`
 	RPCCert              string        `long:"rpccert" description:"File containing the certificate file"`
 	RPCKey               string        `long:"rpckey" description:"File containing the certificate key"`
 	RPCMaxClients        int           `long:"rpcmaxclients" description:"Max number of RPC clients for standard connections"`
@@ -129,47 +137,53 @@ type config struct {
 	OnionProxyPass       string        `long:"onionpass" default-mask:"-" description:"Password for onion proxy server"`
 	NoOnion              bool          `long:"noonion" description:"Disable connecting to tor hidden services"`
 	TorIsolation         bool          `long:"torisolation" description:"Enable Tor stream isolation by randomizing user credentials for each connection."`
-	TestNet3             bool          `long:"testnet" description:"Use the test network"`
+	TestNet1             bool          `long:"testnet" description:"Use the test network"`
 	RegressionTest       bool          `long:"regtest" description:"Use the regression test network"`
 	SimNet               bool          `long:"simnet" description:"Use the simulation test network"`
-	AddCheckpoints       []string      `long:"addcheckpoint" description:"Add a custom checkpoint.  Format: '<height>:<hash>'"`
-	DisableCheckpoints   bool          `long:"nocheckpoints" description:"Disable built-in checkpoints.  Don't do this unless you know what you're doing."`
-	DbType               string        `long:"dbtype" description:"Database backend to use for the Block Chain"`
-	Profile              string        `long:"profile" description:"Enable HTTP profiling on given port -- NOTE port must be between 1024 and 65536"`
-	CPUProfile           string        `long:"cpuprofile" description:"Write CPU profile to the specified file"`
-	DebugLevel           string        `short:"d" long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
-	Upnp                 bool          `long:"upnp" description:"Use UPnP to map our listening port outside of NAT"`
-	MinRelayTxFee        float64       `long:"minrelaytxfee" description:"The minimum transaction fee in BTC/kB to be considered a non-zero fee."`
-	FreeTxRelayLimit     float64       `long:"limitfreerelay" description:"Limit relay of transactions with no transaction fee to the given amount in thousands of bytes per minute"`
-	NoRelayPriority      bool          `long:"norelaypriority" description:"Do not require free or low-fee transactions to have high priority for relaying"`
-	TrickleInterval      time.Duration `long:"trickleinterval" description:"Minimum time between attempts to send new inventory to a connected peer"`
-	MaxOrphanTxs         int           `long:"maxorphantx" description:"Max number of orphan transactions to keep in memory"`
-	Generate             bool          `long:"generate" description:"Generate (mine) bitcoins using the CPU"`
-	MiningAddrs          []string      `long:"miningaddr" description:"Add the specified payment address to the list of addresses to use for generated blocks -- At least one address is required if the generate option is set"`
-	BlockMinSize         uint32        `long:"blockminsize" description:"Mininum block size in bytes to be used when creating a block"`
-	BlockMaxSize         uint32        `long:"blockmaxsize" description:"Maximum block size in bytes to be used when creating a block"`
-	BlockMinWeight       uint32        `long:"blockminweight" description:"Mininum block weight to be used when creating a block"`
-	BlockMaxWeight       uint32        `long:"blockmaxweight" description:"Maximum block weight to be used when creating a block"`
-	BlockPrioritySize    uint32        `long:"blockprioritysize" description:"Size in bytes for high-priority/low-fee transactions when creating a block"`
-	UserAgentComments    []string      `long:"uacomment" description:"Comment to add to the user agent -- See BIP 14 for more information."`
-	NoPeerBloomFilters   bool          `long:"nopeerbloomfilters" description:"Disable bloom filtering support"`
-	NoCFilters           bool          `long:"nocfilters" description:"Disable committed filtering (CF) support"`
-	DropCfIndex          bool          `long:"dropcfindex" description:"Deletes the index used for committed filtering (CF) support from the database on start up and then exits."`
-	SigCacheMaxSize      uint          `long:"sigcachemaxsize" description:"The maximum number of entries in the signature verification cache"`
-	BlocksOnly           bool          `long:"blocksonly" description:"Do not accept transactions from remote peers."`
-	TxIndex              bool          `long:"txindex" description:"Maintain a full hash-based transaction index which makes all transactions available via the getrawtransaction RPC"`
-	DropTxIndex          bool          `long:"droptxindex" description:"Deletes the hash-based transaction index from the database on start up and then exits."`
-	AddrIndex            bool          `long:"addrindex" description:"Maintain a full address-based transaction index which makes the searchrawtransactions RPC available"`
-	DropAddrIndex        bool          `long:"dropaddrindex" description:"Deletes the address-based transaction index from the database on start up and then exits."`
-	RelayNonStd          bool          `long:"relaynonstd" description:"Relay non-standard transactions regardless of the default settings for the active network."`
-	RejectNonStd         bool          `long:"rejectnonstd" description:"Reject non-standard transactions regardless of the default settings for the active network."`
-	lookup               func(string) ([]net.IP, error)
-	oniondial            func(string, string, time.Duration) (net.Conn, error)
-	dial                 func(string, string, time.Duration) (net.Conn, error)
-	addCheckpoints       []chaincfg.Checkpoint
-	miningAddrs          []btcutil.Address
-	minRelayTxFee        btcutil.Amount
-	whitelists           []*net.IPNet
+	// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+	// 
+	//
+	// AddCheckpoints       []string      `long:"addcheckpoint" description:"Add a custom checkpoint.  Format: '<height>:<hash>'"`
+	// DisableCheckpoints   bool          `long:"nocheckpoints" description:"Disable built-in checkpoints.  Don't do this unless you know what you're doing."`
+	DbType             string        `long:"dbtype" description:"Database backend to use for the Block Chain"`
+	Profile            string        `long:"profile" description:"Enable HTTP profiling on given port -- NOTE port must be between 1024 and 65536"`
+	CPUProfile         string        `long:"cpuprofile" description:"Write CPU profile to the specified file"`
+	DebugLevel         string        `short:"d" long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
+	Upnp               bool          `long:"upnp" description:"Use UPnP to map our listening port outside of NAT"`
+	MinRelayTxFee      float64       `long:"minrelaytxfee" description:"The minimum transaction fee in SOTO/kB to be considered a non-zero fee."`
+	FreeTxRelayLimit   float64       `long:"limitfreerelay" description:"Limit relay of transactions with no transaction fee to the given amount in thousands of bytes per minute"`
+	NoRelayPriority    bool          `long:"norelaypriority" description:"Do not require free or low-fee transactions to have high priority for relaying"`
+	TrickleInterval    time.Duration `long:"trickleinterval" description:"Minimum time between attempts to send new inventory to a connected peer"`
+	MaxOrphanTxs       int           `long:"maxorphantx" description:"Max number of orphan transactions to keep in memory"`
+	Generate           bool          `long:"generate" description:"Generate (mine) soter tokens using the CPU"`
+	MiningAddrs        []string      `long:"miningaddr" description:"Add the specified payment address to the list of addresses to use for generated blocks -- At least one address is required if the generate option is set"`
+	BlockMinSize       uint32        `long:"blockminsize" description:"Mininum block size in bytes to be used when creating a block"`
+	BlockMaxSize       uint32        `long:"blockmaxsize" description:"Maximum block size in bytes to be used when creating a block"`
+	BlockMinWeight     uint32        `long:"blockminweight" description:"Mininum block weight to be used when creating a block"`
+	BlockMaxWeight     uint32        `long:"blockmaxweight" description:"Maximum block weight to be used when creating a block"`
+	BlockPrioritySize  uint32        `long:"blockprioritysize" description:"Size in bytes for high-priority/low-fee transactions when creating a block"`
+	UserAgentComments  []string      `long:"uacomment" description:"Comment to add to the user agent -- See BIP 14 for more information."`
+	NoPeerBloomFilters bool          `long:"nopeerbloomfilters" description:"Disable bloom filtering support"`
+	NoCFilters         bool          `long:"nocfilters" description:"Disable committed filtering (CF) support"`
+	DropCfIndex        bool          `long:"dropcfindex" description:"Deletes the index used for committed filtering (CF) support from the database on start up and then exits."`
+	SigCacheMaxSize    uint          `long:"sigcachemaxsize" description:"The maximum number of entries in the signature verification cache"`
+	BlocksOnly         bool          `long:"blocksonly" description:"Do not accept transactions from remote peers."`
+	TxIndex            bool          `long:"txindex" description:"Maintain a full hash-based transaction index which makes all transactions available via the getrawtransaction RPC"`
+	DropTxIndex        bool          `long:"droptxindex" description:"Deletes the hash-based transaction index from the database on start up and then exits."`
+	AddrIndex          bool          `long:"addrindex" description:"Maintain a full address-based transaction index which makes the searchrawtransactions RPC available"`
+	DropAddrIndex      bool          `long:"dropaddrindex" description:"Deletes the address-based transaction index from the database on start up and then exits."`
+	RelayNonStd        bool          `long:"relaynonstd" description:"Relay non-standard transactions regardless of the default settings for the active network."`
+	RejectNonStd       bool          `long:"rejectnonstd" description:"Reject non-standard transactions regardless of the default settings for the active network."`
+	lookup             func(string) ([]net.IP, error)
+	oniondial          func(string, string, time.Duration) (net.Conn, error)
+	dial               func(string, string, time.Duration) (net.Conn, error)
+	// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+	// 
+	//
+	// addCheckpoints     []chaincfg.Checkpoint
+	miningAddrs   []soterutil.Address
+	minRelayTxFee soterutil.Amount
+	whitelists    []*net.IPNet
 }
 
 // serviceOptions defines the configuration options for the daemon as a service on
@@ -321,53 +335,56 @@ func normalizeAddresses(addrs []string, defaultPort string) []string {
 	return removeDuplicateAddresses(addrs)
 }
 
+// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+// 
+//
 // newCheckpointFromStr parses checkpoints in the '<height>:<hash>' format.
-func newCheckpointFromStr(checkpoint string) (chaincfg.Checkpoint, error) {
-	parts := strings.Split(checkpoint, ":")
-	if len(parts) != 2 {
-		return chaincfg.Checkpoint{}, fmt.Errorf("unable to parse "+
-			"checkpoint %q -- use the syntax <height>:<hash>",
-			checkpoint)
-	}
+// func newCheckpointFromStr(checkpoint string) (chaincfg.Checkpoint, error) {
+// 	parts := strings.Split(checkpoint, ":")
+// 	if len(parts) != 2 {
+// 		return chaincfg.Checkpoint{}, fmt.Errorf("unable to parse "+
+// 			"checkpoint %q -- use the syntax <height>:<hash>",
+// 			checkpoint)
+// 	}
 
-	height, err := strconv.ParseInt(parts[0], 10, 32)
-	if err != nil {
-		return chaincfg.Checkpoint{}, fmt.Errorf("unable to parse "+
-			"checkpoint %q due to malformed height", checkpoint)
-	}
+// 	height, err := strconv.ParseInt(parts[0], 10, 32)
+// 	if err != nil {
+// 		return chaincfg.Checkpoint{}, fmt.Errorf("unable to parse "+
+// 			"checkpoint %q due to malformed height", checkpoint)
+// 	}
 
-	if len(parts[1]) == 0 {
-		return chaincfg.Checkpoint{}, fmt.Errorf("unable to parse "+
-			"checkpoint %q due to missing hash", checkpoint)
-	}
-	hash, err := chainhash.NewHashFromStr(parts[1])
-	if err != nil {
-		return chaincfg.Checkpoint{}, fmt.Errorf("unable to parse "+
-			"checkpoint %q due to malformed hash", checkpoint)
-	}
+// 	if len(parts[1]) == 0 {
+// 		return chaincfg.Checkpoint{}, fmt.Errorf("unable to parse "+
+// 			"checkpoint %q due to missing hash", checkpoint)
+// 	}
+// 	hash, err := chainhash.NewHashFromStr(parts[1])
+// 	if err != nil {
+// 		return chaincfg.Checkpoint{}, fmt.Errorf("unable to parse "+
+// 			"checkpoint %q due to malformed hash", checkpoint)
+// 	}
 
-	return chaincfg.Checkpoint{
-		Height: int32(height),
-		Hash:   hash,
-	}, nil
-}
+// 	return chaincfg.Checkpoint{
+// 		Height: int32(height),
+// 		Hash:   hash,
+// 	}, nil
+// }
 
-// parseCheckpoints checks the checkpoint strings for valid syntax
-// ('<height>:<hash>') and parses them to chaincfg.Checkpoint instances.
-func parseCheckpoints(checkpointStrings []string) ([]chaincfg.Checkpoint, error) {
-	if len(checkpointStrings) == 0 {
-		return nil, nil
-	}
-	checkpoints := make([]chaincfg.Checkpoint, len(checkpointStrings))
-	for i, cpString := range checkpointStrings {
-		checkpoint, err := newCheckpointFromStr(cpString)
-		if err != nil {
-			return nil, err
-		}
-		checkpoints[i] = checkpoint
-	}
-	return checkpoints, nil
-}
+// // parseCheckpoints checks the checkpoint strings for valid syntax
+// // ('<height>:<hash>') and parses them to chaincfg.Checkpoint instances.
+// func parseCheckpoints(checkpointStrings []string) ([]chaincfg.Checkpoint, error) {
+// 	if len(checkpointStrings) == 0 {
+// 		return nil, nil
+// 	}
+// 	checkpoints := make([]chaincfg.Checkpoint, len(checkpointStrings))
+// 	for i, cpString := range checkpointStrings {
+// 		checkpoint, err := newCheckpointFromStr(cpString)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		checkpoints[i] = checkpoint
+// 	}
+// 	return checkpoints, nil
+// }
 
 // filesExists reports whether the named file or directory exists.
 func fileExists(name string) bool {
@@ -397,7 +414,7 @@ func newConfigParser(cfg *config, so *serviceOptions, options flags.Options) *fl
 // 	3) Load configuration file overwriting defaults with any specified options
 // 	4) Parse CLI options and overwrite/add any specified options
 //
-// The above results in btcd functioning properly without any config settings
+// The above results in soterd functioning properly without any config settings
 // while still allowing the user to override settings with config files and
 // command line options.  Command line options always take precedence.
 func loadConfig() (*config, []string, error) {
@@ -416,7 +433,7 @@ func loadConfig() (*config, []string, error) {
 		DbType:               defaultDbType,
 		RPCKey:               defaultRPCKeyFile,
 		RPCCert:              defaultRPCCertFile,
-		MinRelayTxFee:        mempool.DefaultMinRelayTxFee.ToBTC(),
+		MinRelayTxFee:        mempool.DefaultMinRelayTxFee.ToSOTO(),
 		FreeTxRelayLimit:     defaultFreeTxRelayLimit,
 		TrickleInterval:      defaultTrickleInterval,
 		BlockMinSize:         defaultBlockMinSize,
@@ -429,6 +446,7 @@ func loadConfig() (*config, []string, error) {
 		Generate:             defaultGenerate,
 		TxIndex:              defaultTxIndex,
 		AddrIndex:            defaultAddrIndex,
+		NoCFilters:           defaultNoCFilters,
 	}
 
 	// Service options which are only added on Windows.
@@ -453,7 +471,7 @@ func loadConfig() (*config, []string, error) {
 	appName = strings.TrimSuffix(appName, filepath.Ext(appName))
 	usageMessage := fmt.Sprintf("Use %s -h to show usage", appName)
 	if preCfg.ShowVersion {
-		fmt.Println(appName, "version", version())
+		fmt.Println(appName, "version", version)
 		os.Exit(0)
 	}
 
@@ -532,9 +550,9 @@ func loadConfig() (*config, []string, error) {
 	numNets := 0
 	// Count number of network flags passed; assign active network params
 	// while we're at it
-	if cfg.TestNet3 {
+	if cfg.TestNet1 {
 		numNets++
-		activeNetParams = &testNet3Params
+		activeNetParams = &testNet1Params
 	}
 	if cfg.RegressionTest {
 		numNets++
@@ -553,6 +571,16 @@ func loadConfig() (*config, []string, error) {
 		fmt.Fprintln(os.Stderr, err)
 		fmt.Fprintln(os.Stderr, usageMessage)
 		return nil, nil, err
+	}
+
+	// Apply custom network params to activeNetParams, if specified )
+	if cfg.NetCfgFile != "" {
+		customParams, err := soterutil.ReadNetCfg(cfg.NetCfgFile)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		activeNetParams.Params = customParams
 	}
 
 	// Set the default policy for relaying non-standard transactions
@@ -727,7 +755,7 @@ func loadConfig() (*config, []string, error) {
 	}
 
 	if cfg.DisableRPC {
-		btcdLog.Infof("RPC service is disabled")
+		soterdLog.Infof("RPC service is disabled")
 	}
 
 	// Default RPC to listen on localhost only.
@@ -753,7 +781,7 @@ func loadConfig() (*config, []string, error) {
 	}
 
 	// Validate the the minrelaytxfee.
-	cfg.minRelayTxFee, err = btcutil.NewAmount(cfg.MinRelayTxFee)
+	cfg.minRelayTxFee, err = soterutil.NewAmount(cfg.MinRelayTxFee)
 	if err != nil {
 		str := "%s: invalid minrelaytxfee: %v"
 		err := fmt.Errorf(str, funcName, err)
@@ -810,14 +838,14 @@ func loadConfig() (*config, []string, error) {
 	case cfg.BlockMaxSize == defaultBlockMaxSize &&
 		cfg.BlockMaxWeight != defaultBlockMaxWeight:
 
-		cfg.BlockMaxSize = blockchain.MaxBlockBaseSize - 1000
+		cfg.BlockMaxSize = blockdag.MaxBlockBaseSize - 1000
 
 	// If the max block weight isn't set, but the block size is, then we'll
 	// scale the set weight accordingly based on the max block size value.
 	case cfg.BlockMaxSize != defaultBlockMaxSize &&
 		cfg.BlockMaxWeight == defaultBlockMaxWeight:
 
-		cfg.BlockMaxWeight = cfg.BlockMaxSize * blockchain.WitnessScaleFactor
+		cfg.BlockMaxWeight = cfg.BlockMaxSize * blockdag.WitnessScaleFactor
 	}
 
 	// Look for illegal characters in the user agent comments.
@@ -865,9 +893,9 @@ func loadConfig() (*config, []string, error) {
 	}
 
 	// Check mining addresses are valid and saved parsed versions.
-	cfg.miningAddrs = make([]btcutil.Address, 0, len(cfg.MiningAddrs))
+	cfg.miningAddrs = make([]soterutil.Address, 0, len(cfg.MiningAddrs))
 	for _, strAddr := range cfg.MiningAddrs {
-		addr, err := btcutil.DecodeAddress(strAddr, activeNetParams.Params)
+		addr, err := soterutil.DecodeAddress(strAddr, activeNetParams.Params)
 		if err != nil {
 			str := "%s: mining address '%s' failed to decode: %v"
 			err := fmt.Errorf(str, funcName, strAddr, err)
@@ -952,15 +980,18 @@ func loadConfig() (*config, []string, error) {
 		return nil, nil, err
 	}
 
+	// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+	// 
+	//
 	// Check the checkpoints for syntax errors.
-	cfg.addCheckpoints, err = parseCheckpoints(cfg.AddCheckpoints)
-	if err != nil {
-		str := "%s: Error parsing checkpoints: %v"
-		err := fmt.Errorf(str, funcName, err)
-		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, usageMessage)
-		return nil, nil, err
-	}
+	// cfg.addCheckpoints, err = parseCheckpoints(cfg.AddCheckpoints)
+	// if err != nil {
+	// 	str := "%s: Error parsing checkpoints: %v"
+	// 	err := fmt.Errorf(str, funcName, err)
+	// 	fmt.Fprintln(os.Stderr, err)
+	// 	fmt.Fprintln(os.Stderr, usageMessage)
+	// 	return nil, nil, err
+	// }
 
 	// Tor stream isolation requires either proxy or onion proxy to be set.
 	if cfg.TorIsolation && cfg.Proxy == "" && cfg.OnionProxy == "" {
@@ -1080,13 +1111,13 @@ func loadConfig() (*config, []string, error) {
 	// done.  This prevents the warning on help messages and invalid
 	// options.  Note this should go directly before the return.
 	if configFileError != nil {
-		btcdLog.Warnf("%v", configFileError)
+		soterdLog.Warnf("%v", configFileError)
 	}
 
 	return &cfg, remainingArgs, nil
 }
 
-// createDefaultConfig copies the file sample-btcd.conf to the given destination path,
+// createDefaultConfig copies the file sample-soterd.conf to the given destination path,
 // and populates it with some randomly generated RPC username and password.
 func createDefaultConfigFile(destinationPath string) error {
 	// Create the destination directory if it does not exists
@@ -1153,12 +1184,12 @@ func createDefaultConfigFile(destinationPath string) error {
 	return nil
 }
 
-// btcdDial connects to the address on the named network using the appropriate
+// soterdDial connects to the address on the named network using the appropriate
 // dial function depending on the address and configuration options.  For
 // example, .onion addresses will be dialed using the onion specific proxy if
 // one was specified, but will otherwise use the normal dial function (which
 // could itself use a proxy or not).
-func btcdDial(addr net.Addr) (net.Conn, error) {
+func soterdDial(addr net.Addr) (net.Conn, error) {
 	if strings.Contains(addr.String(), ".onion:") {
 		return cfg.oniondial(addr.Network(), addr.String(),
 			defaultConnectTimeout)
@@ -1166,14 +1197,14 @@ func btcdDial(addr net.Addr) (net.Conn, error) {
 	return cfg.dial(addr.Network(), addr.String(), defaultConnectTimeout)
 }
 
-// btcdLookup resolves the IP of the given host using the correct DNS lookup
+// soterdLookup resolves the IP of the given host using the correct DNS lookup
 // function depending on the configuration options.  For example, addresses will
 // be resolved using tor when the --proxy flag was specified unless --noonion
 // was also specified in which case the normal system DNS resolver will be used.
 //
 // Any attempt to resolve a tor address (.onion) will return an error since they
 // are not intended to be resolved outside of the tor proxy.
-func btcdLookup(host string) ([]net.IP, error) {
+func soterdLookup(host string) ([]net.IP, error) {
 	if strings.HasSuffix(host, ".onion") {
 		return nil, fmt.Errorf("attempt to resolve tor address %s", host)
 	}

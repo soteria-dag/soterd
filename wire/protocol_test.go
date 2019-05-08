@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -35,17 +36,17 @@ func TestServiceFlagStringer(t *testing.T) {
 	}
 }
 
-// TestBitcoinNetStringer tests the stringized output for bitcoin net types.
-func TestBitcoinNetStringer(t *testing.T) {
+// TestSoterNetStringer tests the stringized output for soter net types.
+func TestSoterNetStringer(t *testing.T) {
 	tests := []struct {
-		in   BitcoinNet
+		in   SoterNet
 		want string
 	}{
 		{MainNet, "MainNet"},
 		{TestNet, "TestNet"},
-		{TestNet3, "TestNet3"},
+		{TestNet1, "TestNet1"},
 		{SimNet, "SimNet"},
-		{0xffffffff, "Unknown BitcoinNet (4294967295)"},
+		{0xffffffff, "Unknown SoterNet (4294967295)"},
 	}
 
 	t.Logf("Running %d tests", len(tests))

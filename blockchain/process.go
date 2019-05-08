@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -6,11 +7,11 @@ package blockchain
 
 import (
 	"fmt"
-	"time"
+	// "time"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/database"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/database"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 // BehaviorFlags is a bitmask defining tweaks to the normal behavior when
@@ -139,11 +140,14 @@ func (b *BlockChain) processOrphans(hash *chainhash.Hash, flags BehaviorFlags) e
 // whether or not the block is an orphan.
 //
 // This function is safe for concurrent access.
-func (b *BlockChain) ProcessBlock(block *btcutil.Block, flags BehaviorFlags) (bool, bool, error) {
+func (b *BlockChain) ProcessBlock(block *soterutil.Block, flags BehaviorFlags) (bool, bool, error) {
 	b.chainLock.Lock()
 	defer b.chainLock.Unlock()
 
-	fastAdd := flags&BFFastAdd == BFFastAdd
+	// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+	// 
+	//
+	// fastAdd := flags&BFFastAdd == BFFastAdd
 
 	blockHash := block.Hash()
 	log.Tracef("Processing block %v", blockHash)
@@ -170,6 +174,9 @@ func (b *BlockChain) ProcessBlock(block *btcutil.Block, flags BehaviorFlags) (bo
 		return false, false, err
 	}
 
+	// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+	// 
+	//
 	// Find the previous checkpoint and perform some additional checks based
 	// on the checkpoint.  This provides a few nice properties such as
 	// preventing old side chain blocks before the last checkpoint,
@@ -177,38 +184,38 @@ func (b *BlockChain) ProcessBlock(block *btcutil.Block, flags BehaviorFlags) (bo
 	// used to eat memory, and ensuring expected (versus claimed) proof of
 	// work requirements since the previous checkpoint are met.
 	blockHeader := &block.MsgBlock().Header
-	checkpointNode, err := b.findPreviousCheckpoint()
-	if err != nil {
-		return false, false, err
-	}
-	if checkpointNode != nil {
-		// Ensure the block timestamp is after the checkpoint timestamp.
-		checkpointTime := time.Unix(checkpointNode.timestamp, 0)
-		if blockHeader.Timestamp.Before(checkpointTime) {
-			str := fmt.Sprintf("block %v has timestamp %v before "+
-				"last checkpoint timestamp %v", blockHash,
-				blockHeader.Timestamp, checkpointTime)
-			return false, false, ruleError(ErrCheckpointTimeTooOld, str)
-		}
-		if !fastAdd {
-			// Even though the checks prior to now have already ensured the
-			// proof of work exceeds the claimed amount, the claimed amount
-			// is a field in the block header which could be forged.  This
-			// check ensures the proof of work is at least the minimum
-			// expected based on elapsed time since the last checkpoint and
-			// maximum adjustment allowed by the retarget rules.
-			duration := blockHeader.Timestamp.Sub(checkpointTime)
-			requiredTarget := CompactToBig(b.calcEasiestDifficulty(
-				checkpointNode.bits, duration))
-			currentTarget := CompactToBig(blockHeader.Bits)
-			if currentTarget.Cmp(requiredTarget) > 0 {
-				str := fmt.Sprintf("block target difficulty of %064x "+
-					"is too low when compared to the previous "+
-					"checkpoint", currentTarget)
-				return false, false, ruleError(ErrDifficultyTooLow, str)
-			}
-		}
-	}
+	// checkpointNode, err := b.findPreviousCheckpoint()
+	// if err != nil {
+	// 	return false, false, err
+	// }
+	// if checkpointNode != nil {
+	// 	// Ensure the block timestamp is after the checkpoint timestamp.
+	// 	checkpointTime := time.Unix(checkpointNode.timestamp, 0)
+	// 	if blockHeader.Timestamp.Before(checkpointTime) {
+	// 		str := fmt.Sprintf("block %v has timestamp %v before "+
+	// 			"last checkpoint timestamp %v", blockHash,
+	// 			blockHeader.Timestamp, checkpointTime)
+	// 		return false, false, ruleError(ErrCheckpointTimeTooOld, str)
+	// 	}
+	// 	if !fastAdd {
+	// 		// Even though the checks prior to now have already ensured the
+	// 		// proof of work exceeds the claimed amount, the claimed amount
+	// 		// is a field in the block header which could be forged.  This
+	// 		// check ensures the proof of work is at least the minimum
+	// 		// expected based on elapsed time since the last checkpoint and
+	// 		// maximum adjustment allowed by the retarget rules.
+	// 		duration := blockHeader.Timestamp.Sub(checkpointTime)
+	// 		requiredTarget := CompactToBig(b.calcEasiestDifficulty(
+	// 			checkpointNode.bits, duration))
+	// 		currentTarget := CompactToBig(blockHeader.Bits)
+	// 		if currentTarget.Cmp(requiredTarget) > 0 {
+	// 			str := fmt.Sprintf("block target difficulty of %064x "+
+	// 				"is too low when compared to the previous "+
+	// 				"checkpoint", currentTarget)
+	// 			return false, false, ruleError(ErrDifficultyTooLow, str)
+	// 		}
+	// 	}
+	// }
 
 	// Handle orphan blocks.
 	prevHash := &blockHeader.PrevBlock

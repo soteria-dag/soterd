@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -10,7 +11,7 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 )
 
 const (
@@ -175,14 +176,14 @@ func (c scriptFreeList) Return(buf []byte) {
 // the number of allocations.
 var scriptPool scriptFreeList = make(chan []byte, freeListMaxItems)
 
-// OutPoint defines a bitcoin data type that is used to track previous
+// OutPoint defines a soter data type that is used to track previous
 // transaction outputs.
 type OutPoint struct {
 	Hash  chainhash.Hash
 	Index uint32
 }
 
-// NewOutPoint returns a new bitcoin transaction outpoint point with the
+// NewOutPoint returns a new soter transaction outpoint point with the
 // provided hash and index.
 func NewOutPoint(hash *chainhash.Hash, index uint32) *OutPoint {
 	return &OutPoint{
@@ -206,7 +207,7 @@ func (o OutPoint) String() string {
 	return string(buf)
 }
 
-// TxIn defines a bitcoin transaction input.
+// TxIn defines a soter transaction input.
 type TxIn struct {
 	PreviousOutPoint OutPoint
 	SignatureScript  []byte
@@ -224,7 +225,7 @@ func (t *TxIn) SerializeSize() int {
 		len(t.SignatureScript)
 }
 
-// NewTxIn returns a new bitcoin transaction input with the provided
+// NewTxIn returns a new soter transaction input with the provided
 // previous outpoint point and signature script with a default sequence of
 // MaxTxInSequenceNum.
 func NewTxIn(prevOut *OutPoint, signatureScript []byte, witness [][]byte) *TxIn {
@@ -257,7 +258,7 @@ func (t TxWitness) SerializeSize() int {
 	return n
 }
 
-// TxOut defines a bitcoin transaction output.
+// TxOut defines a soter transaction output.
 type TxOut struct {
 	Value    int64
 	PkScript []byte
@@ -271,7 +272,7 @@ func (t *TxOut) SerializeSize() int {
 	return 8 + VarIntSerializeSize(uint64(len(t.PkScript))) + len(t.PkScript)
 }
 
-// NewTxOut returns a new bitcoin transaction output with the provided
+// NewTxOut returns a new soter transaction output with the provided
 // transaction value and public key script.
 func NewTxOut(value int64, pkScript []byte) *TxOut {
 	return &TxOut{
@@ -280,7 +281,7 @@ func NewTxOut(value int64, pkScript []byte) *TxOut {
 	}
 }
 
-// MsgTx implements the Message interface and represents a bitcoin tx message.
+// MsgTx implements the Message interface and represents a soter tx message.
 // It is used to deliver transaction information in response to a getdata
 // message (MsgGetData) for a given transaction.
 //
@@ -404,11 +405,11 @@ func (msg *MsgTx) Copy() *MsgTx {
 	return &newTx
 }
 
-// BtcDecode decodes r using the bitcoin protocol encoding into the receiver.
+// SotoDecode decodes r using the soter protocol encoding into the receiver.
 // This is part of the Message interface implementation.
 // See Deserialize for decoding transactions stored to disk, such as in a
 // database, as opposed to decoding transactions from the wire.
-func (msg *MsgTx) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
+func (msg *MsgTx) SotoDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
 	version, err := binarySerializer.Uint32(r, littleEndian)
 	if err != nil {
 		return err
@@ -433,7 +434,7 @@ func (msg *MsgTx) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error
 		// flag types may be supported.
 		if flag[0] != 0x01 {
 			str := fmt.Sprintf("witness tx but flag byte is %x", flag)
-			return messageError("MsgTx.BtcDecode", str)
+			return messageError("MsgTx.SotoDecode", str)
 		}
 
 		// With the Segregated Witness specific fields decoded, we can
@@ -451,7 +452,7 @@ func (msg *MsgTx) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error
 		str := fmt.Sprintf("too many input transactions to fit into "+
 			"max message size [count %d, max %d]", count,
 			maxTxInPerMessage)
-		return messageError("MsgTx.BtcDecode", str)
+		return messageError("MsgTx.SotoDecode", str)
 	}
 
 	// returnScriptBuffers is a closure that returns any script buffers that
@@ -514,7 +515,7 @@ func (msg *MsgTx) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error
 		str := fmt.Sprintf("too many output transactions to fit into "+
 			"max message size [count %d, max %d]", count,
 			maxTxOutPerMessage)
-		return messageError("MsgTx.BtcDecode", str)
+		return messageError("MsgTx.SotoDecode", str)
 	}
 
 	// Deserialize the outputs.
@@ -553,7 +554,7 @@ func (msg *MsgTx) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error
 				str := fmt.Sprintf("too many witness items to fit "+
 					"into max message size [count %d, max %d]",
 					witCount, maxWitnessItemsPerInput)
-				return messageError("MsgTx.BtcDecode", str)
+				return messageError("MsgTx.SotoDecode", str)
 			}
 
 			// Then for witCount number of stack items, each item
@@ -651,8 +652,8 @@ func (msg *MsgTx) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error
 
 // Deserialize decodes a transaction from r into the receiver using a format
 // that is suitable for long-term storage such as a database while respecting
-// the Version field in the transaction.  This function differs from BtcDecode
-// in that BtcDecode decodes from the bitcoin wire protocol as it was sent
+// the Version field in the transaction.  This function differs from SotoDecode
+// in that SotoDecode decodes from the soter wire protocol as it was sent
 // across the network.  The wire encoding can technically differ depending on
 // the protocol version and doesn't even really need to match the format of a
 // stored transaction at all.  As of the time this comment was written, the
@@ -662,8 +663,8 @@ func (msg *MsgTx) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error
 func (msg *MsgTx) Deserialize(r io.Reader) error {
 	// At the current time, there is no difference between the wire encoding
 	// at protocol version 0 and the stable long-term storage format.  As
-	// a result, make use of BtcDecode.
-	return msg.BtcDecode(r, 0, WitnessEncoding)
+	// a result, make use of SotoDecode.
+	return msg.SotoDecode(r, 0, WitnessEncoding)
 }
 
 // DeserializeNoWitness decodes a transaction from r into the receiver, where
@@ -671,14 +672,14 @@ func (msg *MsgTx) Deserialize(r io.Reader) error {
 // serialization format created to encode transaction bearing witness data
 // within inputs.
 func (msg *MsgTx) DeserializeNoWitness(r io.Reader) error {
-	return msg.BtcDecode(r, 0, BaseEncoding)
+	return msg.SotoDecode(r, 0, BaseEncoding)
 }
 
-// BtcEncode encodes the receiver to w using the bitcoin protocol encoding.
+// SotoEncode encodes the receiver to w using the soter protocol encoding.
 // This is part of the Message interface implementation.
 // See Serialize for encoding transactions to be stored to disk, such as in a
 // database, as opposed to encoding transactions for the wire.
-func (msg *MsgTx) BtcEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
+func (msg *MsgTx) SotoEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
 	err := binarySerializer.PutUint32(w, littleEndian, uint32(msg.Version))
 	if err != nil {
 		return err
@@ -757,8 +758,8 @@ func (msg *MsgTx) HasWitness() bool {
 
 // Serialize encodes the transaction to w using a format that suitable for
 // long-term storage such as a database while respecting the Version field in
-// the transaction.  This function differs from BtcEncode in that BtcEncode
-// encodes the transaction to the bitcoin wire protocol in order to be sent
+// the transaction.  This function differs from SotoEncode in that SotoEncode
+// encodes the transaction to the soter wire protocol in order to be sent
 // across the network.  The wire encoding can technically differ depending on
 // the protocol version and doesn't even really need to match the format of a
 // stored transaction at all.  As of the time this comment was written, the
@@ -768,20 +769,20 @@ func (msg *MsgTx) HasWitness() bool {
 func (msg *MsgTx) Serialize(w io.Writer) error {
 	// At the current time, there is no difference between the wire encoding
 	// at protocol version 0 and the stable long-term storage format.  As
-	// a result, make use of BtcEncode.
+	// a result, make use of SotoEncode.
 	//
-	// Passing a encoding type of WitnessEncoding to BtcEncode for MsgTx
+	// Passing a encoding type of WitnessEncoding to SotoEncode for MsgTx
 	// indicates that the transaction's witnesses (if any) should be
 	// serialized according to the new serialization structure defined in
 	// BIP0144.
-	return msg.BtcEncode(w, 0, WitnessEncoding)
+	return msg.SotoEncode(w, 0, WitnessEncoding)
 }
 
 // SerializeNoWitness encodes the transaction to w in an identical manner to
 // Serialize, however even if the source transaction has inputs with witness
 // data, the old serialization format will still be used.
 func (msg *MsgTx) SerializeNoWitness(w io.Writer) error {
-	return msg.BtcEncode(w, 0, BaseEncoding)
+	return msg.SotoEncode(w, 0, BaseEncoding)
 }
 
 // baseSize returns the serialized size of the transaction without accounting
@@ -884,7 +885,7 @@ func (msg *MsgTx) PkScriptLocs() []int {
 	return pkScriptLocs
 }
 
-// NewMsgTx returns a new bitcoin tx message that conforms to the Message
+// NewMsgTx returns a new soter tx message that conforms to the Message
 // interface.  The return instance has a default version of TxVersion and there
 // are no transaction inputs or outputs.  Also, the lock time is set to zero
 // to indicate the transaction is valid immediately as opposed to some time in
@@ -908,7 +909,7 @@ func readOutPoint(r io.Reader, pver uint32, version int32, op *OutPoint) error {
 	return err
 }
 
-// writeOutPoint encodes op to the bitcoin protocol encoding for an OutPoint
+// writeOutPoint encodes op to the soter protocol encoding for an OutPoint
 // to w.
 func writeOutPoint(w io.Writer, pver uint32, version int32, op *OutPoint) error {
 	_, err := w.Write(op.Hash[:])
@@ -967,7 +968,7 @@ func readTxIn(r io.Reader, pver uint32, version int32, ti *TxIn) error {
 	return readElement(r, &ti.Sequence)
 }
 
-// writeTxIn encodes ti to the bitcoin protocol encoding for a transaction
+// writeTxIn encodes ti to the soter protocol encoding for a transaction
 // input (TxIn) to w.
 func writeTxIn(w io.Writer, pver uint32, version int32, ti *TxIn) error {
 	err := writeOutPoint(w, pver, version, &ti.PreviousOutPoint)
@@ -996,7 +997,7 @@ func readTxOut(r io.Reader, pver uint32, version int32, to *TxOut) error {
 	return err
 }
 
-// WriteTxOut encodes to into the bitcoin protocol encoding for a transaction
+// WriteTxOut encodes to into the soter protocol encoding for a transaction
 // output (TxOut) to w.
 //
 // NOTE: This function is exported in order to allow txscript to compute the
@@ -1010,7 +1011,7 @@ func WriteTxOut(w io.Writer, pver uint32, version int32, to *TxOut) error {
 	return WriteVarBytes(w, pver, to.PkScript)
 }
 
-// writeTxWitness encodes the bitcoin protocol encoding for a transaction
+// writeTxWitness encodes the soter protocol encoding for a transaction
 // input's witness into to w.
 func writeTxWitness(w io.Writer, pver uint32, version int32, wit [][]byte) error {
 	err := WriteVarInt(w, pver, uint64(len(wit)))

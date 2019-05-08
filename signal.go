@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -30,11 +31,11 @@ func interruptListener() <-chan struct{} {
 		// channel to notify the caller.
 		select {
 		case sig := <-interruptChannel:
-			btcdLog.Infof("Received signal (%s).  Shutting down...",
+			soterdLog.Infof("Received signal (%s).  Shutting down...",
 				sig)
 
 		case <-shutdownRequestChannel:
-			btcdLog.Info("Shutdown requested.  Shutting down...")
+			soterdLog.Info("Shutdown requested.  Shutting down...")
 		}
 		close(c)
 
@@ -44,11 +45,11 @@ func interruptListener() <-chan struct{} {
 		for {
 			select {
 			case sig := <-interruptChannel:
-				btcdLog.Infof("Received signal (%s).  Already "+
+				soterdLog.Infof("Received signal (%s).  Already "+
 					"shutting down...", sig)
 
 			case <-shutdownRequestChannel:
-				btcdLog.Info("Shutdown requested.  Already " +
+				soterdLog.Info("Shutdown requested.  Already " +
 					"shutting down...")
 			}
 		}

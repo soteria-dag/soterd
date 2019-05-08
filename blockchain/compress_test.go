@@ -1,4 +1,5 @@
 // Copyright (c) 2015-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -265,47 +266,47 @@ func TestAmountCompression(t *testing.T) {
 		compressed   uint64
 	}{
 		{
-			name:         "0 BTC (sometimes used in nulldata)",
+			name:         "0 SOTO (sometimes used in nulldata)",
 			uncompressed: 0,
 			compressed:   0,
 		},
 		{
-			name:         "546 Satoshi (current network dust value)",
+			name:         "546 nSOTO (current network dust value)",
 			uncompressed: 546,
 			compressed:   4911,
 		},
 		{
-			name:         "0.00001 BTC (typical transaction fee)",
+			name:         "0.00001 SOTO (typical transaction fee)",
 			uncompressed: 1000,
 			compressed:   4,
 		},
 		{
-			name:         "0.0001 BTC (typical transaction fee)",
+			name:         "0.0001 SOTO (typical transaction fee)",
 			uncompressed: 10000,
 			compressed:   5,
 		},
 		{
-			name:         "0.12345678 BTC",
+			name:         "0.12345678 SOTO",
 			uncompressed: 12345678,
 			compressed:   111111101,
 		},
 		{
-			name:         "0.5 BTC",
+			name:         "0.5 SOTO",
 			uncompressed: 50000000,
 			compressed:   48,
 		},
 		{
-			name:         "1 BTC",
+			name:         "1 SOTO",
 			uncompressed: 100000000,
 			compressed:   9,
 		},
 		{
-			name:         "5 BTC",
+			name:         "5 SOTO",
 			uncompressed: 500000000,
 			compressed:   49,
 		},
 		{
-			name:         "21000000 BTC (max minted coins)",
+			name:         "21000000 SOTO (max minted coins)",
 			uncompressed: 2100000000000000,
 			compressed:   21000000,
 		},
@@ -344,7 +345,7 @@ func TestCompressedTxOut(t *testing.T) {
 		compressed []byte
 	}{
 		{
-			name:       "nulldata with 0 BTC",
+			name:       "nulldata with 0 SOTO",
 			amount:     0,
 			pkScript:   hexToBytes("6a200102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"),
 			compressed: hexToBytes("00286a200102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"),
@@ -356,7 +357,7 @@ func TestCompressedTxOut(t *testing.T) {
 			compressed: hexToBytes("a52f001018853670f9f3b0582c5b9ee8ce93764ac32b93"),
 		},
 		{
-			name:       "pay-to-pubkey uncompressed 1 BTC",
+			name:       "pay-to-pubkey uncompressed 1 SOTO",
 			amount:     100000000,
 			pkScript:   hexToBytes("4104192d74d0cb94344c9569c2e77901573d8d7903c3ebec3a957724895dca52c6b40d45264838c0bd96852662ce6a847b197376830160c6d2eb5e6a4c44d33f453eac"),
 			compressed: hexToBytes("0904192d74d0cb94344c9569c2e77901573d8d7903c3ebec3a957724895dca52c6b4"),

@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -9,7 +10,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 )
 
 // MaxBlockHeaderPayload is the maximum number of bytes a block header can be.
@@ -17,7 +18,7 @@ import (
 // PrevBlock and MerkleRoot hashes.
 const MaxBlockHeaderPayload = 16 + (chainhash.HashSize * 2)
 
-// BlockHeader defines information about a block and is used in the bitcoin
+// BlockHeader defines information about a block and is used in the soter
 // block (MsgBlock) and headers (MsgHeaders) messages.
 type BlockHeader struct {
 	// Version of the block.  This is not the same as the protocol version.
@@ -56,19 +57,19 @@ func (h *BlockHeader) BlockHash() chainhash.Hash {
 	return chainhash.DoubleHashH(buf.Bytes())
 }
 
-// BtcDecode decodes r using the bitcoin protocol encoding into the receiver.
+// SotoDecode decodes r using the soter protocol encoding into the receiver.
 // This is part of the Message interface implementation.
 // See Deserialize for decoding block headers stored to disk, such as in a
 // database, as opposed to decoding block headers from the wire.
-func (h *BlockHeader) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
+func (h *BlockHeader) SotoDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
 	return readBlockHeader(r, pver, h)
 }
 
-// BtcEncode encodes the receiver to w using the bitcoin protocol encoding.
+// SotoEncode encodes the receiver to w using the soter protocol encoding.
 // This is part of the Message interface implementation.
 // See Serialize for encoding block headers to be stored to disk, such as in a
 // database, as opposed to encoding block headers for the wire.
-func (h *BlockHeader) BtcEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
+func (h *BlockHeader) SotoEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
 	return writeBlockHeader(w, pver, h)
 }
 
@@ -110,7 +111,7 @@ func NewBlockHeader(version int32, prevHash, merkleRootHash *chainhash.Hash,
 	}
 }
 
-// readBlockHeader reads a bitcoin block header from r.  See Deserialize for
+// readBlockHeader reads a soter block header from r.  See Deserialize for
 // decoding block headers stored to disk, such as in a database, as opposed to
 // decoding from the wire.
 func readBlockHeader(r io.Reader, pver uint32, bh *BlockHeader) error {
@@ -118,7 +119,7 @@ func readBlockHeader(r io.Reader, pver uint32, bh *BlockHeader) error {
 		(*uint32Time)(&bh.Timestamp), &bh.Bits, &bh.Nonce)
 }
 
-// writeBlockHeader writes a bitcoin block header to w.  See Serialize for
+// writeBlockHeader writes a soter block header to w.  See Serialize for
 // encoding block headers to be stored to disk, such as in a database, as
 // opposed to encoding for the wire.
 func writeBlockHeader(w io.Writer, pver uint32, bh *BlockHeader) error {

@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -9,7 +10,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/btcsuite/btcd/wire"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 // TestParseOpcode tests for opcode parsing with bad data templates.

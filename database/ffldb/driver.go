@@ -1,4 +1,5 @@
 // Copyright (c) 2015-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -7,19 +8,19 @@ package ffldb
 import (
 	"fmt"
 
-	"github.com/btcsuite/btcd/database"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btclog"
+	"github.com/soteria-dag/soterd/database"
+	"github.com/soteria-dag/soterd/wire"
+	"github.com/soteria-dag/soterd/soterlog"
 )
 
-var log = btclog.Disabled
+var log = soterlog.Disabled
 
 const (
 	dbType = "ffldb"
 )
 
 // parseArgs parses the arguments from the database Open/Create methods.
-func parseArgs(funcName string, args ...interface{}) (string, wire.BitcoinNet, error) {
+func parseArgs(funcName string, args ...interface{}) (string, wire.SoterNet, error) {
 	if len(args) != 2 {
 		return "", 0, fmt.Errorf("invalid arguments to %s.%s -- "+
 			"expected database path and block network", dbType,
@@ -32,7 +33,7 @@ func parseArgs(funcName string, args ...interface{}) (string, wire.BitcoinNet, e
 			"expected database path string", dbType, funcName)
 	}
 
-	network, ok := args[1].(wire.BitcoinNet)
+	network, ok := args[1].(wire.SoterNet)
 	if !ok {
 		return "", 0, fmt.Errorf("second argument to %s.%s is invalid -- "+
 			"expected block network", dbType, funcName)
@@ -65,7 +66,7 @@ func createDBDriver(args ...interface{}) (database.DB, error) {
 
 // useLogger is the callback provided during driver registration that sets the
 // current logger to the provided one.
-func useLogger(logger btclog.Logger) {
+func useLogger(logger soterlog.Logger) {
 	log = logger
 }
 

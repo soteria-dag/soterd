@@ -1,4 +1,5 @@
 // Copyright (c) 2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -11,12 +12,12 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/blockdag"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/soterutil"
+	"github.com/soteria-dag/soterd/txscript"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 // solveBlock attempts to find a nonce which makes the passed block header hash
@@ -44,7 +45,7 @@ func solveBlock(header *wire.BlockHeader, targetDifficulty *big.Int) bool {
 			default:
 				hdr.Nonce = i
 				hash := hdr.BlockHash()
-				if blockchain.HashToBig(&hash).Cmp(targetDifficulty) <= 0 {
+				if blockdag.HashToBig(&hash).Cmp(targetDifficulty) <= 0 {
 					select {
 					case results <- sbResult{true, i}:
 						return
@@ -96,8 +97,8 @@ func standardCoinbaseScript(nextBlockHeight int32, extraNonce uint64) ([]byte, e
 // createCoinbaseTx returns a coinbase transaction paying an appropriate
 // subsidy based on the passed block height to the provided address.
 func createCoinbaseTx(coinbaseScript []byte, nextBlockHeight int32,
-	addr btcutil.Address, mineTo []wire.TxOut,
-	net *chaincfg.Params) (*btcutil.Tx, error) {
+	addr soterutil.Address, mineTo []wire.TxOut,
+	net *chaincfg.Params) (*soterutil.Tx, error) {
 
 	// Create the script to pay to the provided payment address.
 	pkScript, err := txscript.PayToAddrScript(addr)
@@ -116,7 +117,7 @@ func createCoinbaseTx(coinbaseScript []byte, nextBlockHeight int32,
 	})
 	if len(mineTo) == 0 {
 		tx.AddTxOut(&wire.TxOut{
-			Value:    blockchain.CalcBlockSubsidy(nextBlockHeight, net),
+			Value:    blockdag.CalcBlockSubsidy(nextBlockHeight, net),
 			PkScript: pkScript,
 		})
 	} else {
@@ -124,7 +125,7 @@ func createCoinbaseTx(coinbaseScript []byte, nextBlockHeight int32,
 			tx.AddTxOut(&mineTo[i])
 		}
 	}
-	return btcutil.NewTx(tx), nil
+	return soterutil.NewTx(tx), nil
 }
 
 // CreateBlock creates a new block building from the previous block with a
@@ -132,12 +133,11 @@ func createCoinbaseTx(coinbaseScript []byte, nextBlockHeight int32,
 // initialized), then the timestamp of the previous block will be used plus 1
 // second is used. Passing nil for the previous block results in a block that
 // builds off of the genesis block for the specified chain.
-func CreateBlock(prevBlock *btcutil.Block, inclusionTxs []*btcutil.Tx,
-	blockVersion int32, blockTime time.Time, miningAddr btcutil.Address,
-	mineTo []wire.TxOut, net *chaincfg.Params) (*btcutil.Block, error) {
+func CreateBlock(prevBlock *soterutil.Block, prevHash *chainhash.Hash, inclusionTxs []*soterutil.Tx,
+	blockVersion int32, blockTime time.Time, miningAddr soterutil.Address,
+	mineTo []wire.TxOut, net *chaincfg.Params) (*soterutil.Block, error) {
 
 	var (
-		prevHash      *chainhash.Hash
 		blockHeight   int32
 		prevBlockTime time.Time
 	)
@@ -145,11 +145,9 @@ func CreateBlock(prevBlock *btcutil.Block, inclusionTxs []*btcutil.Tx,
 	// If the previous block isn't specified, then we'll construct a block
 	// that builds off of the genesis block for the chain.
 	if prevBlock == nil {
-		prevHash = net.GenesisHash
 		blockHeight = 1
 		prevBlockTime = net.GenesisBlock.Header.Timestamp.Add(time.Minute)
 	} else {
-		prevHash = prevBlock.Hash()
 		blockHeight = prevBlock.Height() + 1
 		prevBlockTime = prevBlock.MsgBlock().Header.Timestamp
 	}
@@ -177,11 +175,11 @@ func CreateBlock(prevBlock *btcutil.Block, inclusionTxs []*btcutil.Tx,
 	}
 
 	// Create a new block ready to be solved.
-	blockTxns := []*btcutil.Tx{coinbaseTx}
+	blockTxns := []*soterutil.Tx{coinbaseTx}
 	if inclusionTxs != nil {
 		blockTxns = append(blockTxns, inclusionTxs...)
 	}
-	merkles := blockchain.BuildMerkleTreeStore(blockTxns, false)
+	merkles := blockdag.BuildMerkleTreeStore(blockTxns, false)
 	var block wire.MsgBlock
 	block.Header = wire.BlockHeader{
 		Version:    blockVersion,
@@ -190,6 +188,26 @@ func CreateBlock(prevBlock *btcutil.Block, inclusionTxs []*btcutil.Tx,
 		Timestamp:  ts,
 		Bits:       net.PowLimitBits,
 	}
+
+	var parents []*wire.Parent
+	var parent wire.Parent
+	if prevBlock == nil {
+		parent = wire.Parent{
+			Hash: *net.GenesisHash,
+		}
+	} else {
+		parent = wire.Parent{
+			Hash: *prevBlock.Hash(),
+		}
+	}
+	parents = append(parents, &parent)
+
+	block.Parents = wire.ParentSubHeader{
+		Version: blockVersion,
+		Size: int32(len(parents)),
+		Parents: parents,
+	}
+
 	for _, tx := range blockTxns {
 		if err := block.AddTransaction(tx.MsgTx()); err != nil {
 			return nil, err
@@ -201,7 +219,7 @@ func CreateBlock(prevBlock *btcutil.Block, inclusionTxs []*btcutil.Tx,
 		return nil, errors.New("Unable to solve block")
 	}
 
-	utilBlock := btcutil.NewBlock(&block)
+	utilBlock := soterutil.NewBlock(&block)
 	utilBlock.SetHeight(blockHeight)
 	return utilBlock, nil
 }

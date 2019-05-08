@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -14,13 +15,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/database"
-	_ "github.com/btcsuite/btcd/database/ffldb"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/database"
+	_ "github.com/soteria-dag/soterd/database/ffldb"
+	"github.com/soteria-dag/soterd/soterutil"
+	"github.com/soteria-dag/soterd/txscript"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 const (
@@ -59,8 +60,8 @@ func isSupportedDbType(dbType string) bool {
 
 // loadBlocks reads files containing bitcoin block data (gzipped but otherwise
 // in the format bitcoind writes) from disk and returns them as an array of
-// btcutil.Block.  This is largely borrowed from the test code in btcdb.
-func loadBlocks(filename string) (blocks []*btcutil.Block, err error) {
+// soterutil.Block.  This is largely borrowed from the test code in btcdb.
+func loadBlocks(filename string) (blocks []*soterutil.Block, err error) {
 	filename = filepath.Join("testdata/", filename)
 
 	var network = wire.MainNet
@@ -79,7 +80,7 @@ func loadBlocks(filename string) (blocks []*btcutil.Block, err error) {
 	}
 	defer fi.Close()
 
-	var block *btcutil.Block
+	var block *soterutil.Block
 
 	err = nil
 	for height := int64(1); err == nil; height++ {
@@ -105,7 +106,7 @@ func loadBlocks(filename string) (blocks []*btcutil.Block, err error) {
 		// read block
 		dr.Read(rbytes)
 
-		block, err = btcutil.NewBlockFromBytes(rbytes)
+		block, err = soterutil.NewBlockFromBytes(rbytes)
 		if err != nil {
 			return
 		}
@@ -175,9 +176,11 @@ func chainSetup(dbName string, params *chaincfg.Params) (*BlockChain, func(), er
 	chain, err := New(&Config{
 		DB:          db,
 		ChainParams: &paramsCopy,
-		Checkpoints: nil,
-		TimeSource:  NewMedianTime(),
-		SigCache:    txscript.NewSigCache(1000),
+		// NOTE(cedric): Commented out to disable checkpoint-related code (JIRA DAG-3)
+		// 
+		//Checkpoints: nil,
+		TimeSource: NewMedianTime(),
+		SigCache:   txscript.NewSigCache(1000),
 	})
 	if err != nil {
 		teardown()

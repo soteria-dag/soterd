@@ -2,7 +2,7 @@
 *~
 
 # Databases
-btcd.db
+soterd.db
 *-shm
 *-wal
 
@@ -17,6 +17,7 @@ btcd.db
 # Folders
 _obj
 _test
+.idea
 vendor
 
 # Architecture specific extensions/prefixes
@@ -32,3 +33,4 @@ _cgo_export.*
 _testmain.go
 
 *.exe
+soterd

@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -12,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 	"github.com/davecgh/go-spew/spew"
 )
 
@@ -126,7 +127,7 @@ func TestElementWire(t *testing.T) {
 			[]byte{0x01, 0x00, 0x00, 0x00},
 		},
 		{
-			BitcoinNet(MainNet),
+			SoterNet(MainNet),
 			[]byte{0xf9, 0xbe, 0xb4, 0xd9},
 		},
 		// Type not supported by the "fast" path and requires reflection.
@@ -213,7 +214,7 @@ func TestElementWireErrors(t *testing.T) {
 		},
 		{ServiceFlag(SFNodeNetwork), 0, io.ErrShortWrite, io.EOF},
 		{InvType(InvTypeTx), 0, io.ErrShortWrite, io.EOF},
-		{BitcoinNet(MainNet), 0, io.ErrShortWrite, io.EOF},
+		{SoterNet(MainNet), 0, io.ErrShortWrite, io.EOF},
 	}
 
 	t.Logf("Running %d tests", len(tests))

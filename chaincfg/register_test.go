@@ -1,3 +1,7 @@
+// Copyright (c) 2018-2019 The Soteria DAG developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
 package chaincfg_test
 
 import (
@@ -6,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	. "github.com/btcsuite/btcd/chaincfg"
+	. "github.com/soteria-dag/soterd/chaincfg"
 )
 
 // Define some of the required parameters for a user-registered
@@ -64,8 +68,8 @@ func TestRegister(t *testing.T) {
 					err:    ErrDuplicateNet,
 				},
 				{
-					name:   "duplicate testnet3",
-					params: &TestNet3Params,
+					name:   "duplicate testnet1",
+					params: &TestNet1Params,
 					err:    ErrDuplicateNet,
 				},
 				{
@@ -80,7 +84,7 @@ func TestRegister(t *testing.T) {
 					valid: true,
 				},
 				{
-					magic: TestNet3Params.PubKeyHashAddrID,
+					magic: TestNet1Params.PubKeyHashAddrID,
 					valid: true,
 				},
 				{
@@ -106,7 +110,7 @@ func TestRegister(t *testing.T) {
 					valid: true,
 				},
 				{
-					magic: TestNet3Params.ScriptHashAddrID,
+					magic: TestNet1Params.ScriptHashAddrID,
 					valid: true,
 				},
 				{
@@ -132,7 +136,7 @@ func TestRegister(t *testing.T) {
 					valid:  true,
 				},
 				{
-					prefix: TestNet3Params.Bech32HRPSegwit + "1",
+					prefix: TestNet1Params.Bech32HRPSegwit + "1",
 					valid:  true,
 				},
 				{
@@ -171,8 +175,8 @@ func TestRegister(t *testing.T) {
 					err:  nil,
 				},
 				{
-					priv: TestNet3Params.HDPrivateKeyID[:],
-					want: TestNet3Params.HDPublicKeyID[:],
+					priv: TestNet1Params.HDPrivateKeyID[:],
+					want: TestNet1Params.HDPublicKeyID[:],
 					err:  nil,
 				},
 				{
@@ -214,7 +218,7 @@ func TestRegister(t *testing.T) {
 					valid: true,
 				},
 				{
-					magic: TestNet3Params.PubKeyHashAddrID,
+					magic: TestNet1Params.PubKeyHashAddrID,
 					valid: true,
 				},
 				{
@@ -240,7 +244,7 @@ func TestRegister(t *testing.T) {
 					valid: true,
 				},
 				{
-					magic: TestNet3Params.ScriptHashAddrID,
+					magic: TestNet1Params.ScriptHashAddrID,
 					valid: true,
 				},
 				{
@@ -266,7 +270,7 @@ func TestRegister(t *testing.T) {
 					valid:  true,
 				},
 				{
-					prefix: TestNet3Params.Bech32HRPSegwit + "1",
+					prefix: TestNet1Params.Bech32HRPSegwit + "1",
 					valid:  true,
 				},
 				{
@@ -320,8 +324,8 @@ func TestRegister(t *testing.T) {
 					err:    ErrDuplicateNet,
 				},
 				{
-					name:   "duplicate testnet3",
-					params: &TestNet3Params,
+					name:   "duplicate testnet1",
+					params: &TestNet1Params,
 					err:    ErrDuplicateNet,
 				},
 				{
@@ -341,7 +345,7 @@ func TestRegister(t *testing.T) {
 					valid: true,
 				},
 				{
-					magic: TestNet3Params.PubKeyHashAddrID,
+					magic: TestNet1Params.PubKeyHashAddrID,
 					valid: true,
 				},
 				{
@@ -367,7 +371,7 @@ func TestRegister(t *testing.T) {
 					valid: true,
 				},
 				{
-					magic: TestNet3Params.ScriptHashAddrID,
+					magic: TestNet1Params.ScriptHashAddrID,
 					valid: true,
 				},
 				{
@@ -393,7 +397,7 @@ func TestRegister(t *testing.T) {
 					valid:  true,
 				},
 				{
-					prefix: TestNet3Params.Bech32HRPSegwit + "1",
+					prefix: TestNet1Params.Bech32HRPSegwit + "1",
 					valid:  true,
 				},
 				{
@@ -432,8 +436,8 @@ func TestRegister(t *testing.T) {
 					err:  nil,
 				},
 				{
-					priv: TestNet3Params.HDPrivateKeyID[:],
-					want: TestNet3Params.HDPublicKeyID[:],
+					priv: TestNet1Params.HDPrivateKeyID[:],
+					want: TestNet1Params.HDPublicKeyID[:],
 					err:  nil,
 				},
 				{
@@ -444,11 +448,6 @@ func TestRegister(t *testing.T) {
 				{
 					priv: SimNetParams.HDPrivateKeyID[:],
 					want: SimNetParams.HDPublicKeyID[:],
-					err:  nil,
-				},
-				{
-					priv: mockNetParams.HDPrivateKeyID[:],
-					want: mockNetParams.HDPublicKeyID[:],
 					err:  nil,
 				},
 				{

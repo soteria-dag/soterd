@@ -1,5 +1,6 @@
 // Copyright (c) 2013-2018 The btcsuite developers
 // Copyright (c) 2016-2018 The Decred developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -18,12 +19,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/blang/semver"
 	"github.com/btcsuite/go-socks/socks"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/soteria-dag/soterd/blockdag"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 const (
@@ -100,106 +102,112 @@ var (
 // handler goroutine blocks until the callback has completed.  Doing so will
 // result in a deadlock.
 type MessageListeners struct {
-	// OnGetAddr is invoked when a peer receives a getaddr bitcoin message.
+	// OnGetAddr is invoked when a peer receives a getaddr soter message.
 	OnGetAddr func(p *Peer, msg *wire.MsgGetAddr)
 
-	// OnAddr is invoked when a peer receives an addr bitcoin message.
+	// OnGetAddrCache is invoked when a peer receives a getaddrcache message.
+	OnGetAddrCache func(p *Peer, msg *wire.MsgGetAddrCache)
+
+	// OnAddr is invoked when a peer receives an addr soter message.
 	OnAddr func(p *Peer, msg *wire.MsgAddr)
 
-	// OnPing is invoked when a peer receives a ping bitcoin message.
+	// OnAddrCache is invoked when a peer receives an addrcache message.
+	OnAddrCache func(p *Peer, msg *wire.MsgAddrCache)
+
+	// OnPing is invoked when a peer receives a ping soter message.
 	OnPing func(p *Peer, msg *wire.MsgPing)
 
-	// OnPong is invoked when a peer receives a pong bitcoin message.
+	// OnPong is invoked when a peer receives a pong soter message.
 	OnPong func(p *Peer, msg *wire.MsgPong)
 
-	// OnAlert is invoked when a peer receives an alert bitcoin message.
+	// OnAlert is invoked when a peer receives an alert soter message.
 	OnAlert func(p *Peer, msg *wire.MsgAlert)
 
-	// OnMemPool is invoked when a peer receives a mempool bitcoin message.
+	// OnMemPool is invoked when a peer receives a mempool soter message.
 	OnMemPool func(p *Peer, msg *wire.MsgMemPool)
 
-	// OnTx is invoked when a peer receives a tx bitcoin message.
+	// OnTx is invoked when a peer receives a tx soter message.
 	OnTx func(p *Peer, msg *wire.MsgTx)
 
-	// OnBlock is invoked when a peer receives a block bitcoin message.
+	// OnBlock is invoked when a peer receives a block soter message.
 	OnBlock func(p *Peer, msg *wire.MsgBlock, buf []byte)
 
-	// OnCFilter is invoked when a peer receives a cfilter bitcoin message.
+	// OnCFilter is invoked when a peer receives a cfilter soter message.
 	OnCFilter func(p *Peer, msg *wire.MsgCFilter)
 
-	// OnCFHeaders is invoked when a peer receives a cfheaders bitcoin
+	// OnCFHeaders is invoked when a peer receives a cfheaders soter
 	// message.
 	OnCFHeaders func(p *Peer, msg *wire.MsgCFHeaders)
 
-	// OnCFCheckpt is invoked when a peer receives a cfcheckpt bitcoin
+	// OnCFCheckpt is invoked when a peer receives a cfcheckpt soter
 	// message.
 	OnCFCheckpt func(p *Peer, msg *wire.MsgCFCheckpt)
 
-	// OnInv is invoked when a peer receives an inv bitcoin message.
+	// OnInv is invoked when a peer receives an inv soter message.
 	OnInv func(p *Peer, msg *wire.MsgInv)
 
-	// OnHeaders is invoked when a peer receives a headers bitcoin message.
+	// OnHeaders is invoked when a peer receives a headers soter message.
 	OnHeaders func(p *Peer, msg *wire.MsgHeaders)
 
-	// OnNotFound is invoked when a peer receives a notfound bitcoin
+	// OnNotFound is invoked when a peer receives a notfound soter
 	// message.
 	OnNotFound func(p *Peer, msg *wire.MsgNotFound)
 
-	// OnGetData is invoked when a peer receives a getdata bitcoin message.
+	// OnGetData is invoked when a peer receives a getdata soter message.
 	OnGetData func(p *Peer, msg *wire.MsgGetData)
 
-	// OnGetBlocks is invoked when a peer receives a getblocks bitcoin
+	// OnGetBlocks is invoked when a peer receives a getblocks soter
 	// message.
 	OnGetBlocks func(p *Peer, msg *wire.MsgGetBlocks)
 
-	// OnGetHeaders is invoked when a peer receives a getheaders bitcoin
+	// OnGetHeaders is invoked when a peer receives a getheaders soter
 	// message.
 	OnGetHeaders func(p *Peer, msg *wire.MsgGetHeaders)
 
-	// OnGetCFilters is invoked when a peer receives a getcfilters bitcoin
+	// OnGetCFilters is invoked when a peer receives a getcfilters soter
 	// message.
 	OnGetCFilters func(p *Peer, msg *wire.MsgGetCFilters)
 
 	// OnGetCFHeaders is invoked when a peer receives a getcfheaders
-	// bitcoin message.
+	// soter message.
 	OnGetCFHeaders func(p *Peer, msg *wire.MsgGetCFHeaders)
 
 	// OnGetCFCheckpt is invoked when a peer receives a getcfcheckpt
-	// bitcoin message.
+	// soter message.
 	OnGetCFCheckpt func(p *Peer, msg *wire.MsgGetCFCheckpt)
 
-	// OnFeeFilter is invoked when a peer receives a feefilter bitcoin message.
+	// OnFeeFilter is invoked when a peer receives a feefilter soter message.
 	OnFeeFilter func(p *Peer, msg *wire.MsgFeeFilter)
 
-	// OnFilterAdd is invoked when a peer receives a filteradd bitcoin message.
+	// OnFilterAdd is invoked when a peer receives a filteradd soter message.
 	OnFilterAdd func(p *Peer, msg *wire.MsgFilterAdd)
 
-	// OnFilterClear is invoked when a peer receives a filterclear bitcoin
+	// OnFilterClear is invoked when a peer receives a filterclear soter
 	// message.
 	OnFilterClear func(p *Peer, msg *wire.MsgFilterClear)
 
-	// OnFilterLoad is invoked when a peer receives a filterload bitcoin
+	// OnFilterLoad is invoked when a peer receives a filterload soter
 	// message.
 	OnFilterLoad func(p *Peer, msg *wire.MsgFilterLoad)
 
-	// OnMerkleBlock  is invoked when a peer receives a merkleblock bitcoin
+	// OnMerkleBlock  is invoked when a peer receives a merkleblock soter
 	// message.
 	OnMerkleBlock func(p *Peer, msg *wire.MsgMerkleBlock)
 
-	// OnVersion is invoked when a peer receives a version bitcoin message.
+	// OnVersion is invoked when a peer receives a version soter message.
 	OnVersion func(p *Peer, msg *wire.MsgVersion)
 
-	// OnVerAck is invoked when a peer receives a verack bitcoin message.
+	// OnVerAck is invoked when a peer receives a verack soter message.
 	OnVerAck func(p *Peer, msg *wire.MsgVerAck)
 
-	// OnReject is invoked when a peer receives a reject bitcoin message.
+	// OnReject is invoked when a peer receives a reject soter message.
 	OnReject func(p *Peer, msg *wire.MsgReject)
 
-	// OnSendHeaders is invoked when a peer receives a sendheaders bitcoin
+	// OnSendHeaders is invoked when a peer receives a sendheaders soter
 	// message.
 	OnSendHeaders func(p *Peer, msg *wire.MsgSendHeaders)
 
-	// OnRead is invoked when a peer receives a bitcoin message.  It
+	// OnRead is invoked when a peer receives a soter message.  It
 	// consists of the number of bytes read, the message, and whether or not
 	// an error in the read occurred.  Typically, callers will opt to use
 	// the callbacks for the specific message types, however this can be
@@ -208,7 +216,7 @@ type MessageListeners struct {
 	// not directly provide a callback.
 	OnRead func(p *Peer, bytesRead int, msg wire.Message, err error)
 
-	// OnWrite is invoked when we write a bitcoin message to a peer.  It
+	// OnWrite is invoked when we write a soter message to a peer.  It
 	// consists of the number of bytes written, the message, and whether or
 	// not an error in the write occurred.  This can be useful for
 	// circumstances such as keeping track of server-wide byte counts.
@@ -240,7 +248,7 @@ type Config struct {
 	// UserAgentVersion specifies the user agent version to advertise.  It
 	// is highly recommended to specify this value and that it follows the
 	// form "major.minor.revision" e.g. "2.6.41".
-	UserAgentVersion string
+	UserAgentVersion semver.Version
 
 	// UserAgentComments specify the user agent comments to advertise.  These
 	// values must not contain the illegal characters specified in BIP 14:
@@ -285,7 +293,7 @@ func minUint32(a, b uint32) uint32 {
 }
 
 // newNetAddress attempts to extract the IP address and port from the passed
-// net.Addr interface and create a bitcoin NetAddress structure using that
+// net.Addr interface and create a soter NetAddress structure using that
 // information.
 func newNetAddress(addr net.Addr, services wire.ServiceFlag) (*wire.NetAddress, error) {
 	// addr will be a net.TCPAddr when not using a proxy.
@@ -402,13 +410,13 @@ type HostToNetAddrFunc func(host string, port uint16,
 // It acts as the traffic cop between the external world and the actual
 // goroutine which writes to the network socket.
 
-// Peer provides a basic concurrent safe bitcoin peer for handling bitcoin
+// Peer provides a basic concurrent safe soter peer for handling soter
 // communications via the peer-to-peer protocol.  It provides full duplex
 // reading and writing, automatic handling of the initial handshake process,
 // querying of usage statistics and other information about the remote peer such
 // as its address, user agent, and protocol version, output message queuing,
 // inventory trickling, and the ability to dynamically register and unregister
-// callbacks for handling bitcoin protocol messages.
+// callbacks for handling soter protocol messages.
 //
 // Outbound messages are typically queued via QueueMessage or QueueInventory.
 // QueueMessage is intended for all messages, including responses to data such
@@ -448,13 +456,13 @@ type Peer struct {
 
 	wireEncoding wire.MessageEncoding
 
-	knownInventory     *mruInventoryMap
-	prevGetBlocksMtx   sync.Mutex
-	prevGetBlocksBegin *chainhash.Hash
-	prevGetBlocksStop  *chainhash.Hash
-	prevGetHdrsMtx     sync.Mutex
-	prevGetHdrsBegin   *chainhash.Hash
-	prevGetHdrsStop    *chainhash.Hash
+	knownInventory           *mruInventoryMap
+	prevGetBlocksMtx         sync.Mutex
+	prevGetBlocksStartHeight *int32
+	prevGetBlocksStop        *chainhash.Hash
+	prevGetHdrsMtx           sync.Mutex
+	prevGetHdrsStartHeight   *int32
+	prevGetHdrsStop          *chainhash.Hash
 
 	// These fields keep track of statistics for the peer and are protected
 	// by the statsMtx mutex.
@@ -462,7 +470,7 @@ type Peer struct {
 	timeOffset         int64
 	timeConnected      time.Time
 	startingHeight     int32
-	lastBlock          int32
+	maxBlockHeight     int32
 	lastAnnouncedBlock *chainhash.Hash
 	lastPingNonce      uint64    // Set to nonce if we have a pending ping.
 	lastPingTime       time.Time // Time we sent last ping.
@@ -487,14 +495,14 @@ func (p *Peer) String() string {
 	return fmt.Sprintf("%s (%s)", p.addr, directionString(p.inbound))
 }
 
-// UpdateLastBlockHeight updates the last known block for the peer.
+// UpdateMaxBlockHeight updates the known max block height for the peer.
 //
 // This function is safe for concurrent access.
-func (p *Peer) UpdateLastBlockHeight(newHeight int32) {
+func (p *Peer) UpdateMaxBlockHeight(newHeight int32) {
 	p.statsMtx.Lock()
 	log.Tracef("Updating last block height of peer %v from %v to %v",
-		p.addr, p.lastBlock, newHeight)
-	p.lastBlock = newHeight
+		p.addr, p.maxBlockHeight, newHeight)
+	p.maxBlockHeight = newHeight
 	p.statsMtx.Unlock()
 }
 
@@ -503,7 +511,7 @@ func (p *Peer) UpdateLastBlockHeight(newHeight int32) {
 //
 // This function is safe for concurrent access.
 func (p *Peer) UpdateLastAnnouncedBlock(blkHash *chainhash.Hash) {
-	log.Tracef("Updating last blk for peer %v, %v", p.addr, blkHash)
+	log.Tracef("Updating last blkHash for peer %v, %v", p.addr, blkHash)
 
 	p.statsMtx.Lock()
 	p.lastAnnouncedBlock = blkHash
@@ -547,7 +555,7 @@ func (p *Peer) StatsSnapshot() *StatsSnap {
 		Version:        protocolVersion,
 		Inbound:        p.inbound,
 		StartingHeight: p.startingHeight,
-		LastBlock:      p.lastBlock,
+		LastBlock:      p.maxBlockHeight,
 		LastPingNonce:  p.lastPingNonce,
 		LastPingMicros: p.lastPingMicros,
 		LastPingTime:   p.lastPingTime,
@@ -617,7 +625,7 @@ func (p *Peer) UserAgent() string {
 	return userAgent
 }
 
-// LastAnnouncedBlock returns the last announced block of the remote peer.
+// LastAnnouncedBlock returns the hash of the last announced block of the remote peer.
 //
 // This function is safe for concurrent access.
 func (p *Peer) LastAnnouncedBlock() *chainhash.Hash {
@@ -696,12 +704,12 @@ func (p *Peer) ProtocolVersion() uint32 {
 	return protocolVersion
 }
 
-// LastBlock returns the last block of the peer.
+// MaxBlockHeight returns the peer's max block height seen so far.
 //
 // This function is safe for concurrent access.
-func (p *Peer) LastBlock() int32 {
+func (p *Peer) MaxBlockHeight() int32 {
 	p.statsMtx.RLock()
-	lastBlock := p.lastBlock
+	lastBlock := p.maxBlockHeight
 	p.statsMtx.RUnlock()
 
 	return lastBlock
@@ -806,6 +814,33 @@ func (p *Peer) IsWitnessEnabled() bool {
 	return witnessEnabled
 }
 
+// PushAddrCacheMsg pushes one or more addrcache messages to the peer, based on how many addresses it needs to send.
+func (p *Peer) PushAddrCacheMsg(addresses []*wire.NetAddress) error {
+	msgs := make([]*wire.MsgAddrCache, 0)
+	msg := wire.NewMsgAddrCache()
+	for _, a := range addresses {
+		if len(msg.AddrList) >= wire.MaxAddrPerMsg {
+			msgs = append(msgs, msg)
+			msg = wire.NewMsgAddrCache()
+		}
+
+		err := msg.AddAddress(a)
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(msg.AddrList) > 0 {
+		msgs = append(msgs, msg)
+	}
+
+	for _, msg := range msgs {
+		p.QueueMessage(msg, nil)
+	}
+
+	return nil
+}
+
 // PushAddrMsg sends an addr message to the connected peer using the provided
 // addresses.  This function is useful over manually sending the message via
 // QueueMessage since it automatically limits the addresses to the maximum
@@ -846,31 +881,31 @@ func (p *Peer) PushAddrMsg(addresses []*wire.NetAddress) ([]*wire.NetAddress, er
 // and stop hash.  It will ignore back-to-back duplicate requests.
 //
 // This function is safe for concurrent access.
-func (p *Peer) PushGetBlocksMsg(locator blockchain.BlockLocator, stopHash *chainhash.Hash) error {
+func (p *Peer) PushGetBlocksMsg(locator blockdag.BlockLocator, stopHash *chainhash.Hash) error {
 	// Extract the begin hash from the block locator, if one was specified,
 	// to use for filtering duplicate getblocks requests.
-	var beginHash *chainhash.Hash
+	var startHeight *int32
 	if len(locator) > 0 {
-		beginHash = locator[0]
+		startHeight = locator[0]
 	}
 
 	// Filter duplicate getblocks requests.
 	p.prevGetBlocksMtx.Lock()
-	isDuplicate := p.prevGetBlocksStop != nil && p.prevGetBlocksBegin != nil &&
-		beginHash != nil && stopHash.IsEqual(p.prevGetBlocksStop) &&
-		beginHash.IsEqual(p.prevGetBlocksBegin)
+	isDuplicate := p.prevGetBlocksStop != nil && p.prevGetBlocksStartHeight != nil &&
+		startHeight != nil && stopHash.IsEqual(p.prevGetBlocksStop) &&
+		*startHeight == *p.prevGetBlocksStartHeight
 	p.prevGetBlocksMtx.Unlock()
 
 	if isDuplicate {
 		log.Tracef("Filtering duplicate [getblocks] with begin "+
-			"hash %v, stop hash %v", beginHash, stopHash)
+			"height %v, stop hash %v", *startHeight, stopHash)
 		return nil
 	}
 
 	// Construct the getblocks request and queue it to be sent.
 	msg := wire.NewMsgGetBlocks(stopHash)
-	for _, hash := range locator {
-		err := msg.AddBlockLocatorHash(hash)
+	for _, height := range locator {
+		err := msg.AddBlockLocatorHeight(height)
 		if err != nil {
 			return err
 		}
@@ -880,7 +915,7 @@ func (p *Peer) PushGetBlocksMsg(locator blockchain.BlockLocator, stopHash *chain
 	// Update the previous getblocks request information for filtering
 	// duplicates.
 	p.prevGetBlocksMtx.Lock()
-	p.prevGetBlocksBegin = beginHash
+	p.prevGetBlocksStartHeight = startHeight
 	p.prevGetBlocksStop = stopHash
 	p.prevGetBlocksMtx.Unlock()
 	return nil
@@ -890,32 +925,32 @@ func (p *Peer) PushGetBlocksMsg(locator blockchain.BlockLocator, stopHash *chain
 // and stop hash.  It will ignore back-to-back duplicate requests.
 //
 // This function is safe for concurrent access.
-func (p *Peer) PushGetHeadersMsg(locator blockchain.BlockLocator, stopHash *chainhash.Hash) error {
+func (p *Peer) PushGetHeadersMsg(locator blockdag.BlockLocator, stopHash *chainhash.Hash) error {
 	// Extract the begin hash from the block locator, if one was specified,
 	// to use for filtering duplicate getheaders requests.
-	var beginHash *chainhash.Hash
+	var startHeight *int32
 	if len(locator) > 0 {
-		beginHash = locator[0]
+		startHeight = locator[0]
 	}
 
 	// Filter duplicate getheaders requests.
 	p.prevGetHdrsMtx.Lock()
-	isDuplicate := p.prevGetHdrsStop != nil && p.prevGetHdrsBegin != nil &&
-		beginHash != nil && stopHash.IsEqual(p.prevGetHdrsStop) &&
-		beginHash.IsEqual(p.prevGetHdrsBegin)
+	isDuplicate := p.prevGetHdrsStop != nil && p.prevGetHdrsStartHeight != nil &&
+		startHeight != nil && stopHash.IsEqual(p.prevGetHdrsStop) &&
+		*startHeight == *p.prevGetHdrsStartHeight
 	p.prevGetHdrsMtx.Unlock()
 
 	if isDuplicate {
 		log.Tracef("Filtering duplicate [getheaders] with begin hash %v",
-			beginHash)
+			startHeight)
 		return nil
 	}
 
 	// Construct the getheaders request and queue it to be sent.
 	msg := wire.NewMsgGetHeaders()
 	msg.HashStop = *stopHash
-	for _, hash := range locator {
-		err := msg.AddBlockLocatorHash(hash)
+	for _, height := range locator {
+		err := msg.AddBlockLocatorHeight(height)
 		if err != nil {
 			return err
 		}
@@ -925,7 +960,7 @@ func (p *Peer) PushGetHeadersMsg(locator blockchain.BlockLocator, stopHash *chai
 	// Update the previous getheaders request information for filtering
 	// duplicates.
 	p.prevGetHdrsMtx.Lock()
-	p.prevGetHdrsBegin = beginHash
+	p.prevGetHdrsStartHeight = startHeight
 	p.prevGetHdrsStop = stopHash
 	p.prevGetHdrsMtx.Unlock()
 	return nil
@@ -967,7 +1002,7 @@ func (p *Peer) PushRejectMsg(command string, code wire.RejectCode, reason string
 	<-doneChan
 }
 
-// handlePingMsg is invoked when a peer receives a ping bitcoin message.  For
+// handlePingMsg is invoked when a peer receives a ping soter message.  For
 // recent clients (protocol version > BIP0031Version), it replies with a pong
 // message.  For older clients, it does nothing and anything other than failure
 // is considered a successful ping.
@@ -979,7 +1014,7 @@ func (p *Peer) handlePingMsg(msg *wire.MsgPing) {
 	}
 }
 
-// handlePongMsg is invoked when a peer receives a pong bitcoin message.  It
+// handlePongMsg is invoked when a peer receives a pong soter message.  It
 // updates the ping statistics as required for recent clients (protocol
 // version > BIP0031Version).  There is no effect for older clients or when a
 // ping was not previously sent.
@@ -1002,7 +1037,7 @@ func (p *Peer) handlePongMsg(msg *wire.MsgPong) {
 	}
 }
 
-// readMessage reads the next bitcoin message from the peer with logging.
+// readMessage reads the next soter message from the peer with logging.
 func (p *Peer) readMessage(encoding wire.MessageEncoding) (wire.Message, []byte, error) {
 	n, msg, buf, err := wire.ReadMessageWithEncodingN(p.conn,
 		p.ProtocolVersion(), p.cfg.ChainParams.Net, encoding)
@@ -1035,7 +1070,7 @@ func (p *Peer) readMessage(encoding wire.MessageEncoding) (wire.Message, []byte,
 	return msg, buf, nil
 }
 
-// writeMessage sends a bitcoin message to the peer with logging.
+// writeMessage sends a soter message to the peer with logging.
 func (p *Peer) writeMessage(msg wire.Message, enc wire.MessageEncoding) error {
 	// Don't do anything if we're disconnecting.
 	if atomic.LoadInt32(&p.disconnect) != 0 {
@@ -1395,9 +1430,19 @@ out:
 				p.cfg.Listeners.OnGetAddr(p, msg)
 			}
 
+		case *wire.MsgGetAddrCache:
+			if p.cfg.Listeners.OnGetAddrCache != nil {
+				p.cfg.Listeners.OnGetAddrCache(p, msg)
+			}
+
 		case *wire.MsgAddr:
 			if p.cfg.Listeners.OnAddr != nil {
 				p.cfg.Listeners.OnAddr(p, msg)
+			}
+
+		case *wire.MsgAddrCache:
+			if p.cfg.Listeners.OnAddrCache != nil {
+				p.cfg.Listeners.OnAddrCache(p, msg)
 			}
 
 		case *wire.MsgPing:
@@ -1800,14 +1845,14 @@ out:
 	}
 }
 
-// QueueMessage adds the passed bitcoin message to the peer send queue.
+// QueueMessage adds the passed soter message to the peer send queue.
 //
 // This function is safe for concurrent access.
 func (p *Peer) QueueMessage(msg wire.Message, doneChan chan<- struct{}) {
 	p.QueueMessageWithEncoding(msg, doneChan, wire.BaseEncoding)
 }
 
-// QueueMessageWithEncoding adds the passed bitcoin message to the peer send
+// QueueMessageWithEncoding adds the passed soter message to the peer send
 // queue. This function is identical to QueueMessage, however it allows the
 // caller to specify the wire encoding type that should be used when
 // encoding/decoding blocks and transactions.
@@ -1875,13 +1920,30 @@ func (p *Peer) Disconnect() {
 	close(p.quit)
 }
 
-// handleRemoteVersionMsg is invoked when a version bitcoin message is received
+// handleRemoteVersionMsg is invoked when a version soter message is received
 // from the remote peer.  It will return an error if the remote peer's version
 // is not compatible with ours.
 func (p *Peer) handleRemoteVersionMsg(msg *wire.MsgVersion) error {
 	// Detect self connections.
 	if !allowSelfConns && sentNonces.Exists(msg.Nonce) {
 		return errors.New("disconnecting peer connected to self")
+	}
+
+	// Disconnect from peers that are using a different genesis block
+	genHash, err := chainhash.NewHash(msg.GenesisHash[:])
+	if err == nil {
+		if !genHash.IsEqual(p.cfg.ChainParams.GenesisHash) {
+			reason := fmt.Sprintf("peer genesis block hash different from ours (%s != %s)", genHash, p.cfg.ChainParams.GenesisHash)
+			return errors.New(reason)
+		}
+	}
+
+	// Disconnect from peers that are using an incompatible version
+	agents := msg.UserAgents()
+	remoteVer, exists := agents[p.cfg.UserAgentName]
+	if exists && remoteVer.Major != p.cfg.UserAgentVersion.Major {
+		reason := fmt.Sprintf("peer version %s is incompatible with our version %s", remoteVer, p.cfg.UserAgentVersion)
+		return errors.New(reason)
 	}
 
 	// Notify and disconnect clients that have a protocol version that is
@@ -1899,7 +1961,7 @@ func (p *Peer) handleRemoteVersionMsg(msg *wire.MsgVersion) error {
 	// Updating a bunch of stats including block based stats, and the
 	// peer's time offset.
 	p.statsMtx.Lock()
-	p.lastBlock = msg.LastBlock
+	p.maxBlockHeight = msg.LastBlock
 	p.startingHeight = msg.LastBlock
 	p.timeOffset = msg.Timestamp.Unix() - time.Now().Unix()
 	p.statsMtx.Unlock()
@@ -2015,10 +2077,16 @@ func (p *Peer) localVersionMsg() (*wire.MsgVersion, error) {
 	nonce := uint64(rand.Int63())
 	sentNonces.Add(nonce)
 
+	// Get the bytes of the genesis hash
+	genHash := p.cfg.ChainParams.GenesisHash.CloneBytes32()
+
 	// Version message.
-	msg := wire.NewMsgVersion(ourNA, theirNA, nonce, blockNum)
-	msg.AddUserAgent(p.cfg.UserAgentName, p.cfg.UserAgentVersion,
+	msg := wire.NewMsgVersion(ourNA, theirNA, nonce, blockNum, &genHash)
+	err := msg.AddUserAgent(p.cfg.UserAgentName, p.cfg.UserAgentVersion.String(),
 		p.cfg.UserAgentComments...)
+	if err != nil {
+		return nil, err
+	}
 
 	// XXX: bitcoind appears to always enable the full node services flag
 	// of the remote peer netaddress field in the version message regardless
@@ -2161,7 +2229,7 @@ func (p *Peer) WaitForDisconnect() {
 	<-p.quit
 }
 
-// newPeerBase returns a new base bitcoin peer based on the inbound flag.  This
+// newPeerBase returns a new base soter peer based on the inbound flag.  This
 // is used by the NewInboundPeer and NewOutboundPeer functions to perform base
 // setup needed by both types of peers.
 func newPeerBase(origCfg *Config, inbound bool) *Peer {
@@ -2174,7 +2242,7 @@ func newPeerBase(origCfg *Config, inbound bool) *Peer {
 
 	// Set the chain parameters to testnet if the caller did not specify any.
 	if cfg.ChainParams == nil {
-		cfg.ChainParams = &chaincfg.TestNet3Params
+		cfg.ChainParams = &chaincfg.TestNet1Params
 	}
 
 	// Set the trickle interval if a non-positive value is specified.
@@ -2202,13 +2270,13 @@ func newPeerBase(origCfg *Config, inbound bool) *Peer {
 	return &p
 }
 
-// NewInboundPeer returns a new inbound bitcoin peer. Use Start to begin
+// NewInboundPeer returns a new inbound soter peer. Use Start to begin
 // processing incoming and outgoing messages.
 func NewInboundPeer(cfg *Config) *Peer {
 	return newPeerBase(cfg, true)
 }
 
-// NewOutboundPeer returns a new outbound bitcoin peer.
+// NewOutboundPeer returns a new outbound soter peer.
 func NewOutboundPeer(cfg *Config, addr string) (*Peer, error) {
 	p := newPeerBase(cfg, false)
 	p.addr = addr

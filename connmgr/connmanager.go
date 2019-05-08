@@ -1,4 +1,5 @@
 // Copyright (c) 2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -460,6 +461,16 @@ func (cm *ConnManager) Disconnect(id uint64) {
 	case cm.requests <- handleDisconnected{id, true}:
 	case <-cm.quit:
 	}
+}
+
+// ListenAddrs returns the addresses the connection manager listens on
+func (cm *ConnManager) ListenAddrs() []string {
+	addrs := make([]string, 0)
+	for _, l := range cm.cfg.Listeners {
+		addrs = append(addrs, l.Addr().String())
+	}
+
+	return addrs
 }
 
 // Remove removes the connection corresponding to the given connection id from

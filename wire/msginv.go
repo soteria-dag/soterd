@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2015 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -18,7 +19,7 @@ import (
 // typical case.
 const defaultInvListAlloc = 1000
 
-// MsgInv implements the Message interface and represents a bitcoin inv message.
+// MsgInv implements the Message interface and represents a soter inv message.
 // It is used to advertise a peer's known data such as blocks and transactions
 // through inventory vectors.  It may be sent unsolicited to inform other peers
 // of the data or in response to a getblocks message (MsgGetBlocks).  Each
@@ -43,9 +44,9 @@ func (msg *MsgInv) AddInvVect(iv *InvVect) error {
 	return nil
 }
 
-// BtcDecode decodes r using the bitcoin protocol encoding into the receiver.
+// SotoDecode decodes r using the soter protocol encoding into the receiver.
 // This is part of the Message interface implementation.
-func (msg *MsgInv) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
+func (msg *MsgInv) SotoDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
 	count, err := ReadVarInt(r, pver)
 	if err != nil {
 		return err
@@ -54,7 +55,7 @@ func (msg *MsgInv) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) erro
 	// Limit to max inventory vectors per message.
 	if count > MaxInvPerMsg {
 		str := fmt.Sprintf("too many invvect in message [%v]", count)
-		return messageError("MsgInv.BtcDecode", str)
+		return messageError("MsgInv.SotoDecode", str)
 	}
 
 	// Create a contiguous slice of inventory vectors to deserialize into in
@@ -73,14 +74,14 @@ func (msg *MsgInv) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) erro
 	return nil
 }
 
-// BtcEncode encodes the receiver to w using the bitcoin protocol encoding.
+// SotoEncode encodes the receiver to w using the soter protocol encoding.
 // This is part of the Message interface implementation.
-func (msg *MsgInv) BtcEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
+func (msg *MsgInv) SotoEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
 	// Limit to max inventory vectors per message.
 	count := len(msg.InvList)
 	if count > MaxInvPerMsg {
 		str := fmt.Sprintf("too many invvect in message [%v]", count)
-		return messageError("MsgInv.BtcEncode", str)
+		return messageError("MsgInv.SotoEncode", str)
 	}
 
 	err := WriteVarInt(w, pver, uint64(count))
@@ -111,7 +112,7 @@ func (msg *MsgInv) MaxPayloadLength(pver uint32) uint32 {
 	return MaxVarIntPayload + (MaxInvPerMsg * maxInvVectPayload)
 }
 
-// NewMsgInv returns a new bitcoin inv message that conforms to the Message
+// NewMsgInv returns a new soter inv message that conforms to the Message
 // interface.  See MsgInv for details.
 func NewMsgInv() *MsgInv {
 	return &MsgInv{
@@ -119,7 +120,7 @@ func NewMsgInv() *MsgInv {
 	}
 }
 
-// NewMsgInvSizeHint returns a new bitcoin inv message that conforms to the
+// NewMsgInvSizeHint returns a new soter inv message that conforms to the
 // Message interface.  See MsgInv for details.  This function differs from
 // NewMsgInv in that it allows a default allocation size for the backing array
 // which houses the inventory vector list.  This allows callers who know in

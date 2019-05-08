@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -12,12 +13,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/mining"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/blockdag"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/miningdag"
+	"github.com/soteria-dag/soterd/soterutil"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 const (
@@ -55,16 +56,16 @@ type Config struct {
 
 	// BlockTemplateGenerator identifies the instance to use in order to
 	// generate block templates that the miner will attempt to solve.
-	BlockTemplateGenerator *mining.BlkTmplGenerator
+	BlockTemplateGenerator *miningdag.BlkTmplGenerator
 
 	// MiningAddrs is a list of payment addresses to use for the generated
 	// blocks.  Each generated block will randomly choose one of them.
-	MiningAddrs []btcutil.Address
+	MiningAddrs []soterutil.Address
 
 	// ProcessBlock defines the function to call with any solved blocks.
 	// It typically must run the provided block through the same set of
 	// rules and handling as any other block coming from the network.
-	ProcessBlock func(*btcutil.Block, blockchain.BehaviorFlags) (bool, error)
+	ProcessBlock func(*soterutil.Block, blockdag.BehaviorFlags) (bool, error)
 
 	// ConnectedCount defines the function to use to obtain how many other
 	// peers the server is connected to.  This is used by the automatic
@@ -91,7 +92,7 @@ type Config struct {
 // system which is typically sufficient.
 type CPUMiner struct {
 	sync.Mutex
-	g                 *mining.BlkTmplGenerator
+	g                 *miningdag.BlkTmplGenerator
 	cfg               Config
 	numWorkers        uint32
 	started           bool
@@ -102,6 +103,10 @@ type CPUMiner struct {
 	updateNumWorkers  chan struct{}
 	queryHashesPerSec chan float64
 	updateHashes      chan uint64
+	SolveCount        chan struct{}
+	SolveTimes        chan time.Duration
+	SolveHashes       chan string
+
 	speedMonitorQuit  chan struct{}
 	quit              chan struct{}
 }
@@ -152,7 +157,7 @@ out:
 
 // submitBlock submits the passed block to network after ensuring it passes all
 // of the consensus validation rules.
-func (m *CPUMiner) submitBlock(block *btcutil.Block) bool {
+func (m *CPUMiner) submitBlock(block *soterutil.Block) bool {
 	m.submitBlockLock.Lock()
 	defer m.submitBlockLock.Unlock()
 
@@ -162,7 +167,7 @@ func (m *CPUMiner) submitBlock(block *btcutil.Block) bool {
 	// a new block, but the check only happens periodically, so it is
 	// possible a block was found and submitted in between.
 	msgBlock := block.MsgBlock()
-	if !msgBlock.Header.PrevBlock.IsEqual(&m.g.BestSnapshot().Hash) {
+	if !msgBlock.Header.PrevBlock.IsEqual(&m.g.DAGSnapshot().Hash) {
 		log.Debugf("Block submitted via CPU miner with previous "+
 			"block %s is stale", msgBlock.Header.PrevBlock)
 		return false
@@ -170,11 +175,11 @@ func (m *CPUMiner) submitBlock(block *btcutil.Block) bool {
 
 	// Process this block using the same rules as blocks coming from other
 	// nodes.  This will in turn relay it to the network like normal.
-	isOrphan, err := m.cfg.ProcessBlock(block, blockchain.BFNone)
+	isOrphan, err := m.cfg.ProcessBlock(block, blockdag.BFNone)
 	if err != nil {
 		// Anything other than a rule violation is an unexpected error,
 		// so log that error as an internal error.
-		if _, ok := err.(blockchain.RuleError); !ok {
+		if _, ok := err.(blockdag.RuleError); !ok {
 			log.Errorf("Unexpected error while processing "+
 				"block submitted via CPU miner: %v", err)
 			return false
@@ -191,7 +196,7 @@ func (m *CPUMiner) submitBlock(block *btcutil.Block) bool {
 	// The block was accepted.
 	coinbaseTx := block.MsgBlock().Transactions[0].TxOut[0]
 	log.Infof("Block submitted via CPU miner accepted (hash %s, "+
-		"amount %v)", block.Hash(), btcutil.Amount(coinbaseTx.Value))
+		"amount %v)", block.Hash(), soterutil.Amount(coinbaseTx.Value))
 	return true
 }
 
@@ -218,7 +223,7 @@ func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, blockHeight int32,
 
 	// Create some convenience variables.
 	header := &msgBlock.Header
-	targetDifficulty := blockchain.CompactToBig(header.Bits)
+	targetDifficulty := blockdag.CompactToBig(header.Bits)
 
 	// Initial state.
 	lastGenerated := time.Now()
@@ -246,10 +251,8 @@ func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, blockHeight int32,
 				m.updateHashes <- hashesCompleted
 				hashesCompleted = 0
 
-				// The current block is stale if the best block
-				// has changed.
-				best := m.g.BestSnapshot()
-				if !header.PrevBlock.IsEqual(&best.Hash) {
+				// The current block is stale if tips have changed.
+				if !header.PrevBlock.IsEqual(&m.g.DAGSnapshot().Hash) {
 					return false
 				}
 
@@ -279,7 +282,7 @@ func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, blockHeight int32,
 
 			// The block is solved when the new block hash is less
 			// than the target difficulty.  Yay!
-			if blockchain.HashToBig(&hash).Cmp(targetDifficulty) <= 0 {
+			if blockdag.HashToBig(&hash).Cmp(targetDifficulty) <= 0 {
 				m.updateHashes <- hashesCompleted
 				return true
 			}
@@ -303,6 +306,10 @@ func (m *CPUMiner) generateBlocks(quit chan struct{}) {
 	// updates to the speed monitor.
 	ticker := time.NewTicker(time.Second * hashUpdateSecs)
 	defer ticker.Stop()
+
+	// Track how long it's been since a block has been mined _and_ accepted
+	startMine := time.Now()
+
 out:
 	for {
 		// Quit when the miner is stopped.
@@ -327,7 +334,7 @@ out:
 		// this would otherwise end up building a new block template on
 		// a block that is in the process of becoming stale.
 		m.submitBlockLock.Lock()
-		curHeight := m.g.BestSnapshot().Height
+		curHeight := m.g.DAGSnapshot().MaxHeight //m.g.BestSnapshot().Height
 		if curHeight != 0 && !m.cfg.IsCurrent() {
 			m.submitBlockLock.Unlock()
 			time.Sleep(time.Second)
@@ -355,8 +362,19 @@ out:
 		// a new block template can be generated.  When the return is
 		// true a solution was found, so submit the solved block.
 		if m.solveBlock(template.Block, curHeight+1, ticker, quit) {
-			block := btcutil.NewBlock(template.Block)
-			m.submitBlock(block)
+			block := soterutil.NewBlock(template.Block)
+			accepted := m.submitBlock(block)
+			if accepted {
+				m.SolveTimes <- time.Since(startMine)
+				m.SolveCount <- struct{}{}
+				if m.cfg.ChainParams.Net == wire.SimNet {
+					// Have metric manager cache hashes of blocks this node has generated, if in simnet mode
+					// (wouldn't want an ever-growing list of in-memory hashes in non-simnet environments)
+					m.SolveHashes <- block.Hash().String()
+				}
+				// Reset the mining time
+				startMine = time.Now()
+			}
 		}
 	}
 
@@ -573,6 +591,9 @@ func (m *CPUMiner) GenerateNBlocks(n uint32) ([]*chainhash.Hash, error) {
 	ticker := time.NewTicker(time.Second * hashUpdateSecs)
 	defer ticker.Stop()
 
+	// Track how long it's been since a block has been mined _and_ accepted
+	startMine := time.Now()
+
 	for {
 		// Read updateNumWorkers in case someone tries a `setgenerate` while
 		// we're generating. We can ignore it as the `generate` RPC call only
@@ -586,7 +607,7 @@ func (m *CPUMiner) GenerateNBlocks(n uint32) ([]*chainhash.Hash, error) {
 		// be changing and this would otherwise end up building a new block
 		// template on a block that is in the process of becoming stale.
 		m.submitBlockLock.Lock()
-		curHeight := m.g.BestSnapshot().Height
+		curHeight := m.g.DAGSnapshot().MaxHeight //m.g.BestSnapshot().Height
 
 		// Choose a payment address at random.
 		rand.Seed(time.Now().UnixNano())
@@ -609,8 +630,20 @@ func (m *CPUMiner) GenerateNBlocks(n uint32) ([]*chainhash.Hash, error) {
 		// a new block template can be generated.  When the return is
 		// true a solution was found, so submit the solved block.
 		if m.solveBlock(template.Block, curHeight+1, ticker, nil) {
-			block := btcutil.NewBlock(template.Block)
-			m.submitBlock(block)
+			block := soterutil.NewBlock(template.Block)
+			accepted := m.submitBlock(block)
+			if accepted {
+				m.SolveTimes <- time.Since(startMine)
+				m.SolveCount <- struct{}{}
+				if m.cfg.ChainParams.Net == wire.SimNet {
+					// Have metric manager cache hashes of blocks this node has generated, if in simnet mode
+					// (wouldn't want an ever-growing list of in-memory hashes in non-simnet environments)
+					m.SolveHashes <- block.Hash().String()
+				}
+				// Reset the mining time
+				startMine = time.Now()
+			}
+
 			blockHashes[i] = block.Hash()
 			i++
 			if i == n {
@@ -638,5 +671,8 @@ func New(cfg *Config) *CPUMiner {
 		updateNumWorkers:  make(chan struct{}),
 		queryHashesPerSec: make(chan float64),
 		updateHashes:      make(chan uint64),
+		SolveCount:        make(chan struct{}),
+		SolveTimes:        make(chan time.Duration),
+		SolveHashes:       make(chan string),
 	}
 }

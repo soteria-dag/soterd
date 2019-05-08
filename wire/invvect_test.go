@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -9,7 +10,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 	"github.com/davecgh/go-spew/spew"
 )
 
@@ -41,9 +42,10 @@ func TestInvTypeStringer(t *testing.T) {
 func TestInvVect(t *testing.T) {
 	ivType := InvTypeBlock
 	hash := chainhash.Hash{}
+	height := int32(1)
 
 	// Ensure we get the same payload and signature back out.
-	iv := NewInvVect(ivType, &hash)
+	iv := NewInvVect(ivType, &hash, height)
 	if iv.Type != ivType {
 		t.Errorf("NewInvVect: wrong type - got %v, want %v",
 			iv.Type, ivType)
@@ -51,6 +53,10 @@ func TestInvVect(t *testing.T) {
 	if !iv.Hash.IsEqual(&hash) {
 		t.Errorf("NewInvVect: wrong hash - got %v, want %v",
 			spew.Sdump(iv.Hash), spew.Sdump(hash))
+	}
+	if iv.Height != height {
+		t.Errorf("NewInvVect: wrong height - got %v, want %v",
+			iv.Height, height)
 	}
 
 }
@@ -69,6 +75,7 @@ func TestInvVectWire(t *testing.T) {
 	errInvVect := InvVect{
 		Type: InvTypeError,
 		Hash: chainhash.Hash{},
+		Height: 0,
 	}
 
 	// errInvVectEncoded is the wire encoded bytes of errInvVect.
@@ -78,12 +85,14 @@ func TestInvVectWire(t *testing.T) {
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // No hash
+		0x00, 0x00, 0x00, 0x00, // Height
 	}
 
 	// txInvVect is an inventory vector representing a transaction.
 	txInvVect := InvVect{
 		Type: InvTypeTx,
 		Hash: *baseHash,
+		Height: 1,
 	}
 
 	// txInvVectEncoded is the wire encoded bytes of txInvVect.
@@ -93,12 +102,14 @@ func TestInvVectWire(t *testing.T) {
 		0xe7, 0x67, 0x13, 0xd0, 0x75, 0xd4, 0xa1, 0x0b,
 		0x79, 0x40, 0x08, 0xa6, 0x36, 0xac, 0xc2, 0x4b,
 		0x26, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Block 203707 hash
+		0x01, 0x00, 0x00, 0x00, // Tx for block 203707 height
 	}
 
 	// blockInvVect is an inventory vector representing a block.
 	blockInvVect := InvVect{
 		Type: InvTypeBlock,
 		Hash: *baseHash,
+		Height: 1,
 	}
 
 	// blockInvVectEncoded is the wire encoded bytes of blockInvVect.
@@ -108,6 +119,7 @@ func TestInvVectWire(t *testing.T) {
 		0xe7, 0x67, 0x13, 0xd0, 0x75, 0xd4, 0xa1, 0x0b,
 		0x79, 0x40, 0x08, 0xa6, 0x36, 0xac, 0xc2, 0x4b,
 		0x26, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Block 203707 hash
+		0x01, 0x00, 0x00, 0x00, // Block 203707 height
 	}
 
 	tests := []struct {

@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -7,9 +8,9 @@ package blockchain
 import (
 	"fmt"
 
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/txscript"
+	"github.com/soteria-dag/soterd/wire"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 const (
@@ -49,7 +50,7 @@ const (
 // Currently the weight metric is simply the sum of the block's serialized size
 // without any witness data scaled proportionally by the WitnessScaleFactor,
 // and the block's serialized size including any witness data.
-func GetBlockWeight(blk *btcutil.Block) int64 {
+func GetBlockWeight(blk *soterutil.Block) int64 {
 	msgBlock := blk.MsgBlock()
 
 	baseSize := msgBlock.SerializeSizeStripped()
@@ -64,7 +65,7 @@ func GetBlockWeight(blk *btcutil.Block) int64 {
 // transactions's serialized size without any witness data scaled
 // proportionally by the WitnessScaleFactor, and the transaction's serialized
 // size including any witness data.
-func GetTransactionWeight(tx *btcutil.Tx) int64 {
+func GetTransactionWeight(tx *soterutil.Tx) int64 {
 	msgTx := tx.MsgTx()
 
 	baseSize := msgTx.SerializeSizeStripped()
@@ -80,7 +81,7 @@ func GetTransactionWeight(tx *btcutil.Tx) int64 {
 // legacy sig op count scaled according to the WitnessScaleFactor, the sig op
 // count for all p2sh inputs scaled by the WitnessScaleFactor, and finally the
 // unscaled sig op count for any inputs spending witness programs.
-func GetSigOpCost(tx *btcutil.Tx, isCoinBaseTx bool, utxoView *UtxoViewpoint, bip16, segWit bool) (int, error) {
+func GetSigOpCost(tx *soterutil.Tx, isCoinBaseTx bool, utxoView *UtxoViewpoint, bip16, segWit bool) (int, error) {
 	numSigOps := CountSigOps(tx) * WitnessScaleFactor
 	if bip16 {
 		numP2SHSigOps, err := CountP2SHSigOps(tx, isCoinBaseTx, utxoView)

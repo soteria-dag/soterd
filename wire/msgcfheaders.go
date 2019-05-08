@@ -1,4 +1,5 @@
 // Copyright (c) 2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -8,7 +9,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 )
 
 const (
@@ -17,11 +18,11 @@ const (
 	MaxCFHeaderPayload = chainhash.HashSize
 
 	// MaxCFHeadersPerMsg is the maximum number of committed filter headers
-	// that can be in a single bitcoin cfheaders message.
+	// that can be in a single soter cfheaders message.
 	MaxCFHeadersPerMsg = 2000
 )
 
-// MsgCFHeaders implements the Message interface and represents a bitcoin
+// MsgCFHeaders implements the Message interface and represents a soter
 // cfheaders message.  It is used to deliver committed filter header information
 // in response to a getcfheaders message (MsgGetCFHeaders). The maximum number
 // of committed filter headers per message is currently 2000. See
@@ -45,9 +46,9 @@ func (msg *MsgCFHeaders) AddCFHash(hash *chainhash.Hash) error {
 	return nil
 }
 
-// BtcDecode decodes r using the bitcoin protocol encoding into the receiver.
+// SotoDecode decodes r using the soter protocol encoding into the receiver.
 // This is part of the Message interface implementation.
-func (msg *MsgCFHeaders) BtcDecode(r io.Reader, pver uint32, _ MessageEncoding) error {
+func (msg *MsgCFHeaders) SotoDecode(r io.Reader, pver uint32, _ MessageEncoding) error {
 	// Read filter type
 	err := readElement(r, &msg.FilterType)
 	if err != nil {
@@ -77,7 +78,7 @@ func (msg *MsgCFHeaders) BtcDecode(r io.Reader, pver uint32, _ MessageEncoding) 
 		str := fmt.Sprintf("too many committed filter headers for "+
 			"message [count %v, max %v]", count,
 			MaxBlockHeadersPerMsg)
-		return messageError("MsgCFHeaders.BtcDecode", str)
+		return messageError("MsgCFHeaders.SotoDecode", str)
 	}
 
 	// Create a contiguous slice of hashes to deserialize into in order to
@@ -95,9 +96,9 @@ func (msg *MsgCFHeaders) BtcDecode(r io.Reader, pver uint32, _ MessageEncoding) 
 	return nil
 }
 
-// BtcEncode encodes the receiver to w using the bitcoin protocol encoding.
+// SotoEncode encodes the receiver to w using the soter protocol encoding.
 // This is part of the Message interface implementation.
-func (msg *MsgCFHeaders) BtcEncode(w io.Writer, pver uint32, _ MessageEncoding) error {
+func (msg *MsgCFHeaders) SotoEncode(w io.Writer, pver uint32, _ MessageEncoding) error {
 	// Write filter type
 	err := writeElement(w, msg.FilterType)
 	if err != nil {
@@ -122,7 +123,7 @@ func (msg *MsgCFHeaders) BtcEncode(w io.Writer, pver uint32, _ MessageEncoding) 
 		str := fmt.Sprintf("too many committed filter headers for "+
 			"message [count %v, max %v]", count,
 			MaxBlockHeadersPerMsg)
-		return messageError("MsgCFHeaders.BtcEncode", str)
+		return messageError("MsgCFHeaders.SotoEncode", str)
 	}
 
 	err = WriteVarInt(w, pver, uint64(count))
@@ -142,7 +143,7 @@ func (msg *MsgCFHeaders) BtcEncode(w io.Writer, pver uint32, _ MessageEncoding) 
 
 // Deserialize decodes a filter header from r into the receiver using a format
 // that is suitable for long-term storage such as a database. This function
-// differs from BtcDecode in that BtcDecode decodes from the bitcoin wire
+// differs from SotoDecode in that SotoDecode decodes from the soter wire
 // protocol as it was sent across the network.  The wire encoding can
 // technically differ depending on the protocol version and doesn't even really
 // need to match the format of a stored filter header at all. As of the time
@@ -152,8 +153,8 @@ func (msg *MsgCFHeaders) BtcEncode(w io.Writer, pver uint32, _ MessageEncoding) 
 func (msg *MsgCFHeaders) Deserialize(r io.Reader) error {
 	// At the current time, there is no difference between the wire encoding
 	// and the stable long-term storage format.  As a result, make use of
-	// BtcDecode.
-	return msg.BtcDecode(r, 0, BaseEncoding)
+	// SotoDecode.
+	return msg.SotoDecode(r, 0, BaseEncoding)
 }
 
 // Command returns the protocol command string for the message.  This is part
@@ -171,7 +172,7 @@ func (msg *MsgCFHeaders) MaxPayloadLength(pver uint32) uint32 {
 		(MaxCFHeaderPayload * MaxCFHeadersPerMsg)
 }
 
-// NewMsgCFHeaders returns a new bitcoin cfheaders message that conforms to
+// NewMsgCFHeaders returns a new soter cfheaders message that conforms to
 // the Message interface. See MsgCFHeaders for details.
 func NewMsgCFHeaders() *MsgCFHeaders {
 	return &MsgCFHeaders{

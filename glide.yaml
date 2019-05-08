@@ -1,11 +1,5 @@
-package: github.com/btcsuite/btcd
+package: github.com/soteria-dag/soterd
 import:
-- package: github.com/btcsuite/btclog
-- package: github.com/btcsuite/btcutil
-  version: ab6388e0c60ae4834a1f57511e20c17b5f78be4b
-  subpackages:
-  - bloom
-  - hdkeychain
 - package: github.com/btcsuite/go-socks
   subpackages:
   - socks
@@ -35,3 +29,7 @@ import:
 - package: github.com/jrick/logrotate
 - package: github.com/aead/siphash
   version: 83563a290f60225eb120d724600b9690c3fb536f
+- package: github.com/wcharczuk/go-chart
+  version: 9852fce5a172598e72d16f4306f0f17a53d94eb4
+- package: github.com/blang/semver
+  version: ^3.6.1

@@ -1,5 +1,6 @@
 // Copyright (c) 2013-2018 The btcsuite developers
 // Copyright (c) 2015-2018 The Decred developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -11,8 +12,8 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/soteria-dag/soterd/soterec"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 // ScriptFlags is a bitmask defining additional operations or tests that will be
@@ -114,7 +115,7 @@ const (
 )
 
 // halforder is used to tame ECDSA malleability (see BIP0062).
-var halfOrder = new(big.Int).Rsh(btcec.S256().N, 1)
+var halfOrder = new(big.Int).Rsh(soterec.S256().N, 1)
 
 // Engine is the virtual machine that executes scripts.
 type Engine struct {
@@ -584,7 +585,7 @@ func (vm *Engine) checkHashTypeEncoding(hashType SigHashType) error {
 // the strict encoding requirements if enabled.
 func (vm *Engine) checkPubKeyEncoding(pubKey []byte) error {
 	if vm.hasFlag(ScriptVerifyWitnessPubKeyType) &&
-		vm.isWitnessVersionActive(0) && !btcec.IsCompressedPubKey(pubKey) {
+		vm.isWitnessVersionActive(0) && !soterec.IsCompressedPubKey(pubKey) {
 
 		str := "only uncompressed keys are accepted post-segwit"
 		return scriptError(ErrWitnessPubKeyType, str)

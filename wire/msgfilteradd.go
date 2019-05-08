@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2015 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -16,7 +17,7 @@ const (
 	MaxFilterAddDataSize = 520
 )
 
-// MsgFilterAdd implements the Message interface and represents a bitcoin
+// MsgFilterAdd implements the Message interface and represents a soter
 // filteradd message.  It is used to add a data element to an existing Bloom
 // filter.
 //
@@ -25,13 +26,13 @@ type MsgFilterAdd struct {
 	Data []byte
 }
 
-// BtcDecode decodes r using the bitcoin protocol encoding into the receiver.
+// SotoDecode decodes r using the soter protocol encoding into the receiver.
 // This is part of the Message interface implementation.
-func (msg *MsgFilterAdd) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
+func (msg *MsgFilterAdd) SotoDecode(r io.Reader, pver uint32, enc MessageEncoding) error {
 	if pver < BIP0037Version {
 		str := fmt.Sprintf("filteradd message invalid for protocol "+
 			"version %d", pver)
-		return messageError("MsgFilterAdd.BtcDecode", str)
+		return messageError("MsgFilterAdd.SotoDecode", str)
 	}
 
 	var err error
@@ -40,20 +41,20 @@ func (msg *MsgFilterAdd) BtcDecode(r io.Reader, pver uint32, enc MessageEncoding
 	return err
 }
 
-// BtcEncode encodes the receiver to w using the bitcoin protocol encoding.
+// SotoEncode encodes the receiver to w using the soter protocol encoding.
 // This is part of the Message interface implementation.
-func (msg *MsgFilterAdd) BtcEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
+func (msg *MsgFilterAdd) SotoEncode(w io.Writer, pver uint32, enc MessageEncoding) error {
 	if pver < BIP0037Version {
 		str := fmt.Sprintf("filteradd message invalid for protocol "+
 			"version %d", pver)
-		return messageError("MsgFilterAdd.BtcEncode", str)
+		return messageError("MsgFilterAdd.SotoEncode", str)
 	}
 
 	size := len(msg.Data)
 	if size > MaxFilterAddDataSize {
 		str := fmt.Sprintf("filteradd size too large for message "+
 			"[size %v, max %v]", size, MaxFilterAddDataSize)
-		return messageError("MsgFilterAdd.BtcEncode", str)
+		return messageError("MsgFilterAdd.SotoEncode", str)
 	}
 
 	return WriteVarBytes(w, pver, msg.Data)
@@ -72,7 +73,7 @@ func (msg *MsgFilterAdd) MaxPayloadLength(pver uint32) uint32 {
 		MaxFilterAddDataSize
 }
 
-// NewMsgFilterAdd returns a new bitcoin filteradd message that conforms to the
+// NewMsgFilterAdd returns a new soter filteradd message that conforms to the
 // Message interface.  See MsgFilterAdd for details.
 func NewMsgFilterAdd(data []byte) *MsgFilterAdd {
 	return &MsgFilterAdd{

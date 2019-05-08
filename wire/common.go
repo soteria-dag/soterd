@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -12,7 +13,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 )
 
 const (
@@ -278,6 +279,14 @@ func readElement(r io.Reader, element interface{}) error {
 		}
 		return nil
 
+	// Parent meta-data or chainhash bytes
+	case *[32]byte:
+		_, err := io.ReadFull(r, e[:])
+		if err != nil {
+			return err
+		}
+		return nil
+
 	case *chainhash.Hash:
 		_, err := io.ReadFull(r, e[:])
 		if err != nil {
@@ -301,12 +310,12 @@ func readElement(r io.Reader, element interface{}) error {
 		*e = InvType(rv)
 		return nil
 
-	case *BitcoinNet:
+	case *SoterNet:
 		rv, err := binarySerializer.Uint32(r, littleEndian)
 		if err != nil {
 			return err
 		}
-		*e = BitcoinNet(rv)
+		*e = SoterNet(rv)
 		return nil
 
 	case *BloomUpdateType:
@@ -412,6 +421,14 @@ func writeElement(w io.Writer, element interface{}) error {
 		}
 		return nil
 
+	// Parent meta-data or chainhash bytes
+	case [32]byte:
+		_, err := w.Write(e[:])
+		if err != nil {
+			return err
+		}
+		return nil
+
 	case *chainhash.Hash:
 		_, err := w.Write(e[:])
 		if err != nil {
@@ -433,7 +450,7 @@ func writeElement(w io.Writer, element interface{}) error {
 		}
 		return nil
 
-	case BitcoinNet:
+	case SoterNet:
 		err := binarySerializer.PutUint32(w, littleEndian, uint32(e))
 		if err != nil {
 			return err

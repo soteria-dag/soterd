@@ -1,147 +1,82 @@
 ### Table of Contents
 1. [About](#About)
 2. [Getting Started](#GettingStarted)
-    1. [Installation](#Installation)
-        1. [Windows](#WindowsInstallation)
-        2. [Linux/BSD/MacOSX/POSIX](#PosixInstallation)
-          1. [Gentoo Linux](#GentooInstallation)
-    2. [Configuration](#Configuration)
-    3. [Controlling and Querying btcd via btcctl](#BtcctlConfig)
-    4. [Mining](#Mining)
+    1. [Docker](#Docker)
+    2. [Install from source](#Source)
+    3. [Configuration](#Configuration)
+    4. [Controlling and Querying soterd via soterctl](#SoterctlConfig)
+    5. [Mining](#Mining)
 3. [Help](#Help)
-    1. [Startup](#Startup)
-        1. [Using bootstrap.dat](#BootstrapDat)
-    2. [Network Configuration](#NetworkConfig)
-    3. [Wallet](#Wallet)
+    1. [Network Configuration](#NetworkConfig)
+    2. [Wallet](#Wallet)
 4. [Contact](#Contact)
-    1. [IRC](#ContactIRC)
-    2. [Mailing Lists](#MailingLists)
 5. [Developer Resources](#DeveloperResources)
     1. [Code Contribution Guidelines](#ContributionGuidelines)
     2. [JSON-RPC Reference](#JSONRPCReference)
-    3. [The btcsuite Bitcoin-related Go Packages](#GoPackages)
+    3. [Utility commands](#SoterdUtilities)
+    4. [The soter-related Go Packages](#GoPackages)
+    5. [Managers and handlers (goroutines)](#ManagerHandler)
+    6. [Updating RPC Calls](#UpdateRPCCall)
+    7. [Updating P2P Wire Protocol](#UpdateP2PWire)
+    8. [Soterd profiling](#SoterdProfiling)
+    9. [Soterd startup](#SoterdStartup)
+6. [Other Soteria projects](#Soteria)
 
 <a name="About" />
 
 ### 1. About
 
-btcd is a full node bitcoin implementation written in [Go](http://golang.org),
-licensed under the [copyfree](http://www.copyfree.org) ISC License.
+soterd is a full soter node implementation written in Go (golang). It started as a fork of the [btcd](https://github.com/btcsuite/btcd) project, where development focus has changed from providing a bitcoin node to providing an [implementation of blockdag]((docs/intro_to_blockdag.md)) for soter.
 
-This project is currently under active development and is in a Beta state.  It
-is extremely stable and has been in production use since October 2013.
+The intent of this project is for it to act as a component in Soteria's Trade Anything Platform (TAP); a pillar of Soteria's [Self Sustainable Decentralized Economy](https://www.ssde.io/) vision (SSDE).
 
-It properly downloads, validates, and serves the block chain using the exact
-rules (including consensus bugs) for block acceptance as Bitcoin Core.  We have
-taken great care to avoid btcd causing a fork to the block chain.  It includes a
-full block validation testing framework which contains all of the 'official'
-block acceptance tests (and some additional ones) that is run on every pull
-request to help ensure it properly follows consensus.  Also, it passes all of
-the JSON test data in the Bitcoin Core code.
+For a description of terms you'll find in this project, please refer to the [Glossary of Terms](glossary_of_terms.md) document.
 
-It also properly relays newly mined blocks, maintains a transaction pool, and
-relays individual transactions that have not yet made it into a block.  It
-ensures all individual transactions admitted to the pool follow the rules
-required by the block chain and also includes more strict checks which filter
-transactions based on miner requirements ("standard" transactions).
+### Current functionality 
 
-One key difference between btcd and Bitcoin Core is that btcd does *NOT* include
-wallet functionality and this was a very intentional design decision.  See the
-blog entry [here](https://blog.conformal.com/btcd-not-your-moms-bitcoin-daemon)
-for more details.  This means you can't actually make or receive payments
-directly with btcd.  That functionality is provided by the
-[btcwallet](https://github.com/btcsuite/btcwallet) and
-[Paymetheus](https://github.com/btcsuite/Paymetheus) (Windows-only) projects
-which are both under active development.
+#### Blocks
+ 
+Soterd can generate, validate, download and advertise blockdag using rules similar to those in Bitcoin Core. Some of Bitcoin Core's BIPs don't apply to  blockdag, so features that don't make sense for use with  blockdag may be disabled and removed as development continues.
+
+Soterd inherits and extends btcd's block validation testing framework, which contains all of the 'official' bitcoin block acceptance tests (and some additional ones). 
+
+#### Transactions
+
+Soterd maintains a transaction pool, and relays individual transactions that have not yet made it into a block. It ensures all individual transactions admitted to the pool follow the rules required by the block chain and also includes more strict checks which filter transactions based on miner requirements ("standard" transactions).
+
+#### Excluded functionality
+
+Like btcd, soterd does not include wallet functionality. [soterwallet](https://github.com/soteria-dag/soterwallet) is intended for making or receive payments with soterd, however it is still being updated from the [btcwallet](https://github.com/btcsuite/btcwallet) fork to be compatible with soterd. In the meantime, transactions can be demonstrated with the [gentx](https://github.com/soteria-dag/soter-tools/cmd/gentx/README.md) command.
 
 <a name="GettingStarted" />
 
 ### 2. Getting Started
 
-<a name="Installation" />
+<a name="Docker" />
 
-**2.1 Installation**
+#### 2.1 Docker container
 
-The first step is to install btcd.  See one of the following sections for
-details on how to install on the supported operating systems.
+Refer to the [Getting started with Docker](getting_started_docker.md) document for instructions on running soterd without the need for golang and git tooling.
 
-<a name="WindowsInstallation" />
+<a name="Source" />
 
-**2.1.1 Windows Installation**<br />
+#### 2.2 Install from source
 
-* Install the MSI available at: https://github.com/btcsuite/btcd/releases
-* Launch btcd from the Start Menu
-
-<a name="PosixInstallation" />
-
-**2.1.2 Linux/BSD/MacOSX/POSIX Installation**
-
-
-- Install Go according to the installation instructions here:
-  http://golang.org/doc/install
-
-- Ensure Go was installed properly and is a supported version:
-
-```bash
-$ go version
-$ go env GOROOT GOPATH
-```
-
-NOTE: The `GOROOT` and `GOPATH` above must not be the same path.  It is
-recommended that `GOPATH` is set to a directory in your home directory such as
-`~/goprojects` to avoid write permission issues.  It is also recommended to add
-`$GOPATH/bin` to your `PATH` at this point.
-
-- Run the following commands to obtain btcd, all dependencies, and install it:
-
-```bash
-$ go get -u github.com/Masterminds/glide
-$ git clone https://github.com/btcsuite/btcd $GOPATH/src/github.com/btcsuite/btcd
-$ cd $GOPATH/src/github.com/btcsuite/btcd
-$ glide install
-$ go install . ./cmd/...
-```
-
-- btcd (and utilities) will now be installed in ```$GOPATH/bin```.  If you did
-  not already add the bin directory to your system path during Go installation,
-  we recommend you do so now.
-
-**Updating**
-
-- Run the following commands to update btcd, all dependencies, and install it:
-
-```bash
-$ cd $GOPATH/src/github.com/btcsuite/btcd
-$ git pull && glide install
-$ go install . ./cmd/...
-```
-
-<a name="GentooInstallation" />
-
-**2.1.2.1 Gentoo Linux Installation**
-
-* Install Layman and enable the Bitcoin overlay.
-  * https://gitlab.com/bitcoin/gentoo
-* Copy or symlink `/var/lib/layman/bitcoin/Documentation/package.keywords/btcd-live` to `/etc/portage/package.keywords/`
-* Install btcd: `$ emerge net-p2p/btcd`
+Refer to the [Setting up soterd](install_run_update.md) document for instructions on building soterd from source, installing, and running it.
 
 <a name="Configuration" />
 
-**2.2 Configuration**
+#### 2.3 Configuration
 
-btcd has a number of [configuration](http://godoc.org/github.com/btcsuite/btcd)
-options, which can be viewed by running: `$ btcd --help`.
+soterd has several configuration options, which you can see with `soterd --help`.
 
-<a name="BtcctlConfig" />
+<a name="SoterctlConfig" />
 
-**2.3 Controlling and Querying btcd via btcctl**
+#### 2.4 Controlling and Querying soterd via soterctl
 
-btcctl is a command line utility that can be used to both control and query btcd
-via [RPC](http://www.wikipedia.org/wiki/Remote_procedure_call).  btcd does
-**not** enable its RPC server by default;  You must configure at minimum both an
-RPC username and password or both an RPC limited username and password:
+soterctl is a command line utility that can be used to both control and query soterd via [RPC](http://www.wikipedia.org/wiki/Remote_procedure_call). soterd does **not** enable its RPC server by default; You must configure at minimum both an RPC username and password or both an RPC limited username and password:
 
-* btcd.conf configuration file
+* soterd.conf configuration file
 ```
 [Application Options]
 rpcuser=myuser
@@ -149,7 +84,7 @@ rpcpass=SomeDecentp4ssw0rd
 rpclimituser=mylimituser
 rpclimitpass=Limitedp4ssw0rd
 ```
-* btcctl.conf configuration file
+* soterctl.conf configuration file
 ```
 [Application Options]
 rpcuser=myuser
@@ -161,96 +96,67 @@ OR
 rpclimituser=mylimituser
 rpclimitpass=Limitedp4ssw0rd
 ```
-For a list of available options, run: `$ btcctl --help`
+For a list of available options, run: `$ soterctl --help`
 
 <a name="Mining" />
 
-**2.4 Mining**
+#### 2.5 Mining
 
-btcd supports the `getblocktemplate` RPC.
+soterd supports the `getblocktemplate` RPC.
 The limited user cannot access this RPC.
 
 
-**1. Add the payment addresses with the `miningaddr` option.**
+1. Add the payment addresses with the `miningaddr` option.
 
-```
-[Application Options]
-rpcuser=myuser
-rpcpass=SomeDecentp4ssw0rd
-miningaddr=12c6DSiU4Rq3P4ZxziKxzrL5LmMBrzjrJX
-miningaddr=1M83ju3EChKYyysmM2FXtLNftbacagd8FR
-```
+    ```
+    [Application Options]
+    rpcuser=myuser
+    rpcpass=SomeDecentp4ssw0rd
+    miningaddr=12c6DSiU4Rq3P4ZxziKxzrL5LmMBrzjrJX
+    miningaddr=1M83ju3EChKYyysmM2FXtLNftbacagd8FR
+    ```
 
-**2. Add btcd's RPC TLS certificate to system Certificate Authority list.**
+2. Add soterd's RPC TLS certificate to system Certificate Authority list.
 
-`cgminer` uses [curl](http://curl.haxx.se/) to fetch data from the RPC server.
-Since curl validates the certificate by default, we must install the `btcd` RPC
-certificate into the default system Certificate Authority list.
+    `cgminer` uses [curl](http://curl.haxx.se/) to fetch data from the RPC server.
+    Since curl validates the certificate by default, we must install the `soterd` RPC
+    certificate into the default system Certificate Authority list.
 
-**Ubuntu**
+    **Ubuntu**
 
-1. Copy rpc.cert to /usr/share/ca-certificates: `# cp /home/user/.btcd/rpc.cert /usr/share/ca-certificates/btcd.crt`
-2. Add btcd.crt to /etc/ca-certificates.conf: `# echo btcd.crt >> /etc/ca-certificates.conf`
-3. Update the CA certificate list: `# update-ca-certificates`
+    1. Copy rpc.cert to /usr/share/ca-certificates: `# cp /home/user/.soterd/rpc.cert /usr/share/ca-certificates/soterd.crt`
+    2. Add soterd.crt to /etc/ca-certificates.conf: `# echo soterd.crt >> /etc/ca-certificates.conf`
+    3. Update the CA certificate list: `# update-ca-certificates`
 
-**3. Set your mining software url to use https.**
+3. Set your mining software url to use https.
 
-`$ cgminer -o https://127.0.0.1:8334 -u rpcuser -p rpcpassword`
+    `$ cgminer -o https://127.0.0.1:8334 -u rpcuser -p rpcpassword`
 
 <a name="Help" />
 
 ### 3. Help
 
-<a name="Startup" />
-
-**3.1 Startup**
-
-Typically btcd will run and start downloading the block chain with no extra
-configuration necessary, however, there is an optional method to use a
-`bootstrap.dat` file that may speed up the initial block chain download process.
-
-<a name="BootstrapDat" />
-
-**3.1.1 bootstrap.dat**
-
-* [Using bootstrap.dat](https://github.com/btcsuite/btcd/tree/master/docs/using_bootstrap_dat.md)
-
 <a name="NetworkConfig" />
 
-**3.1.2 Network Configuration**
+#### 3.1 Network Configuration
 
-* [What Ports Are Used by Default?](https://github.com/btcsuite/btcd/tree/master/docs/default_ports.md)
-* [How To Listen on Specific Interfaces](https://github.com/btcsuite/btcd/tree/master/docs/configure_peer_server_listen_interfaces.md)
-* [How To Configure RPC Server to Listen on Specific Interfaces](https://github.com/btcsuite/btcd/tree/master/docs/configure_rpc_server_listen_interfaces.md)
-* [Configuring btcd with Tor](https://github.com/btcsuite/btcd/tree/master/docs/configuring_tor.md)
+* [What Ports Are Used by Default?](default_ports.md)
+* [How To Listen on Specific Interfaces](configure_peer_server_listen_interfaces.md)
+* [How To Configure RPC Server to Listen on Specific Interfaces](configure_rpc_server_listen_interfaces.md)
+* [Configuring soterd with Tor](configuring_tor.md)
 
 <a name="Wallet" />
 
-**3.1 Wallet**
+#### 3.2 Wallet
 
-btcd was intentionally developed without an integrated wallet for security
-reasons.  Please see [btcwallet](https://github.com/btcsuite/btcwallet) for more
-information.
+Soterd doesn't include a wallet. [soterwallet](https://github.com/soteria-dag/soterwallet) is intended for making or receive payments with soterd, however it is still being updated from the [btcwallet](https://github.com/btcsuite/btcwallet) fork to be compatible with soterd. In the meantime, transactions can be demonstrated with the [gentx](https://github.com/soteria-dag/soter-tools/cmd/gentx/README.md) command.
 
 
 <a name="Contact" />
 
 ### 4. Contact
 
-<a name="ContactIRC" />
-
-**4.1 IRC**
-
-* [irc.freenode.net](irc://irc.freenode.net), channel `#btcd`
-
-<a name="MailingLists" />
-
-**4.2 Mailing Lists**
-
-* <a href="mailto:btcd+subscribe@opensource.conformal.com">btcd</a>: discussion
-  of btcd and its packages.
-* <a href="mailto:btcd-commits+subscribe@opensource.conformal.com">btcd-commits</a>:
-  readonly mail-out of source code changes.
+Please refer to the (Soteria website)
 
 <a name="DeveloperResources" />
 
@@ -258,42 +164,97 @@ information.
 
 <a name="ContributionGuidelines" />
 
-* [Code Contribution Guidelines](https://github.com/btcsuite/btcd/tree/master/docs/code_contribution_guidelines.md)
+* [Code Contribution Guidelines](code_contribution_guidelines.md)
 
 <a name="JSONRPCReference" />
 
-* [JSON-RPC Reference](https://github.com/btcsuite/btcd/tree/master/docs/json_rpc_api.md)
-    * [RPC Examples](https://github.com/btcsuite/btcd/tree/master/docs/json_rpc_api.md#ExampleCode)
+* [JSON-RPC Reference](json_rpc_api.md)
+    * [RPC Examples](json_rpc_api.md#ExampleCode)
+
+<a name="SoterdUtilities">
+
+* The [cmd](../cmd/README.md) directory contains stand-alone utilities that assist in the setup and management of soterd nodes
 
 <a name="GoPackages" />
 
-* The btcsuite Bitcoin-related Go Packages:
-    * [btcrpcclient](https://github.com/btcsuite/btcd/tree/master/rpcclient) - Implements a
-      robust and easy to use Websocket-enabled Bitcoin JSON-RPC client
-    * [btcjson](https://github.com/btcsuite/btcd/tree/master/btcjson) - Provides an extensive API
+* The soter-related Go Packages:
+    * [addrmgr](../addrmgr/README.md) - A p2p address manager, to help decide which nodes to connect to
+    * [blockdag](../blockdag/README.md) - Provides Soter block handling and dag selection rules
+        * [blockdag/phantom](../blockdag/phantom/README.md)
+        * [blockdag/fullblocktests](../blockdag/fullblocktests) - Provides a set of block tests for testing the consensus validation rules
+    * [chaincfg](../chaincfg/README.md) - Defines dag configuration parameters for soter networks
+            * [chainhash](../chaincfg/chainhash/README.md) - Provides a generic hash type and related functions
+    * [connmgr](../connmgr/README.md) - A p2p connection manager
+    * [database](../database/README.md) - Provides block and metadata storage
+        * [database/ffldb](../database/ffldb//README.md) - A driver for database package that uses leveldb for backing storage.
+        * [database/internal/treap](../database/internal/treap//README.md) - An implementation of treap data structure for use in database code
+    * [integration](../integration/README.md) - Integration test suites (inter-node communication, etc)
+        * [integration/rpctest](../integration/rpctest/README.md) - Test harness for integration tests
+    * [mempool](../mempool/README.md) - Provides a policy-enforced pool of unmined soter transactions
+    * [metrics](../metrics/README.md) - Handles receiving runtime metrics from other managers, and makes data available via RPC calls.
+    * [miningdag](../miningdag/README.md) - A work-in-progress CPU-based block miner
+        [mining/cpuminer](../mining/cpuminer/README.md)
+    * [netsync](../netsync/README.md) - Provides block synchronization between peers
+    * [peer](../peer/README.md) - Provides p2p communication protocol and functionality for creating and managing network peers    
+    * [rpcclient](../rpcclient/README.md) - A Websocket-enabled Soter JSON-RPC client
+    * [soterec](../soterec/README.md) - Provides support for the elliptic curve cryptographic functions needed for Soter scripts
+    * [soterjson](../soterjson/README.md) - Provides an extensive API
       for the underlying JSON-RPC command and return values
-    * [wire](https://github.com/btcsuite/btcd/tree/master/wire) - Implements the
-      Bitcoin wire protocol
-    * [peer](https://github.com/btcsuite/btcd/tree/master/peer) -
-      Provides a common base for creating and managing Bitcoin network peers.
-    * [blockchain](https://github.com/btcsuite/btcd/tree/master/blockchain) -
-      Implements Bitcoin block handling and chain selection rules
-    * [blockchain/fullblocktests](https://github.com/btcsuite/btcd/tree/master/blockchain/fullblocktests) -
-      Provides a set of block tests for testing the consensus validation rules
-    * [txscript](https://github.com/btcsuite/btcd/tree/master/txscript) -
-      Implements the Bitcoin transaction scripting language
-    * [btcec](https://github.com/btcsuite/btcd/tree/master/btcec) - Implements
-      support for the elliptic curve cryptographic functions needed for the
-      Bitcoin scripts
-    * [database](https://github.com/btcsuite/btcd/tree/master/database) -
-      Provides a database interface for the Bitcoin block chain
-    * [mempool](https://github.com/btcsuite/btcd/tree/master/mempool) -
-      Package mempool provides a policy-enforced pool of unmined bitcoin
-      transactions.
-    * [btcutil](https://github.com/btcsuite/btcutil) - Provides Bitcoin-specific
-      convenience functions and types
-    * [chainhash](https://github.com/btcsuite/btcd/tree/master/chaincfg/chainhash) -
-      Provides a generic hash type and associated functions that allows the
-      specific hash algorithm to be abstracted.
-    * [connmgr](https://github.com/btcsuite/btcd/tree/master/connmgr) -
-      Package connmgr implements a generic Bitcoin network connection manager.
+    * [soterlog](../soterlog/README.md) - Provides a logging interface for other packages
+    * [soterutil](../soterutil/README.md) - Provides Soter convenience functions and types
+    * [txscript](../txscript/README.md) -
+          Implements the Soter transaction scripting language
+    * [wire](../wire/README.md) - Implements and extends the Soter wire protocol
+
+<a name="ManagerHandler" />
+
+#### Managers and handlers
+
+Some functionality in soterd is separated out into goroutines that communicate with each other and soterd via channels. There are managers/handlers for:
+* P2P node address tracking 
+* P2P network connections
+* Peer state and communication
+* Metrics collection
+* Block mining
+* Block synchronization between this node and the P2P network
+
+For more information on managers and handlers, refer to the [Managers and Handlers](managers_handlers.md) documentation.
+
+<a name="UpdateRPCCall" />
+
+#### Updating RPC Calls
+
+If you're interested in making changes to or adding new RPC calls, see the [Adding RPC Calls](adding_rpc_calls.md) documentation for notes on what parts of codebase you may need to touch during your efforts.
+
+<a name="UpdateP2PWire" />
+
+#### Updating P2P Wire Protocol
+
+If you're interested in making changes to the P2P wire protocol for things like blocks or transactions, see the [Updating P2P Wire Protocol](updating_p2p_wire_protocol.md) documentation for notes on what parts of the codebase you may need to touch during your efforts.
+
+<a name="SoterdProfiling" />
+
+#### Soterd Profiling
+
+When working on soterd code you may want to measure potential performance changes related to your changes. The [Soterd profiling](soterd_profiling.md) document describes how you can do this.
+
+<a name="SoterdStartup" />
+
+#### Soterd startup
+
+The [Soterd startup](soterd_startup.md) document has a brief description of the soterd startup process.
+
+
+<a name="Soteria" />
+
+### 6. Other Soteria projects
+
+These projects are related to soterd, and provide additional functionality:
+
+* [soterwallet](https://github.com/soteria-dag/soterwallet) - for making or receiving payments with soterd and the soter network. See the [Wallet](#Wallet) section for a note about its current functionality.
+* [soterdash](https://github.com/soteria-dag/soterdash) - a web ui that provides information about the soter network.
+    * Soterd node info
+    * BlockDAG info
+        * Blocks
+        * Transactions
+    * P2P network connectivity

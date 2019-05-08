@@ -1,11 +1,12 @@
 // Copyright (c) 2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
 /*
-Package mempool provides a policy-enforced pool of unmined bitcoin transactions.
+Package mempool provides a policy-enforced pool of unmined soter transactions.
 
-A key responsbility of the bitcoin network is mining user-generated transactions
+A key responsbility of the soter network is mining user-generated transactions
 into blocks.  In order to facilitate this, the mining process relies on having a
 readily-available source of transactions to include in a block that is being
 solved.
@@ -24,7 +25,7 @@ for a transaction to be considered standard are that it is of the most-recently
 supported version, finalized, does not exceed a specific size, and only consists
 of specific script forms.
 
-Since this package does not deal with other bitcoin specifics such as network
+Since this package does not deal with other soter specifics such as network
 communication and transaction relay, it returns a list of transactions that were
 accepted which gives the caller a high level of flexibility in how they want to
 proceed.  Typically, this will involve things such as relaying the transactions
@@ -68,9 +69,9 @@ Errors
 
 Errors returned by this package are either the raw errors provided by underlying
 calls or of type mempool.RuleError.  Since there are two classes of rules
-(mempool acceptance rules and blockchain (consensus) acceptance rules), the
+(mempool acceptance rules and blockdag (consensus) acceptance rules), the
 mempool.RuleError type contains a single Err field which will, in turn, either
-be a mempool.TxRuleError or a blockchain.RuleError.  The first indicates a
+be a mempool.TxRuleError or a blockdag.RuleError.  The first indicates a
 violation of mempool acceptance rules while the latter indicates a violation of
 consensus acceptance rules.  This allows the caller to easily differentiate
 between unexpected errors, such as database errors, versus errors due to rule

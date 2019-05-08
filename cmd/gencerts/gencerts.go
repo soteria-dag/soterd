@@ -1,4 +1,5 @@
 // Copyright (c) 2013-2014 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -12,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/soterutil"
 	flags "github.com/jessevdk/go-flags"
 )
 
@@ -58,7 +59,7 @@ func main() {
 	}
 
 	validUntil := time.Now().Add(time.Duration(cfg.Years) * 365 * 24 * time.Hour)
-	cert, key, err := btcutil.NewTLSCertPair(cfg.Organization, validUntil, cfg.ExtraHosts)
+	cert, key, err := soterutil.NewTLSCertPair(cfg.Organization, validUntil, cfg.ExtraHosts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot generate certificate pair: %v\n", err)
 		os.Exit(1)
@@ -81,7 +82,7 @@ func main() {
 func cleanAndExpandPath(path string) string {
 	// Expand initial ~ to OS specific home directory.
 	if strings.HasPrefix(path, "~") {
-		appHomeDir := btcutil.AppDataDir("gencerts", false)
+		appHomeDir := soterutil.AppDataDir("gencerts", false)
 		homeDir := filepath.Dir(appHomeDir)
 		path = strings.Replace(path, "~", homeDir, 1)
 	}

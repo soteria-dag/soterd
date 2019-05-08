@@ -1,4 +1,5 @@
 // Copyright (c) 2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -7,13 +8,13 @@ package main
 import (
 	"sync/atomic"
 
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/mempool"
-	"github.com/btcsuite/btcd/netsync"
-	"github.com/btcsuite/btcd/peer"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/blockdag"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/mempool"
+	"github.com/soteria-dag/soterd/netsync"
+	"github.com/soteria-dag/soterd/peer"
+	"github.com/soteria-dag/soterd/wire"
+	"github.com/soteria-dag/soterd/soterutil"
 )
 
 // rpcPeer provides a peer for use with the RPC server and implements the
@@ -181,6 +182,18 @@ func (cm *rpcConnManager) ConnectedPeers() []rpcserverPeer {
 	return peers
 }
 
+// KnownAddrs returns a slice of all addresses known to peers
+//
+// This function is safe for concurrent access and is part of the
+// rpcserverConnManager interface implementation
+func (cm *rpcConnManager) KnownAddrs() []string {
+	reply := make(chan []string)
+	cm.server.query <- getKnownAddrsMsg{reply: reply}
+	addrs := <- reply
+
+	return addrs
+}
+
 // PersistentPeers returns an array consisting of all the added persistent
 // peers.
 //
@@ -223,6 +236,11 @@ func (cm *rpcConnManager) RelayTransactions(txns []*mempool.TxDesc) {
 	cm.server.relayTransactions(txns)
 }
 
+// ListenAddrs returns a slice of p2p addresses the server is listening on
+func (cm *rpcConnManager) ListenAddrs() []string {
+	return cm.server.connManager.ListenAddrs()
+}
+
 // rpcSyncMgr provides a block manager for use with the RPC server and
 // implements the rpcserverSyncManager interface.
 type rpcSyncMgr struct {
@@ -247,7 +265,7 @@ func (b *rpcSyncMgr) IsCurrent() bool {
 //
 // This function is safe for concurrent access and is part of the
 // rpcserverSyncManager interface implementation.
-func (b *rpcSyncMgr) SubmitBlock(block *btcutil.Block, flags blockchain.BehaviorFlags) (bool, error) {
+func (b *rpcSyncMgr) SubmitBlock(block *soterutil.Block, flags blockdag.BehaviorFlags) (bool, error) {
 	return b.syncMgr.ProcessBlock(block, flags)
 }
 
@@ -274,6 +292,6 @@ func (b *rpcSyncMgr) SyncPeerID() int32 {
 //
 // This function is safe for concurrent access and is part of the
 // rpcserverSyncManager interface implementation.
-func (b *rpcSyncMgr) LocateHeaders(locators []*chainhash.Hash, hashStop *chainhash.Hash) []wire.BlockHeader {
+func (b *rpcSyncMgr) LocateHeaders(locators []*int32, hashStop *chainhash.Hash) []wire.BlockHeader {
 	return b.server.chain.LocateHeaders(locators, hashStop)
 }

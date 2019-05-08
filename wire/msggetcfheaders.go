@@ -1,4 +1,5 @@
 // Copyright (c) 2017 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -7,7 +8,7 @@ package wire
 import (
 	"io"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 )
 
 // MsgGetCFHeaders is a message similar to MsgGetHeaders, but for committed
@@ -19,9 +20,9 @@ type MsgGetCFHeaders struct {
 	StopHash    chainhash.Hash
 }
 
-// BtcDecode decodes r using the bitcoin protocol encoding into the receiver.
+// SotoDecode decodes r using the soter protocol encoding into the receiver.
 // This is part of the Message interface implementation.
-func (msg *MsgGetCFHeaders) BtcDecode(r io.Reader, pver uint32, _ MessageEncoding) error {
+func (msg *MsgGetCFHeaders) SotoDecode(r io.Reader, pver uint32, _ MessageEncoding) error {
 	err := readElement(r, &msg.FilterType)
 	if err != nil {
 		return err
@@ -35,9 +36,9 @@ func (msg *MsgGetCFHeaders) BtcDecode(r io.Reader, pver uint32, _ MessageEncodin
 	return readElement(r, &msg.StopHash)
 }
 
-// BtcEncode encodes the receiver to w using the bitcoin protocol encoding.
+// SotoEncode encodes the receiver to w using the soter protocol encoding.
 // This is part of the Message interface implementation.
-func (msg *MsgGetCFHeaders) BtcEncode(w io.Writer, pver uint32, _ MessageEncoding) error {
+func (msg *MsgGetCFHeaders) SotoEncode(w io.Writer, pver uint32, _ MessageEncoding) error {
 	err := writeElement(w, msg.FilterType)
 	if err != nil {
 		return err
@@ -64,7 +65,7 @@ func (msg *MsgGetCFHeaders) MaxPayloadLength(pver uint32) uint32 {
 	return 1 + 4 + chainhash.HashSize
 }
 
-// NewMsgGetCFHeaders returns a new bitcoin getcfheader message that conforms to
+// NewMsgGetCFHeaders returns a new soter getcfheader message that conforms to
 // the Message interface using the passed parameters and defaults for the
 // remaining fields.
 func NewMsgGetCFHeaders(filterType FilterType, startHeight uint32,

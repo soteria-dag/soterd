@@ -1,4 +1,5 @@
 // Copyright (c) 2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -37,7 +38,7 @@ func TestSendHeaders(t *testing.T) {
 
 	// Test encode with latest protocol version.
 	var buf bytes.Buffer
-	err := msg.BtcEncode(&buf, pver, enc)
+	err := msg.SotoEncode(&buf, pver, enc)
 	if err != nil {
 		t.Errorf("encode of MsgSendHeaders failed %v err <%v>", msg,
 			err)
@@ -46,7 +47,7 @@ func TestSendHeaders(t *testing.T) {
 	// Older protocol versions should fail encode since message didn't
 	// exist yet.
 	oldPver := SendHeadersVersion - 1
-	err = msg.BtcEncode(&buf, oldPver, enc)
+	err = msg.SotoEncode(&buf, oldPver, enc)
 	if err == nil {
 		s := "encode of MsgSendHeaders passed for old protocol " +
 			"version %v err <%v>"
@@ -55,7 +56,7 @@ func TestSendHeaders(t *testing.T) {
 
 	// Test decode with latest protocol version.
 	readmsg := NewMsgSendHeaders()
-	err = readmsg.BtcDecode(&buf, pver, enc)
+	err = readmsg.SotoDecode(&buf, pver, enc)
 	if err != nil {
 		t.Errorf("decode of MsgSendHeaders failed [%v] err <%v>", buf,
 			err)
@@ -63,7 +64,7 @@ func TestSendHeaders(t *testing.T) {
 
 	// Older protocol versions should fail decode since message didn't
 	// exist yet.
-	err = readmsg.BtcDecode(&buf, oldPver, enc)
+	err = readmsg.SotoDecode(&buf, oldPver, enc)
 	if err == nil {
 		s := "decode of MsgSendHeaders passed for old protocol " +
 			"version %v err <%v>"
@@ -82,7 +83,7 @@ func TestSendHeadersBIP0130(t *testing.T) {
 
 	// Test encode with old protocol version.
 	var buf bytes.Buffer
-	err := msg.BtcEncode(&buf, pver, enc)
+	err := msg.SotoEncode(&buf, pver, enc)
 	if err == nil {
 		t.Errorf("encode of MsgSendHeaders succeeded when it should " +
 			"have failed")
@@ -90,7 +91,7 @@ func TestSendHeadersBIP0130(t *testing.T) {
 
 	// Test decode with old protocol version.
 	readmsg := NewMsgSendHeaders()
-	err = readmsg.BtcDecode(&buf, pver, enc)
+	err = readmsg.SotoDecode(&buf, pver, enc)
 	if err == nil {
 		t.Errorf("decode of MsgSendHeaders succeeded when it should " +
 			"have failed")
@@ -105,7 +106,7 @@ func TestSendHeadersCrossProtocol(t *testing.T) {
 
 	// Encode with latest protocol version.
 	var buf bytes.Buffer
-	err := msg.BtcEncode(&buf, ProtocolVersion, enc)
+	err := msg.SotoEncode(&buf, ProtocolVersion, enc)
 	if err != nil {
 		t.Errorf("encode of MsgSendHeaders failed %v err <%v>", msg,
 			err)
@@ -113,7 +114,7 @@ func TestSendHeadersCrossProtocol(t *testing.T) {
 
 	// Decode with old protocol version.
 	readmsg := NewMsgSendHeaders()
-	err = readmsg.BtcDecode(&buf, SendHeadersVersion, enc)
+	err = readmsg.SotoDecode(&buf, SendHeadersVersion, enc)
 	if err != nil {
 		t.Errorf("decode of MsgSendHeaders failed [%v] err <%v>", buf,
 			err)
@@ -165,13 +166,13 @@ func TestSendHeadersWire(t *testing.T) {
 	for i, test := range tests {
 		// Encode the message to wire format.
 		var buf bytes.Buffer
-		err := test.in.BtcEncode(&buf, test.pver, test.enc)
+		err := test.in.SotoEncode(&buf, test.pver, test.enc)
 		if err != nil {
-			t.Errorf("BtcEncode #%d error %v", i, err)
+			t.Errorf("SotoEncode #%d error %v", i, err)
 			continue
 		}
 		if !bytes.Equal(buf.Bytes(), test.buf) {
-			t.Errorf("BtcEncode #%d\n got: %s want: %s", i,
+			t.Errorf("SotoEncode #%d\n got: %s want: %s", i,
 				spew.Sdump(buf.Bytes()), spew.Sdump(test.buf))
 			continue
 		}
@@ -179,13 +180,13 @@ func TestSendHeadersWire(t *testing.T) {
 		// Decode the message from wire format.
 		var msg MsgSendHeaders
 		rbuf := bytes.NewReader(test.buf)
-		err = msg.BtcDecode(rbuf, test.pver, test.enc)
+		err = msg.SotoDecode(rbuf, test.pver, test.enc)
 		if err != nil {
-			t.Errorf("BtcDecode #%d error %v", i, err)
+			t.Errorf("SotoDecode #%d error %v", i, err)
 			continue
 		}
 		if !reflect.DeepEqual(&msg, test.out) {
-			t.Errorf("BtcDecode #%d\n got: %s want: %s", i,
+			t.Errorf("SotoDecode #%d\n got: %s want: %s", i,
 				spew.Sdump(msg), spew.Sdump(test.out))
 			continue
 		}

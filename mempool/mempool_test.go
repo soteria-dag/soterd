@@ -1,4 +1,5 @@
 // Copyright (c) 2016 The btcsuite developers
+// Copyright (c) 2018-2019 The Soteria DAG developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -12,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
+	"github.com/soteria-dag/soterd/blockdag"
+	"github.com/soteria-dag/soterd/chaincfg"
+	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/soterec"
+	"github.com/soteria-dag/soterd/soterutil"
+	"github.com/soteria-dag/soterd/txscript"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 // fakeChain is used by the pool harness to provide generated test utxos and
@@ -26,7 +27,7 @@ import (
 // transactions to appear as though they are spending completely valid utxos.
 type fakeChain struct {
 	sync.RWMutex
-	utxos          *blockchain.UtxoViewpoint
+	utxos          *blockdag.UtxoViewpoint
 	currentHeight  int32
 	medianTimePast time.Time
 }
@@ -37,7 +38,7 @@ type fakeChain struct {
 // view can be examined for duplicate transactions.
 //
 // This function is safe for concurrent access however the returned view is NOT.
-func (s *fakeChain) FetchUtxoView(tx *btcutil.Tx) (*blockchain.UtxoViewpoint, error) {
+func (s *fakeChain) FetchUtxoView(tx *soterutil.Tx) (*blockdag.UtxoViewpoint, error) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -45,7 +46,7 @@ func (s *fakeChain) FetchUtxoView(tx *btcutil.Tx) (*blockchain.UtxoViewpoint, er
 	// do not affect the fake chain's view.
 
 	// Add an entry for the tx itself to the new view.
-	viewpoint := blockchain.NewUtxoViewpoint()
+	viewpoint := blockdag.NewUtxoViewpoint()
 	prevOut := wire.OutPoint{Hash: *tx.Hash()}
 	for txOutIdx := range tx.MsgTx().TxOut {
 		prevOut.Index = uint32(txOutIdx)
@@ -97,10 +98,10 @@ func (s *fakeChain) SetMedianTimePast(mtp time.Time) {
 
 // CalcSequenceLock returns the current sequence lock for the passed
 // transaction associated with the fake chain instance.
-func (s *fakeChain) CalcSequenceLock(tx *btcutil.Tx,
-	view *blockchain.UtxoViewpoint) (*blockchain.SequenceLock, error) {
+func (s *fakeChain) CalcSequenceLock(tx *soterutil.Tx,
+	view *blockdag.UtxoViewpoint) (*blockdag.SequenceLock, error) {
 
-	return &blockchain.SequenceLock{
+	return &blockdag.SequenceLock{
 		Seconds:     -1,
 		BlockHeight: -1,
 	}, nil
@@ -110,16 +111,16 @@ func (s *fakeChain) CalcSequenceLock(tx *btcutil.Tx,
 // amount associated with it.
 type spendableOutput struct {
 	outPoint wire.OutPoint
-	amount   btcutil.Amount
+	amount   soterutil.Amount
 }
 
 // txOutToSpendableOut returns a spendable output given a transaction and index
 // of the output to use.  This is useful as a convenience when creating test
 // transactions.
-func txOutToSpendableOut(tx *btcutil.Tx, outputNum uint32) spendableOutput {
+func txOutToSpendableOut(tx *soterutil.Tx, outputNum uint32) spendableOutput {
 	return spendableOutput{
 		outPoint: wire.OutPoint{Hash: *tx.Hash(), Index: outputNum},
-		amount:   btcutil.Amount(tx.MsgTx().TxOut[outputNum].Value),
+		amount:   soterutil.Amount(tx.MsgTx().TxOut[outputNum].Value),
 	}
 }
 
@@ -132,8 +133,8 @@ type poolHarness struct {
 	//
 	// payAddr is the p2sh address for the signing key and is used for the
 	// payment address throughout the tests.
-	signKey     *btcec.PrivateKey
-	payAddr     btcutil.Address
+	signKey     *soterec.PrivateKey
+	payAddr     soterutil.Address
 	payScript   []byte
 	chainParams *chaincfg.Params
 
@@ -146,7 +147,7 @@ type poolHarness struct {
 // address associated with the harness.  It automatically uses a standard
 // signature script that starts with the block height that is required by
 // version 2 blocks.
-func (p *poolHarness) CreateCoinbaseTx(blockHeight int32, numOutputs uint32) (*btcutil.Tx, error) {
+func (p *poolHarness) CreateCoinbaseTx(blockHeight int32, numOutputs uint32) (*soterutil.Tx, error) {
 	// Create standard coinbase script.
 	extraNonce := int64(0)
 	coinbaseScript, err := txscript.NewScriptBuilder().
@@ -164,7 +165,7 @@ func (p *poolHarness) CreateCoinbaseTx(blockHeight int32, numOutputs uint32) (*b
 		SignatureScript: coinbaseScript,
 		Sequence:        wire.MaxTxInSequenceNum,
 	})
-	totalInput := blockchain.CalcBlockSubsidy(blockHeight, p.chainParams)
+	totalInput := blockdag.CalcBlockSubsidy(blockHeight, p.chainParams)
 	amountPerOutput := totalInput / int64(numOutputs)
 	remainder := totalInput - amountPerOutput*int64(numOutputs)
 	for i := uint32(0); i < numOutputs; i++ {
@@ -180,17 +181,17 @@ func (p *poolHarness) CreateCoinbaseTx(blockHeight int32, numOutputs uint32) (*b
 		})
 	}
 
-	return btcutil.NewTx(tx), nil
+	return soterutil.NewTx(tx), nil
 }
 
 // CreateSignedTx creates a new signed transaction that consumes the provided
 // inputs and generates the provided number of outputs by evenly splitting the
 // total input amount.  All outputs will be to the payment script associated
 // with the harness and all inputs are assumed to do the same.
-func (p *poolHarness) CreateSignedTx(inputs []spendableOutput, numOutputs uint32) (*btcutil.Tx, error) {
+func (p *poolHarness) CreateSignedTx(inputs []spendableOutput, numOutputs uint32) (*soterutil.Tx, error) {
 	// Calculate the total input amount and split it amongst the requested
 	// number of outputs.
-	var totalInput btcutil.Amount
+	var totalInput soterutil.Amount
 	for _, input := range inputs {
 		totalInput += input.amount
 	}
@@ -228,15 +229,15 @@ func (p *poolHarness) CreateSignedTx(inputs []spendableOutput, numOutputs uint32
 		tx.TxIn[i].SignatureScript = sigScript
 	}
 
-	return btcutil.NewTx(tx), nil
+	return soterutil.NewTx(tx), nil
 }
 
 // CreateTxChain creates a chain of zero-fee transactions (each subsequent
 // transaction spends the entire amount from the previous one) with the first
 // one spending the provided outpoint.  Each transaction spends the entire
 // amount of the previous one and as such does not include any fees.
-func (p *poolHarness) CreateTxChain(firstOutput spendableOutput, numTxns uint32) ([]*btcutil.Tx, error) {
-	txChain := make([]*btcutil.Tx, 0, numTxns)
+func (p *poolHarness) CreateTxChain(firstOutput spendableOutput, numTxns uint32) ([]*soterutil.Tx, error) {
+	txChain := make([]*soterutil.Tx, 0, numTxns)
 	prevOutPoint := firstOutput.outPoint
 	spendableAmount := firstOutput.amount
 	for i := uint32(0); i < numTxns; i++ {
@@ -262,7 +263,7 @@ func (p *poolHarness) CreateTxChain(firstOutput spendableOutput, numTxns uint32)
 		}
 		tx.TxIn[0].SignatureScript = sigScript
 
-		txChain = append(txChain, btcutil.NewTx(tx))
+		txChain = append(txChain, soterutil.NewTx(tx))
 
 		// Next transaction uses outputs from this one.
 		prevOutPoint = wire.OutPoint{Hash: tx.TxHash(), Index: 0}
@@ -283,12 +284,12 @@ func newPoolHarness(chainParams *chaincfg.Params) (*poolHarness, []spendableOutp
 	if err != nil {
 		return nil, nil, err
 	}
-	signKey, signPub := btcec.PrivKeyFromBytes(btcec.S256(), keyBytes)
+	signKey, signPub := soterec.PrivKeyFromBytes(soterec.S256(), keyBytes)
 
 	// Generate associated pay-to-script-hash address and resulting payment
 	// script.
 	pubKeyBytes := signPub.SerializeCompressed()
-	payPubKeyAddr, err := btcutil.NewAddressPubKey(pubKeyBytes, chainParams)
+	payPubKeyAddr, err := soterutil.NewAddressPubKey(pubKeyBytes, chainParams)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -299,7 +300,7 @@ func newPoolHarness(chainParams *chaincfg.Params) (*poolHarness, []spendableOutp
 	}
 
 	// Create a new fake chain and harness bound to it.
-	chain := &fakeChain{utxos: blockchain.NewUtxoViewpoint()}
+	chain := &fakeChain{utxos: blockdag.NewUtxoViewpoint()}
 	harness := poolHarness{
 		signKey:     signKey,
 		payAddr:     payAddr,
@@ -313,8 +314,8 @@ func newPoolHarness(chainParams *chaincfg.Params) (*poolHarness, []spendableOutp
 				FreeTxRelayLimit:     15.0,
 				MaxOrphanTxs:         5,
 				MaxOrphanTxSize:      1000,
-				MaxSigOpCostPerTx:    blockchain.MaxBlockSigOpsCost / 4,
-				MinRelayTxFee:        1000, // 1 Satoshi per byte
+				MaxSigOpCostPerTx:    blockdag.MaxBlockSigOpsCost / 4,
+				MinRelayTxFee:        1000, // 1 nanoSoter per byte
 				MaxTxVersion:         1,
 			},
 			ChainParams:      chainParams,
@@ -361,7 +362,7 @@ type testContext struct {
 // orphan pool and transaction pool status.  It also further determines if it
 // should be reported as available by the HaveTransaction function based upon
 // the two flags and tests that condition as well.
-func testPoolMembership(tc *testContext, tx *btcutil.Tx, inOrphanPool, inTxPool bool) {
+func testPoolMembership(tc *testContext, tx *soterutil.Tx, inOrphanPool, inTxPool bool) {
 	txHash := tx.Hash()
 	gotOrphanPool := tc.harness.txPool.IsOrphanInPool(txHash)
 	if inOrphanPool != gotOrphanPool {
@@ -551,7 +552,7 @@ func TestOrphanEviction(t *testing.T) {
 
 	// Figure out which transactions were evicted and make sure the number
 	// evicted matches the expected number.
-	var evictedTxns []*btcutil.Tx
+	var evictedTxns []*soterutil.Tx
 	for _, tx := range chainedTxns[1:] {
 		if !harness.txPool.IsOrphanInPool(tx.Hash()) {
 			evictedTxns = append(evictedTxns, tx)
@@ -616,7 +617,7 @@ func TestBasicOrphanRemoval(t *testing.T) {
 	// Attempt to remove an orphan that has no redeemers and is not present,
 	// and ensure the state of all other orphans are unaffected.
 	nonChainedOrphanTx, err := harness.CreateSignedTx([]spendableOutput{{
-		amount:   btcutil.Amount(5000000000),
+		amount:   soterutil.Amount(5000000000),
 		outPoint: wire.OutPoint{Hash: chainhash.Hash{}, Index: 0},
 	}}, 1)
 	if err != nil {
