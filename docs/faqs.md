@@ -1,4 +1,8 @@
 # FAQs
+## Q: How do you compare Soteria DAG with other DAG proposals and/or implementations, for example? 
+A: Soteria DAG is a Block DAG consensus protocol, which implements part of Phantom protocols proposed in [this paper](https://eprint.iacr.org/2018/104.pdf). Soteria DAG, as designed in Phantom proposal, uses Phantom algorithm #3 to select a Blue set, in which participating nodes first find an approximate k-cluster solution for its local block DAG to prune potentially malicious blocks then topologically sorts the remaining blocks to obtain a
+total order. Conflux is also a Block DAG consensus based on GHOST protocol. Conflux uses GHOST protocol to select the main chain in a graph and produces a total ordering of the graph by the main chain. Community has voiced out extensively on the differences between these two approaches.You can find a detailed comparisons in the [Conflux paper](https://arxiv.org/abs/1805.03870) and the analysis of a liveness attack of Phantom protocol in the Appendix A of this paper.
+Soteria DAG is designed to perform various pruning algorithms. You are welcome to experiment with ours or implement your own. 
 ## Q: what is your block rate? AKA how often do you produce a block?
 A: In testnet1, it’s 1 minute per block. We will be collecting logs from testnet1 to help tune block rate for testnet2.
 ## Q: BTC doesn’t allow fork, the longest chain will win, any fork of the blocks will be discard. Will you do the same? Are there duplicated transactions in the fork?
