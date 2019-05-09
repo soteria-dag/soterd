@@ -21,13 +21,13 @@
     8. [Soterd profiling](#SoterdProfiling)
     9. [Soterd startup](#SoterdStartup)
 6. [Other Soteria projects](#Soteria)
-7. [FAQs](docs/faqs.md)
+7. [FAQs](faqs.md)
 
 <a name="About" />
 
 ### 1. About
 
-soterd is a full soter node implementation written in Go (golang). It started as a fork of the [btcd](https://github.com/btcsuite/btcd) project, where development focus has changed from providing a bitcoin node to providing an [implementation of blockdag]((docs/intro_to_blockdag.md)) for soter.
+soterd is a full soter node implementation written in Go (golang). It started as a fork of the [btcd](https://github.com/btcsuite/btcd) project, where development focus has changed from providing a bitcoin node to providing an [implementation of blockdag]((intro_to_blockdag.md)) for soter.
 
 The intent of this project is for it to act as a component in Soteria's Trade Anything Platform (TAP); a pillar of Soteria's [Self Sustainable Decentralized Economy](https://www.ssde.io/) vision (SSDE).
 
@@ -262,5 +262,5 @@ These projects are related to soterd, and provide additional functionality:
     
 <a name="FAQ" />
 
-### 7. [Frequently Asked Questions](docs/faqs.md)
+### 7. [Frequently Asked Questions](faqs.md)
 
