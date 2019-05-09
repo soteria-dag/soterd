@@ -1353,10 +1353,88 @@ func (sm *SyncManager) limitTrackedReqs(m map[chainhash.Hash]*requestExpiry, lim
 // important because the sync manager controls which blocks are needed and how
 // the fetching should proceed.
 func (sm *SyncManager) blockHandler() {
+
+	// Dispatch incoming messages to fast & slow channels, based on the message type.
+	dispatch := func(fast, slow chan interface{}) {
+		for m := range sm.msgChan {
+			switch m.(type) {
+			case *blockMsg:
+				slow <- m
+			case *processBlockMsg:
+				slow <- m
+			default:
+				fast <- m
+			}
+		}
+	}
+
+	fast := make(chan interface{})
+	slow := make(chan interface{})
+
+	// This goroutine will sort messages from msgChan into different queues. It's meant to help the sync manager
+	// remain responsive when receiving a large number of messages that take longer to process.
+	go dispatch(fast, slow)
+
 out:
 	for {
 		select {
-		case m := <-sm.msgChan:
+		case m := <-fast:
+			switch msg := m.(type) {
+			case *newPeerMsg:
+				sm.handleNewPeerMsg(msg.peer)
+
+			case *txMsg:
+				sm.handleTxMsg(msg)
+				msg.reply <- struct{}{}
+
+			case *blockMsg:
+				sm.handleBlockMsg(msg)
+				msg.reply <- struct{}{}
+
+			case *invMsg:
+				sm.handleInvMsg(msg)
+
+			case *headersMsg:
+				sm.handleHeadersMsg(msg)
+
+			case *donePeerMsg:
+				sm.handleDonePeerMsg(msg.peer)
+
+			case getSyncPeerMsg:
+				var peerID int32
+				if sm.syncPeer != nil {
+					peerID = sm.syncPeer.ID()
+				}
+				msg.reply <- peerID
+
+			case processBlockMsg:
+				_, isOrphan, err := sm.chain.ProcessBlock(
+					msg.block, msg.flags)
+				if err != nil {
+					msg.reply <- processBlockResponse{
+						isOrphan: false,
+						err:      err,
+					}
+				}
+
+				msg.reply <- processBlockResponse{
+					isOrphan: isOrphan,
+					err:      nil,
+				}
+
+			case isCurrentMsg:
+				msg.reply <- sm.current()
+
+			case pauseMsg:
+				// Wait until the sender unpauses the manager.
+				<-msg.unpause
+
+			default:
+				log.Warnf("Invalid message type in block "+
+					"handler: %T", msg)
+			}
+
+		case m := <-slow:
 			switch msg := m.(type) {
 			case *newPeerMsg:
 				sm.handleNewPeerMsg(msg.peer)

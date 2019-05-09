@@ -266,6 +266,7 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 	outpoints := []*wire.OutPoint{outpoint}
 
 	tx := createSpendTxForTest(outpoints, soterutil.Amount(1000), soterutil.Amount(10))
+	txHash := tx.TxHash()
 
 	// block A using cb tx
 	blockA := createMsgBlockForTest(3,
@@ -282,6 +283,14 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 		[]*wire.MsgBlock{block2},
 		[]*wire.MsgTx{tx2})
 
+	bHash := blockB.BlockHash()
+	// jenlouie: Because order of last resort is based on hash, to make sure block A appears
+	// before block B, make block B's hash greater than A's
+	for !(bHash.String() > blockA.BlockHash().String() && HashToBig(&bHash).Cmp(CompactToBig(blockB.Header.Bits)) < 0) {
+		blockB.Header.Nonce++
+		bHash = blockB.BlockHash()
+	}
+
 	_, err = addBlockForTest(dag, blockB, t)
 	if err != nil {
 		t.Errorf("Error adding block B: %v\n", err)
@@ -296,20 +305,38 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 		[]*wire.MsgBlock{blockB},
 		[]*wire.MsgTx{tx3})
 
+
+	// We should expect an error b/c output from double spend not added to set of txos
+	// a block ith a tx using that output as input
 	_, err = addBlockForTest(dag, blockC, t)
-	if err != nil {
-		t.Errorf("Error adding block C: %v\n", err)
+	if err == nil {
+		t.Errorf("Block C added with tx using double spend output")
 		return
 	}
 
-	// A before B
+	// When block B is before A, block D using A output should fail
+	// b/c block D is using double spend from A
+	blockAOutpoint := wire.NewOutPoint(&txHash, uint32(0))
+	tx4 := createSpendTxForTest([]*wire.OutPoint{blockAOutpoint}, soterutil.Amount(1000), soterutil.Amount(10))
+	blockD := createMsgBlockForTest(4,
+		time.Now().Unix() - 500,
+		[]*wire.MsgBlock{blockA},
+		[]*wire.MsgTx{tx4})
+
+	_, err = addBlockForTest(dag, blockD, t)
+	if err != nil {
+		t.Errorf("Error adding block D: %v", err)
+		return
+	}
+
+	// B before A
 	order := []chainhash.Hash{
 		chaincfg.SimNetParams.GenesisBlock.BlockHash(),
 		block1.BlockHash(),
 		block2.BlockHash(),
-		blockA.BlockHash(),
 		blockB.BlockHash(),
-		blockC.BlockHash()}
+		blockA.BlockHash(),
+		blockD.BlockHash()}
 
 	newView := NewUtxoViewpoint()
 
@@ -326,23 +353,21 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 		}
 	}
 
-	entryB := newView.LookupEntry(*blockBOutpoint)
-	if entryB == nil {
-		t.Errorf("Block B tx output should exist in view")
-	} else if !entryB.IsIgnored() {
-		t.Errorf("Block B tx output should be ignored")
+	entryA := newView.LookupEntry(*blockAOutpoint)
+	if entryA == nil {
+		t.Errorf("Block A tx output should exist in view")
+	} else if !entryA.IsIgnored() {
+		t.Errorf("Block A tx output should be ignored")
 	}
 
-	tx3Hash := tx3.TxHash()
-	blockCOutpoint := wire.NewOutPoint(&tx3Hash, 0)
-	entryC := newView.LookupEntry(*blockCOutpoint)
-	if entryC == nil {
-		t.Errorf("Block C tx output should exist in view")
-	} else if !entryC.IsIgnored() {
-		t.Errorf("Block C tx output should be ignored")
+	tx4Hash := tx4.TxHash()
+	blockDOutpoint := wire.NewOutPoint(&tx4Hash, 0)
+	entryD := newView.LookupEntry(*blockDOutpoint)
+	if entryD == nil {
+		t.Errorf("Block D tx output should exist in view")
+	} else if !entryD.IsIgnored() {
+		t.Errorf("Block D tx output should be ignored")
 	}
-
-	//TODO: B before A
 }
 
 // txIns that are inputs along with a double spend input should
