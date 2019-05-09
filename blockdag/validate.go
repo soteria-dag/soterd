@@ -901,16 +901,11 @@ func CheckTransactionInputs(tx *soterutil.Tx, txHeight int32, utxoView *UtxoView
 		// Ensure the referenced input transaction is available.
 		utxo := utxoView.LookupEntry(txIn.PreviousOutPoint)
 		if utxo == nil { //|| utxo.IsSpent() { //DAG ok with dup transactions
-			if !onConnectBlock {
-				str := fmt.Sprintf("output %v referenced from "+
-					"transaction %s:%d either does not exist or "+
-					"has already been spent", txIn.PreviousOutPoint,
-					tx.Hash(), txInIndex)
-				return 0, ruleError(ErrMissingTxOut, str)
-			} else {
-				// jenlouie: return since utxo is nil, we can't do the rest of the checks
-				return 0, nil
-			}
+			str := fmt.Sprintf("output %v referenced from "+
+				"transaction %s:%d either does not exist or "+
+				"has already been spent", txIn.PreviousOutPoint,
+				tx.Hash(), txInIndex)
+			return 0, ruleError(ErrMissingTxOut, str)
 		}
 
 		// Ensure the transaction is not spending coins which have not
@@ -1168,9 +1163,7 @@ func (b *BlockDAG) checkConnectBlock(node *blockNode, block *soterutil.Block, vi
 		return ruleError(ErrBadCoinbaseValue, str)
 	}
 
-	//TODO(jenlouie): script checking errors out when utxo not in view, setting to false
-	// until we can fix issue
-	runScripts := false
+	runScripts := true
 	var scriptFlags txscript.ScriptFlags
 	/*
 		// Don't run scripts if this node is before the latest known good

@@ -52,7 +52,7 @@ Refer to the [Getting started with Docker](getting_started_docker.md) document f
     ```bash
     $ git clone https://github.com/soteria-dag/soterd $GOPATH/src/github.com/soteria-dag/soterd
     $ cd $GOPATH/src/github.com/soteria-dag/soterd
-    $ git checkout [branch of your choice] # working on a particular branch if preferred 
+    $ git checkout exp0 # change to other branch if you like, or omit this step if on master
     $ go get -u github.com/Masterminds/glide
     $ glide install
     $ GO111MODULE=on go install . ./cmd/...
