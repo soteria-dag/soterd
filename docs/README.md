@@ -21,6 +21,7 @@
     8. [Soterd profiling](#SoterdProfiling)
     9. [Soterd startup](#SoterdStartup)
 6. [Other Soteria projects](#Soteria)
+7. [FAQs](docs/faqs.md)
 
 <a name="About" />
 
@@ -258,3 +259,8 @@ These projects are related to soterd, and provide additional functionality:
         * Blocks
         * Transactions
     * P2P network connectivity
+    
+<a name="FAQ" />
+
+### 7. [Frequently Asked Questions](docs/faqs.md)
+
