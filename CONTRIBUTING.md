@@ -23,7 +23,7 @@ The following is a set of guidelines for contributing to Soteria DAG and its pac
 This project and everyone participating in it is governed by the [Soteria DAG Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. 
 ## I don't want to read this whole thing I just have a question!!!
 
-> **Note:** [Please don't file an issue to ask a question.]() You'll get faster results by using the resources below.
+> **Note:** Please don't file an issue to ask a question. You'll get faster results by using the resources below.
 
 We have an official message board with a detailed FAQ and where the community chimes in with helpful advice if you have questions.
 
