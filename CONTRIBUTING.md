@@ -11,14 +11,12 @@ The following is a set of guidelines for contributing to Soteria DAG and its pac
 [I don't want to read this whole thing, I just have a question!!!](#i-dont-want-to-read-this-whole-thing-i-just-have-a-question)
 
 [What should I know before I get started?](#what-should-i-know-before-i-get-started)
-  * [Soteria DAG and Packages](#soterd-and-packages)
   * [Soteria DAG Design Decisions](#design-decisions)
 
 [How Can I Contribute?](#how-can-i-contribute)
   * [Reporting Bugs](#reporting-bugs)
   * [Suggesting Enhancements](#suggesting-enhancements)
   * [Your First Code Contribution](#your-first-code-contribution)
-  * [Pull Requests](#pull-requests)
 
 ## Code of Conduct
 
@@ -29,22 +27,17 @@ This project and everyone participating in it is governed by the [Soteria DAG Co
 
 We have an official message board with a detailed FAQ and where the community chimes in with helpful advice if you have questions.
 
-* [Soteria DAG FAQs]()
+* [Soteria DAG FAQs](docs/faqs.md)
 
 If chat is more your speed, you can join the Soteria DAG Slack:
 
 * [Join Soteria DAG Slack](https://soteriadag.slack.com/)
     * Even though Slack is a chat service, sometimes it takes several hours for community members to respond &mdash; please be patient!
     * Use the `#soteria-dag` channel for general questions or discussion about Soteria DAG
-    * Use the `#packages` channel for questions or discussion about writing or contributing to Soteria DAG packages
     * Use the `#ui` channel for questions and discussion about SoterDash UI and themes
     * There are many other channels available, check the channel list
 
 ## What should I know before I get started?
-
-### Soteria DAG and Packages
-
-#### Package Conventions
 
 ### Design Decisions
 
@@ -60,7 +53,7 @@ Before creating bug reports, please check [this list](#before-submitting-a-bug-r
 
 #### Before Submitting A Bug Report
 
-* **Check the [debugging guide].** You might be able to find the cause of the problem and fix things yourself. Most importantly, check if you can reproduce the problem [in the latest version of Soterd](). 
+* **Check the [debugging guide].** You might be able to find the cause of the problem and fix things yourself. Most importantly, check if you can reproduce the problem in the latest version of Soterd. 
 * **Check the [FAQs on the forum]** for a list of common questions and problems.
 * **Determine [which repository the problem should be reported in]**.
 * **Perform a [cursory search](https://github.com/search?q=+is%3Aissue+user%3Asoterd)** to see if the problem has already been reported. If it has **and the issue is still open**, add a comment to the existing issue instead of opening a new one.
@@ -77,7 +70,7 @@ Explain the problem and include additional details to help maintainers reproduce
 * **Describe the behavior you observed after following the steps** and point out what exactly is the problem with that behavior.
 * **Explain which behavior you expected to see instead and why.**
 * **If you're reporting that Soterd crashed**, include a crash report with a stack trace from the operating system. On macOS, the crash report will be available in `Console.app` under "Diagnostic and usage information" > "User diagnostic reports". Include the crash report in the issue in a [code block](https://help.github.com/articles/markdown-basics/#multiple-lines), a [file attachment](https://help.github.com/articles/file-attachments-on-issues-and-pull-requests/), or put it in a [gist](https://gist.github.com/) and provide link to that gist.
-* **If the problem is related to performance or memory**, include a [CPU profile capture] with your report.
+* **If the problem is related to performance or memory**, include a CPU profile capture with your report.
 
 Provide more context by answering these questions:
 
@@ -100,20 +93,18 @@ Before creating enhancement suggestions, please check [this list](#before-submit
 
 #### Before Submitting An Enhancement Suggestion
 
-* **Check if there's already [a package] which provides that enhancement.**
-* **Determine [which repository the enhancement should be suggested in].**
+* **Determine which repository the enhancement should be suggested in.**
 * **Perform a [cursory search](https://github.com/search?q=+is%3Aissue+user%3Asoterd)** to see if the enhancement has already been suggested. If it has, add a comment to the existing issue instead of opening a new one.
 
 #### How Do I Submit A (Good) Enhancement Suggestion?
 
-Enhancement suggestions are tracked as [GitHub issues](https://guides.github.com/features/issues/). After you've determined [which repository]() your enhancement suggestion is related to, create an issue on that repository and provide the following information:
+Enhancement suggestions are tracked as [GitHub issues](https://guides.github.com/features/issues/). After you've determined which repository your enhancement suggestion is related to, create an issue on that repository and provide the following information:
 
 * **Use a clear and descriptive title** for the issue to identify the suggestion.
 * **Provide a step-by-step description of the suggested enhancement** in as many details as possible.
 * **Provide specific examples to demonstrate the steps**. Include copy/pasteable snippets which you use in those examples, as [Markdown code blocks](https://help.github.com/articles/markdown-basics/#multiple-lines).
 * **Describe the current behavior** and **explain which behavior you expected to see instead** and why.
-* **Include screenshots and animated GIFs** which help you demonstrate the steps or point out the part of soterd which the suggestion is related to. You can use [this tool](https://www.cockos.com/licecap/) to record GIFs on macOS and Windows, and [this tool](https://github.com/colinkeenan/silentcast) or [this tool](https://github.com/GNOME/byzanz) on Linux.
-* **Explain why this enhancement would be useful** to most soterd users and isn't something that can or should be implemented as a [community package]().
+* **Explain why this enhancement would be useful** to most soterd users and isn't something that can or should be implemented as a community package.
 * **List some other text editors or applications where this enhancement exists.**
 * **Specify the name and version of the OS you're using.**
 
