@@ -1,3 +1,7 @@
+// Copyright (c) 2018-2019 The Soteria DAG developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
 package phantom
 
 import (
@@ -140,6 +144,7 @@ func (nset *nodeSet) clone() *nodeSet {
 type Graph struct {
 	tips *nodeSet
 	nodes map[string]*node
+	orderCache *orderCache
 	sync.RWMutex
 }
 
@@ -147,6 +152,7 @@ func NewGraph() *Graph {
 	return &Graph {
 		tips: newNodeSet(),
 		nodes: make(map[string]*node),
+		orderCache: newOrderCache(),
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/soteria-dag/soterd/addrmgr"
 	"github.com/soteria-dag/soterd/blockdag"
 	"github.com/soteria-dag/soterd/blockdag/indexers"
+	"github.com/soteria-dag/soterd/blockdag/phantom"
 	"github.com/soteria-dag/soterd/connmgr"
 	"github.com/soteria-dag/soterd/database"
 	"github.com/soteria-dag/soterd/mempool"
@@ -72,6 +73,7 @@ var (
 	srvrLog   = backendLog.Logger("SRVR")
 	syncLog   = backendLog.Logger("SYNC")
 	txmpLog   = backendLog.Logger("TXMP")
+	phtmLog   = backendLog.Logger("PHTM")
 )
 
 // Initialize package-global logger variables.
@@ -88,6 +90,7 @@ func init() {
 	netsync.UseLogger(syncLog)
 	mempool.UseLogger(txmpLog)
 	metrics.UseLogger(metrLog)
+	phantom.UseLogger(phtmLog)
 }
 
 // subsystemLoggers maps each subsystem identifier to its associated logger.
@@ -108,6 +111,7 @@ var subsystemLoggers = map[string]soterlog.Logger{
 	"SRVR": srvrLog,
 	"SYNC": syncLog,
 	"TXMP": txmpLog,
+	"PHTM": phtmLog,
 }
 
 // initLogRotator initializes the logging rotater to write logs to logFile and

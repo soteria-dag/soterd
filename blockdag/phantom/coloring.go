@@ -1,3 +1,7 @@
+// Copyright (c) 2018-2019 The Soteria DAG developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
 package phantom
 
 import (
@@ -120,7 +124,7 @@ func calculateBlueSet(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetC
 	var setSize = 0
 	for _, tip := range g.getTips() {
 		var v = tipToSet[tip]
-		//fmt.Printf("Tip %s has blue set size %d\n", tip.GetId(), v.Size())
+		//log.Debugf("Tip %s has blue set size %d", tip.GetId(), v.Size())
 		if v.size() > setSize {
 			setSize = v.size()
 			blueSet = v
@@ -132,6 +136,96 @@ func calculateBlueSet(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetC
 
 // need to create a graph with a virtual node
 func OrderDAG(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetCache) []*node {
+
+	g.RLock()
+	defer g.RUnlock()
+
+	todoQueue := list.New()
+	seen := make(map[*node]struct{})
+	orderingSet := newOrderedNodeSet()
+	vg := g.getVirtual()
+	var blueSet *nodeSet
+
+	oldestCacheTips := g.orderCache.oldestTips()
+	tips := g.getTips()
+
+	// Determine if we should use orderCache
+	if g.orderCache.canUseCache() {
+		// Load the cached node order, from the oldest cache
+		for _, n := range g.orderCache.oldestOrder() {
+			orderingSet.add(n)
+		}
+
+		// Use the cached blueSet
+		blueSet = g.orderCache.oldestBlueSet()
+
+		// Start calculating from the tips of the cache, instead of genesis
+		for _, n := range oldestCacheTips {
+			todoQueue.PushBack(n)
+			seen[n] = keyExists
+		}
+	} else {
+		// Start ordering from genesis node
+		blueSet = calculateBlueSet(vg, genesisNode, k, blueSetCache)
+		todoQueue.PushBack(genesisNode)
+		seen[genesisNode] = keyExists
+	}
+
+	for todoQueue.Len() > 0 {
+		// pop from front of queue
+		// and add to ordering
+		elem := todoQueue.Front()
+		todoQueue.Remove(elem)
+		node := elem.Value.(*node)
+		if node.GetId() == "VIRTUAL" {
+			break
+		}
+		orderingSet.add(node)
+		//log.Debugf("Added %s to order", node.GetId())
+
+		children := node.getChildren()
+		intersect := blueSet.intersection(children)
+		anticone := vg.getAnticone(node)
+
+		// for each child of node in the blue set
+		for _, blueChild := range intersect.elements() {
+			childPast := vg.getPast(blueChild)
+
+			// get all node in its past that were in its parent's anticone
+			// nodes topologically before child, but possibly not in the blue set
+			// add to queue
+			for _, anticoneNode := range anticone.elements() {
+				//log.Debugf("%s in anticone of %s", anticoneNode.GetId(), node.GetId())
+				if childPast.getNodeById(anticoneNode.GetId()) != nil {
+					//log.Debugf("%s is in %s 's past", anticoneNode.GetId(), blueChild.GetId())
+					_, ok := seen[anticoneNode]
+					if !orderingSet.contains(anticoneNode) && !ok {
+						todoQueue.PushBack(anticoneNode)
+						seen[anticoneNode] = keyExists
+						//log.Debugf("Adding %s to queue", anticoneNode.GetId())
+					}
+				}
+			}
+			// then add child to queue
+			_, ok := seen[blueChild]
+			if !ok {
+				todoQueue.PushBack(blueChild)
+				seen[blueChild] = keyExists
+				//log.Debugf("Adding %s to queue", blueChild.GetId())
+			}
+		}
+	}
+
+	order := orderingSet.getNodes()
+
+	// Cache the calculations made, to help improve ordering performance in future calls.
+	g.orderCache.add(tips, blueSet, order)
+
+	return order
+}
+
+// OrderDAGNoCache returns the order of nodes in the graph, without using ordering cache
+func OrderDAGNoCache(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetCache) []*node {
 
 	g.RLock()
 	defer g.RUnlock()
@@ -155,7 +249,7 @@ func OrderDAG(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetCache) []
 			break
 		}
 		orderingSet.add(node)
-		//fmt.Printf("Added %s to order\n", node.GetId())
+		//log.Debugf("Added %s to order", node.GetId())
 
 		children := node.getChildren()
 		intersect := blueSet.intersection(children)
@@ -169,14 +263,14 @@ func OrderDAG(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetCache) []
 			// nodes topologically before child, but possibly not in the blue set
 			// add to queue
 			for _, anticoneNode := range anticone.elements() {
-				//fmt.Printf("%s in anticone of %s\n", anticoneNode.GetId(), node.GetId())
+				//log.Debugf("%s in anticone of %s", anticoneNode.GetId(), node.GetId())
 				if childPast.getNodeById(anticoneNode.GetId()) != nil {
-					//fmt.Printf("%s is in %s 's past\n", anticoneNode.GetId(), blueChild.GetId())
+					//log.Debugf("%s is in %s 's past", anticoneNode.GetId(), blueChild.GetId())
 					_, ok := seen[anticoneNode]
 					if !orderingSet.contains(anticoneNode) && !ok {
 						todoQueue.PushBack(anticoneNode)
 						seen[anticoneNode] = keyExists
-						//fmt.Printf("Adding %s to queue\n", anticoneNode.GetId())
+						//log.Debugf("Adding %s to queue", anticoneNode.GetId())
 					}
 				}
 			}
@@ -185,11 +279,10 @@ func OrderDAG(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetCache) []
 			if !ok {
 				todoQueue.PushBack(blueChild)
 				seen[blueChild] = keyExists
-				//fmt.Printf("Adding %s to queue\n", blueChild.GetId())
+				//log.Debugf("Adding %s to queue", blueChild.GetId())
 			}
 		}
 	}
 
 	return orderingSet.getNodes()
 }
-
