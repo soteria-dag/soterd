@@ -43,7 +43,7 @@ const (
 	maxRequestedTxns = wire.MaxInvPerMsg
 
 	// How long we'll wait for a response to a request before it is eligible for retry
-	maxReqTime = time.Second * 4
+	maxReqTime = time.Second * 30
 )
 
 // zeroHash is the zero value hash (all zeros).  It is defined as a convenience.
@@ -242,6 +242,22 @@ func (sm *SyncManager) canReqTxn(state *peerSyncState, hash chainhash.Hash) bool
 	}
 
 	return true
+}
+
+// hasPendingBlocks returns true if there are non-expired requests for blocks with the peer
+func (sm *SyncManager) hasPendingBlocks(peer *peerpkg.Peer) bool {
+	state, exists := sm.peerStates[peer]
+	if !exists {
+		return false
+	}
+
+	for _, req := range state.requestedBlocks {
+		if !req.expired() {
+			return true
+		}
+	}
+
+	return false
 }
 
 // resetHeaderState sets the headers-first mode state to values appropriate for
@@ -771,6 +787,7 @@ func (sm *SyncManager) handleBlockMsg(bmsg *blockMsg) {
 		}
 	}
 
+	var blockHeight = bmsg.block.Height()
 	// If this block is the parent of an orphan, request block inventory between this parent's height and the highest
 	// orphan block.
 	// jenlouie: Only check if the parent is not an orphan, otherwise, the block's height is not assigned yet and
@@ -778,9 +795,8 @@ func (sm *SyncManager) handleBlockMsg(bmsg *blockMsg) {
 	if !isOrphan {
 		sm.reqOrphanChildren(peer, bmsg.block)
 
-		// Also ask the peer if there's any more blocks it might have for us
-		blockHeight := bmsg.block.Height()
 		if blockHeight == peer.MaxBlockHeight() {
+			// Once we've reached peer's last-known max height, ask the peer if there's any more blocks it has for us.
 			locator := blockdag.BlockLocator([]*int32{&blockHeight})
 			err = peer.PushGetBlocksMsg(locator, &zeroHash)
 			if err != nil {
@@ -836,7 +852,6 @@ func (sm *SyncManager) handleBlockMsg(bmsg *blockMsg) {
 	sm.headersFirstMode = false
 	sm.headerList.Init()
 	log.Infof("Reached the final checkpoint -- switching to normal mode")
-	blockHeight := bmsg.block.Height()
 	locator := blockdag.BlockLocator([]*int32{&blockHeight})
 	err = peer.PushGetBlocksMsg(locator, &zeroHash)
 	if err != nil {
@@ -1624,6 +1639,21 @@ func (sm *SyncManager) reqBlocks(peer *peerpkg.Peer, inventory []*wire.InvVect) 
 
 	// Filter inventory to items we need from peer
 	needed := sm.filterNeededInv(peer, inventory)
+
+	if len(inventory) > 0 && len(needed) == 0 && !sm.hasPendingBlocks(peer) {
+		// The peer has sent us inventory of blocks we already have, and there's no more pending blocks for this peer.
+		// This situation has likely occurred due to out-of-order processing of blocks.
+		//
+		// We will respond by asking the peer if they have any more blocks for us.
+		log.Debugf("Possible out-of-order sync flow detected with peer %s. Asking peer if it has more blocks for us.", peer)
+		maxHeight := sm.chain.DAGSnapshot().MaxHeight
+		locator := sm.chain.BlockLocatorFromHeight(maxHeight)
+		err := peer.PushGetBlocksMsg(locator, &zeroHash)
+		if err != nil {
+			log.Warnf("Failed to send getblocks message to peer %s: %s", peer, err)
+		}
+		return
+	}
 
 	// Add needed inventory to the request queue for the peer
 	for _, iv := range needed {

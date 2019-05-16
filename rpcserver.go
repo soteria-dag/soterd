@@ -2328,8 +2328,6 @@ func handleGetCurrentNet(s *rpcServer, cmd interface{}, closeChan <-chan struct{
 
 // handleGetDAGColoring implements the getdagcoloring command
 func handleGetDAGColoring(s *rpcServer, cmd interface{}, closeChan <-chan struct{}) (interface{}, error) {
-	rpcsLog.Debug("In handleGetDAGColoring")
-
 	coloring := s.cfg.Chain.DAGColoring()
 	colorSet := make(map[chainhash.Hash]struct{})
 	order := s.cfg.Chain.DAGOrdering()

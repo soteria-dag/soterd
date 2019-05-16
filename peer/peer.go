@@ -890,8 +890,16 @@ func (p *Peer) PushGetBlocksMsg(locator blockdag.BlockLocator, stopHash *chainha
 	}
 
 	// Filter duplicate getblocks requests.
+	//
+	// We don't filter out duplicate getblocks requests when the stopHash is zeroHash,
+	// because this could be a case where:
+	// a) we are responding to an inv msg prompt from a peer indicating that they have more blocks to send us, but
+	// b) our height hasn't changed since the last inv msg prompt due to intermediate blocks still being orphans.
+	//
+	// An example of how this could happen, is when a block with multiple parents has those parents
+	// split across multiple inv messages.
 	p.prevGetBlocksMtx.Lock()
-	isDuplicate := p.prevGetBlocksStop != nil && p.prevGetBlocksStartHeight != nil &&
+	isDuplicate := !stopHash.IsEqual(&zeroHash) && p.prevGetBlocksStop != nil && p.prevGetBlocksStartHeight != nil &&
 		startHeight != nil && stopHash.IsEqual(p.prevGetBlocksStop) &&
 		*startHeight == *p.prevGetBlocksStartHeight
 	p.prevGetBlocksMtx.Unlock()
