@@ -46,7 +46,7 @@ Soterd maintains a transaction pool, and relays individual transactions that hav
 
 #### Excluded functionality
 
-Like btcd, soterd does not include wallet functionality. [soterwallet](https://github.com/soteria-dag/soterwallet) is intended for making or receive payments with soterd, however it is still being updated from the [btcwallet](https://github.com/btcsuite/btcwallet) fork to be compatible with soterd. In the meantime, transactions can be demonstrated with the [gentx](https://github.com/soteria-dag/soter-tools/cmd/gentx/README.md) command.
+Like btcd, soterd does not include wallet functionality. [soterwallet](https://github.com/soteria-dag/soterwallet) is intended for making or receive payments with soterd, however it is still being updated from the [btcwallet](https://github.com/btcsuite/btcwallet) fork to be compatible with soterd. In the meantime, transactions can be demonstrated with the [gentx](https://github.com/soteria-dag/sotertools/blob/master/cmd/gentx/README.md) command.
 
 <a name="GettingStarted" />
 
