@@ -30,13 +30,13 @@ func TestUTXOViewpointSimpleDoubleSpend(t *testing.T) {
 		time.Now().Unix() - 1000,
 		[]*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock},
 		nil)
-	addBlockForTest(dag, block1, t)
+	addBlockForTest(dag, block1)
 
 	block2 := createMsgBlockForTest(2,
 		time.Now().Unix() - 900,
 		[]*wire.MsgBlock{block1},
 		nil)
-	addBlockForTest(dag, block2, t)
+	addBlockForTest(dag, block2)
 
 	cbTx := block1.Transactions[0]
 	cbTxHash := cbTx.TxHash()
@@ -50,7 +50,7 @@ func TestUTXOViewpointSimpleDoubleSpend(t *testing.T) {
 		time.Now().Unix(),
 		[]*wire.MsgBlock{block2},
 		[]*wire.MsgTx{tx})
-	addBlockForTest(dag, blockA, t)
+	addBlockForTest(dag, blockA)
 
 	tx2 := createSpendTxForTest(outpoints, soterutil.Amount(5000), soterutil.Amount(10))
 
@@ -60,7 +60,7 @@ func TestUTXOViewpointSimpleDoubleSpend(t *testing.T) {
 		[]*wire.MsgBlock{block2},
 		[]*wire.MsgTx{tx2})
 
-	_, err = addBlockForTest(dag, blockB, t)
+	_, err = addBlockForTest(dag, blockB)
 	if err != nil {
 		t.Errorf("Error adding block B: %v\n", err)
 		return
@@ -167,13 +167,21 @@ func TestUTXOViewpointDuplicateTx(t *testing.T) {
 		time.Now().Unix() - 1000,
 		[]*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock},
 		nil)
-	addBlockForTest(dag, block1, t)
+	_, err = addBlockForTest(dag, block1)
+	if err != nil {
+		t.Errorf("Error adding block 1: %v\n", err)
+		return
+	}
 
 	block2 := createMsgBlockForTest(2,
 		time.Now().Unix() - 900,
 		[]*wire.MsgBlock{block1},
 		nil)
-	addBlockForTest(dag, block2, t)
+	_, err = addBlockForTest(dag, block2)
+	if err != nil {
+		t.Errorf("Error adding block 2: %v\n", err)
+		return
+	}
 
 	cbTx := block1.Transactions[0]
 	cbTxHash := cbTx.TxHash()
@@ -187,7 +195,11 @@ func TestUTXOViewpointDuplicateTx(t *testing.T) {
 		time.Now().Unix() - 10,
 		[]*wire.MsgBlock{block2},
 		[]*wire.MsgTx{tx})
-	addBlockForTest(dag, blockA, t)
+	_, err = addBlockForTest(dag, blockA)
+	if err != nil {
+		t.Errorf("Error adding block A: %v\n", err)
+		return
+	}
 
 	// block B using cb tx
 	blockB := createMsgBlockForTest(3,
@@ -195,7 +207,7 @@ func TestUTXOViewpointDuplicateTx(t *testing.T) {
 		[]*wire.MsgBlock{block2},
 		[]*wire.MsgTx{tx})
 
-	_, err = addBlockForTest(dag, blockB, t)
+	_, err = addBlockForTest(dag, blockB)
 	if err != nil {
 		t.Errorf("Both block A and block B should be included in chain, error adding block B: %v\n", err)
 		return
@@ -252,13 +264,13 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 		time.Now().Unix() - 1000,
 		[]*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock},
 		nil)
-	addBlockForTest(dag, block1, t)
+	addBlockForTest(dag, block1)
 
 	block2 := createMsgBlockForTest(2,
 		time.Now().Unix() - 900,
 		[]*wire.MsgBlock{block1},
 		nil)
-	addBlockForTest(dag, block2, t)
+	addBlockForTest(dag, block2)
 
 	cbTx := block1.Transactions[0]
 	cbTxHash := cbTx.TxHash()
@@ -273,7 +285,7 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 		time.Now().Unix() - 800,
 		[]*wire.MsgBlock{block2},
 		[]*wire.MsgTx{tx})
-	addBlockForTest(dag, blockA, t)
+	addBlockForTest(dag, blockA)
 
 	tx2 := createSpendTxForTest(outpoints, soterutil.Amount(5000), soterutil.Amount(10))
 	tx2Hash := tx2.TxHash()
@@ -291,7 +303,7 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 		bHash = blockB.BlockHash()
 	}
 
-	_, err = addBlockForTest(dag, blockB, t)
+	_, err = addBlockForTest(dag, blockB)
 	if err != nil {
 		t.Errorf("Error adding block B: %v\n", err)
 		return
@@ -308,7 +320,7 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 
 	// We should expect an error b/c output from double spend not added to set of txos
 	// a block ith a tx using that output as input
-	_, err = addBlockForTest(dag, blockC, t)
+	_, err = addBlockForTest(dag, blockC)
 	if err == nil {
 		t.Errorf("Block C added with tx using double spend output")
 		return
@@ -323,7 +335,7 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 		[]*wire.MsgBlock{blockA},
 		[]*wire.MsgTx{tx4})
 
-	_, err = addBlockForTest(dag, blockD, t)
+	_, err = addBlockForTest(dag, blockD)
 	if err != nil {
 		t.Errorf("Error adding block D: %v", err)
 		return
@@ -389,19 +401,19 @@ func TestUtxoViewpointCoInputOfDoubleSpend(t *testing.T) {
 		time.Now().Unix() - 1000,
 		[]*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock},
 		nil)
-	addBlockForTest(dag, block1, t)
+	addBlockForTest(dag, block1)
 
 	block2 := createMsgBlockForTest(2,
 		time.Now().Unix() - 900,
 		[]*wire.MsgBlock{block1},
 		nil)
-	addBlockForTest(dag, block2, t)
+	addBlockForTest(dag, block2)
 
 	block3 := createMsgBlockForTest(3,
 		time.Now().Unix() - 800,
 		[]*wire.MsgBlock{block2},
 		nil)
-	addBlockForTest(dag, block3, t)
+	addBlockForTest(dag, block3)
 
 
 	cbTx := block1.Transactions[0]
@@ -419,7 +431,7 @@ func TestUtxoViewpointCoInputOfDoubleSpend(t *testing.T) {
 		time.Now().Unix() - 700,
 		[]*wire.MsgBlock{block3},
 		[]*wire.MsgTx{tx})
-	addBlockForTest(dag, blockA, t)
+	addBlockForTest(dag, blockA)
 
 	tx2 := createSpendTxForTest([]*wire.OutPoint{cbOutpoint, cbOutpoint2}, soterutil.Amount(5000), soterutil.Amount(10))
 	//tx2Hash := tx2.TxHash()
@@ -429,7 +441,7 @@ func TestUtxoViewpointCoInputOfDoubleSpend(t *testing.T) {
 		[]*wire.MsgBlock{block3},
 		[]*wire.MsgTx{tx2})
 
-	_, err = addBlockForTest(dag, blockB, t)
+	_, err = addBlockForTest(dag, blockB)
 	if err != nil {
 		t.Errorf("Error adding block B: %v\n", err)
 		return

@@ -6,64 +6,39 @@ package phantom
 
 import (
 	"container/list"
+	"fmt"
 	"sort"
+	"strings"
+	"sync"
 )
 
-type orderedNodeSet struct {
-	nodes map[*node]struct{}
-	order map[int]*node
-	counter int
-}
-
-func newOrderedNodeSet() *orderedNodeSet {
-	return &orderedNodeSet {
-		nodes: make(map[*node]struct{}),
-		order: make(map[int]*node),
-		counter: 0,
-	}
-}
-
-func (ons *orderedNodeSet) add(node *node) {
-	_, ok := ons.nodes[node]
-	if !ok {
-		ons.counter += 1
-		ons.nodes[node] = keyExists
-		ons.order[ons.counter] = node
-	}
-}
-
-func (ons *orderedNodeSet) contains(node *node) bool {
-	_, ok := ons.nodes[node]
-
-	return ok
-}
-
-func (ons *orderedNodeSet) getNodes() []*node {
-	var indexes = make([]int, 0, len(ons.order))
-	var nodes = make([]*node, 0, len(ons.order))
-	for k := range ons.order {
-		indexes = append(indexes, k)
-	}
-
-	sort.Ints(indexes)
-
-	for _, v := range indexes {
-		nodes = append(nodes, ons.order[v])
-	}
-	return nodes
-}
-
 type BlueSetCache struct {
-	cache map[*node]*nodeSet
+	cache map[*Node]*nodeSet
+	sync.RWMutex
 }
 
 func NewBlueSetCache() *BlueSetCache {
 	return &BlueSetCache {
-		cache: make(map[*node]*nodeSet),
+		cache: make(map[*Node]*nodeSet),
 	}
 }
 
-func (blueset *BlueSetCache) GetBlueNodes(n *node) []*node {
+// add the node associated with the set to the cache
+func (blueset *BlueSetCache) add(n *Node, set *nodeSet) {
+	blueset.cache[n] = set
+}
+
+// Add the node associated with the set to the cache
+func (blueset *BlueSetCache) Add(n *Node, set *nodeSet) {
+	blueset.Lock()
+	defer blueset.Unlock()
+
+	blueset.add(n, set)
+}
+
+func (blueset *BlueSetCache) GetBlueNodes(n *Node) []*Node {
+	blueset.RLock()
+	defer blueset.RUnlock()
 
 	set, ok := blueset.cache[n]
 	if !ok {
@@ -73,8 +48,72 @@ func (blueset *BlueSetCache) GetBlueNodes(n *node) []*node {
 	return set.elements()
 }
 
+func (blueset *BlueSetCache) getBlueSet(n *Node) *nodeSet {
+	set, exists := blueset.cache[n]
+	if !exists {
+		return nil
+	}
+
+	return set
+}
+
+// GetBlueSet returns the nodeSet associated with the node
+func (blueset *BlueSetCache) GetBlueSet(n *Node) *nodeSet {
+	blueset.RLock()
+	defer blueset.RUnlock()
+
+	return blueset.getBlueSet(n)
+}
+
+// inCache returns true if the node is in the blueset cache
+func (blueset *BlueSetCache) inCache(n *Node) bool {
+	_, exists := blueset.cache[n]
+	return exists
+}
+
+// InCache returns true if the node is in the blueset cache
+func (blueset *BlueSetCache) InCache(n *Node) bool {
+	blueset.RLock()
+	defer blueset.RUnlock()
+
+	return blueset.inCache(n)
+}
+
+// String returns a string representing the current cache state
+func (blueSet *BlueSetCache) String() string {
+	var sb strings.Builder
+
+	nodes := make([]*Node, 0, len(blueSet.cache))
+
+	for k := range blueSet.cache {
+		nodes = append(nodes, k)
+	}
+
+	less := func(i, j int) bool {
+		if nodes[i].GetId() < nodes[j].GetId() {
+			return true
+		} else {
+			return false
+		}
+	}
+
+	sort.Slice(nodes, less)
+
+	for _, n := range nodes {
+		ons, ok := blueSet.cache[n]
+		if !ok {
+			sb.WriteString(fmt.Sprintln(n.GetId(), "\t", "UNKNOWN"))
+			continue
+		}
+
+		sb.WriteString(fmt.Sprintln(n.GetId(), "\t", GetIds(ons.elements())))
+	}
+
+	return sb.String()
+}
+
 // implements Algorithm 3 Selection of a blue set of Phantom paper
-func calculateBlueSet(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetCache) *nodeSet {
+func calculateBlueSet(g *Graph, genesisNode *Node, k int, blueSetCache *BlueSetCache) *nodeSet {
 	blueSet := newNodeSet()
 
 	// assumes genesisNode is in the graph
@@ -88,20 +127,19 @@ func calculateBlueSet(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetC
 		return blueSet
 	}
 
-	tipToSet := make(map[*node]*nodeSet)
+	tipToSet := make(map[*Node]*nodeSet)
 
 	for _, tipBlock := range g.getTips() {
-
 		nodePast := g.getPast(tipBlock)
 
 		var pastBlueSet *nodeSet
-		if blueSetCache != nil {
-			if _, ok := blueSetCache.cache[tipBlock]; !ok {
+		if blueSetCache != nil && tipBlock.GetId() != "VIRTUAL" {
+			if !blueSetCache.InCache(tipBlock) {
 				pastBlueSet = calculateBlueSet(nodePast, genesisNode, k, blueSetCache)
 				pastBlueSet.add(tipBlock)
-				blueSetCache.cache[tipBlock] = pastBlueSet
+				blueSetCache.Add(tipBlock, pastBlueSet)
 			} else {
-				pastBlueSet = blueSetCache.cache[tipBlock]
+				pastBlueSet = blueSetCache.GetBlueSet(tipBlock)
 			}
 			pastBlueSet = pastBlueSet.clone()
 		} else {
@@ -134,39 +172,56 @@ func calculateBlueSet(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetC
 	return blueSet
 }
 
-// need to create a graph with a virtual node
-func OrderDAG(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetCache) []*node {
-
+// OrderDAG returns the graphs' tips and order
+func OrderDAG(g *Graph, genesisNode *Node, k int, blueSetCache *BlueSetCache, minHeight int32, orderCache *OrderCache) ([]*Node, []*Node, error) {
 	g.RLock()
 	defer g.RUnlock()
 
-	todoQueue := list.New()
-	seen := make(map[*node]struct{})
-	orderingSet := newOrderedNodeSet()
-	vg := g.getVirtual()
-	var blueSet *nodeSet
+	var todoQueue = list.New()
+	var seen = make(map[*Node]struct{})
+	var orderingSet = newOrderedNodeSet()
 
-	oldestCacheTips := g.orderCache.oldestTips()
-	tips := g.getTips()
+	var tips = g.getTips()
+	var vg = g.getVirtual()
+	vNode := vg.GetNodeById("VIRTUAL")
+	defer func() {
+		if vNode == nil {
+			return
+		}
 
-	// Determine if we should use orderCache
-	if g.orderCache.canUseCache() {
-		// Load the cached node order, from the oldest cache
-		for _, n := range g.orderCache.oldestOrder() {
+		// When Graph.getVirtual() is called, a new VIRTUAL node is created and is connected to the current tips
+		// as its parents.
+		// We want to remove the link to this new VIRTUAL node from the tips after we've finished processing.
+		//
+		// If left in place, the VIRTUAL node would cause the todoQueue processing to exit before we expect it to,
+		// the next time that OrderDAG is called.
+		for _, n := range tips {
+			vg.removeEdge(vNode, n)
+		}
+	}()
+
+	// We calculate blueSet from tips down
+	var blueSet = calculateBlueSet(vg, genesisNode, k, blueSetCache)
+
+	var entry *OrderCacheEntry
+	var cacheHit bool
+	if orderCache != nil {
+		entry, cacheHit = orderCache.Get(minHeight)
+	}
+
+	if cacheHit && entry != nil {
+		// Load the cached node order
+		for _, n := range entry.Order {
 			orderingSet.add(n)
 		}
 
-		// Use the cached blueSet
-		blueSet = g.orderCache.oldestBlueSet()
-
-		// Start calculating from the tips of the cache, instead of genesis
-		for _, n := range oldestCacheTips {
-			todoQueue.PushBack(n)
-			seen[n] = keyExists
+		// Start calculating order from the tips of the cache up, instead of the genesis node
+		for _, tn := range entry.Tips {
+			todoQueue.PushBack(tn)
+			seen[tn] = keyExists
 		}
 	} else {
-		// Start ordering from genesis node
-		blueSet = calculateBlueSet(vg, genesisNode, k, blueSetCache)
+		// Start calculating ordering from genesis node
 		todoQueue.PushBack(genesisNode)
 		seen[genesisNode] = keyExists
 	}
@@ -176,7 +231,7 @@ func OrderDAG(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetCache) []
 		// and add to ordering
 		elem := todoQueue.Front()
 		todoQueue.Remove(elem)
-		node := elem.Value.(*node)
+		node := elem.Value.(*Node)
 		if node.GetId() == "VIRTUAL" {
 			break
 		}
@@ -185,18 +240,18 @@ func OrderDAG(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetCache) []
 
 		children := node.getChildren()
 		intersect := blueSet.intersection(children)
-		anticone := vg.getAnticone(node)
+		anticone := vg.GetAnticone(node)
 
 		// for each child of node in the blue set
 		for _, blueChild := range intersect.elements() {
-			childPast := vg.getPast(blueChild)
+			childPast := vg.GetPast(blueChild)
 
 			// get all node in its past that were in its parent's anticone
 			// nodes topologically before child, but possibly not in the blue set
 			// add to queue
 			for _, anticoneNode := range anticone.elements() {
 				//log.Debugf("%s in anticone of %s", anticoneNode.GetId(), node.GetId())
-				if childPast.getNodeById(anticoneNode.GetId()) != nil {
+				if childPast.GetNodeById(anticoneNode.GetId()) != nil {
 					//log.Debugf("%s is in %s 's past", anticoneNode.GetId(), blueChild.GetId())
 					_, ok := seen[anticoneNode]
 					if !orderingSet.contains(anticoneNode) && !ok {
@@ -216,73 +271,14 @@ func OrderDAG(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetCache) []
 		}
 	}
 
-	order := orderingSet.getNodes()
-
-	// Cache the calculations made, to help improve ordering performance in future calls.
-	g.orderCache.add(tips, blueSet, order)
-
-	return order
-}
-
-// OrderDAGNoCache returns the order of nodes in the graph, without using ordering cache
-func OrderDAGNoCache(g *Graph, genesisNode *node, k int, blueSetCache *BlueSetCache) []*node {
-
-	g.RLock()
-	defer g.RUnlock()
-
-	todoQueue := list.New()
-	seen := make(map[*node]struct{})
-	orderingSet := newOrderedNodeSet()
-
-	vg := g.getVirtual()
-	blueSet := calculateBlueSet(vg, genesisNode, k, blueSetCache)
-	todoQueue.PushBack(genesisNode)
-	seen[genesisNode] = keyExists
-
-	for todoQueue.Len() > 0 {
-		// pop from front of queue
-		// and add to ordering
-		elem := todoQueue.Front()
-		todoQueue.Remove(elem)
-		node := elem.Value.(*node)
-		if node.GetId() == "VIRTUAL" {
-			break
-		}
-		orderingSet.add(node)
-		//log.Debugf("Added %s to order", node.GetId())
-
-		children := node.getChildren()
-		intersect := blueSet.intersection(children)
-		anticone := vg.getAnticone(node)
-
-		// for each child of node in the blue set
-		for _, blueChild := range intersect.elements() {
-			childPast := vg.getPast(blueChild)
-
-			// get all node in its past that were in its parent's anticone
-			// nodes topologically before child, but possibly not in the blue set
-			// add to queue
-			for _, anticoneNode := range anticone.elements() {
-				//log.Debugf("%s in anticone of %s", anticoneNode.GetId(), node.GetId())
-				if childPast.getNodeById(anticoneNode.GetId()) != nil {
-					//log.Debugf("%s is in %s 's past", anticoneNode.GetId(), blueChild.GetId())
-					_, ok := seen[anticoneNode]
-					if !orderingSet.contains(anticoneNode) && !ok {
-						todoQueue.PushBack(anticoneNode)
-						seen[anticoneNode] = keyExists
-						//log.Debugf("Adding %s to queue", anticoneNode.GetId())
-					}
-				}
-			}
-			// then add child to queue
-			_, ok := seen[blueChild]
-			if !ok {
-				todoQueue.PushBack(blueChild)
-				seen[blueChild] = keyExists
-				//log.Debugf("Adding %s to queue", blueChild.GetId())
+	if orderCache != nil {
+		if _, ok := orderCache.CanAdd(minHeight); ok {
+			err := orderCache.Add(minHeight, tips, orderingSet.elements())
+			if err != nil {
+				return tips, orderingSet.elements(), err
 			}
 		}
 	}
 
-	return orderingSet.getNodes()
+	return tips, orderingSet.elements(), nil
 }

@@ -8,6 +8,7 @@ package dagindexers
 import (
 	"bytes"
 	"fmt"
+	"sort"
 
 	"github.com/soteria-dag/soterd/blockdag"
 	"github.com/soteria-dag/soterd/chaincfg/chainhash"
@@ -18,51 +19,92 @@ import (
 
 var (
 	// indexTipsBucketName is the name of the db bucket used to house the
-	// current tip of each index.
+	// current tips of each index.
 	indexTipsBucketName = []byte("idxtips")
+
+	// indexProcessedBucketName is the name of the db bucket used to
+	// keep track of the blocks already in the index
+	indexProcessedBucketName = []byte("idxblkhash")
 )
 
+func getProcessedBucketName(idxKey []byte) []byte {
+	var bucketName []byte
+	bucketName = append(bucketName, indexProcessedBucketName[:]...)
+	bucketName = append(bucketName, idxKey[:]...)
+	return bucketName
+}
+
+func dbPutBlockHash(dbTx database.Tx, idxKey []byte, hash *chainhash.Hash) error {
+	meta := dbTx.Metadata()
+	index := meta.Bucket(getProcessedBucketName(idxKey))
+	return index.Put(hash[:], []byte{0x1})
+}
+
+func dbRemoveBlockHash(dbTx database.Tx, idxKey []byte, hash *chainhash.Hash) error {
+	meta := dbTx.Metadata()
+	index := meta.Bucket(getProcessedBucketName(idxKey))
+	return index.Delete(hash[:])
+}
+
+func dbFetchBlockHash(dbTx database.Tx, idxKey  []byte, hash *chainhash.Hash) bool {
+	meta := dbTx.Metadata()
+	index := meta.Bucket(getProcessedBucketName(idxKey))
+	val := index.Get(hash[:])
+
+	if val == nil {
+		return false
+	} else {
+		return true
+	}
+}
+
 // -----------------------------------------------------------------------------
-// The index manager tracks the current tip of each index by using a parent
+// The index manager tracks the current tips of each index by using a parent
 // bucket that contains an entry for index.
 //
 // The serialized format for an index tip is:
 //
-//   [<block hash><block height>],...
+//   [<number tips><block hash1><block hash2>],...
 //
 //   Field           Type             Size
-//   block hash      chainhash.Hash   chainhash.HashSize
 //   block height    uint32           4 bytes
+//   block hash      chainhash.Hash   chainhash.HashSize
 // -----------------------------------------------------------------------------
-
-// dbPutIndexerTip uses an existing database transaction to update or add the
-// current tip for the given index to the provided values.
-func dbPutIndexerTip(dbTx database.Tx, idxKey []byte, hash *chainhash.Hash, height int32) error {
-	serialized := make([]byte, chainhash.HashSize+4)
-	copy(serialized, hash[:])
-	byteOrder.PutUint32(serialized[chainhash.HashSize:], uint32(height))
+func dbPutIndexerTips(dbTx database.Tx, idxKey []byte, tipHashes []*chainhash.Hash) error {
+	serialized := make([]byte, chainhash.HashSize * len(tipHashes) + 4)
+	byteOrder.PutUint32(serialized[:], uint32(len(tipHashes)))
+	for i, hash := range tipHashes {
+		start := (chainhash.HashSize * i) + 4
+		copy(serialized[start:], hash[:])
+	}
 
 	indexesBucket := dbTx.Metadata().Bucket(indexTipsBucketName)
 	return indexesBucket.Put(idxKey, serialized)
 }
 
-// dbFetchIndexerTip uses an existing database transaction to retrieve the
-// hash and height of the current tip for the provided index.
-func dbFetchIndexerTip(dbTx database.Tx, idxKey []byte) (*chainhash.Hash, int32, error) {
+func dbFetchIndexerTips(dbTx database.Tx, idxKey []byte) ([]*chainhash.Hash, error) {
 	indexesBucket := dbTx.Metadata().Bucket(indexTipsBucketName)
 	serialized := indexesBucket.Get(idxKey)
-	if len(serialized) < chainhash.HashSize+4 {
-		return nil, 0, database.Error{
+
+	if (len(serialized) - 4) % chainhash.HashSize != 0 {
+		return nil, database.Error{
 			ErrorCode: database.ErrCorruption,
 			Description: fmt.Sprintf("unexpected end of data for "+
-				"index %q tip", string(idxKey)),
+				"index %q tips", string(idxKey)),
 		}
 	}
 
-	var hash chainhash.Hash
-	copy(hash[:], serialized[:chainhash.HashSize])
-	height := int32(byteOrder.Uint32(serialized[chainhash.HashSize:]))
-	return &hash, height, nil
+	numTips := int(byteOrder.Uint32(serialized[:]))
+	tips := make([]*chainhash.Hash, numTips)
+	for i := 0; i < numTips; i++ {
+		var hash chainhash.Hash
+		start := (chainhash.HashSize * i) + 4
+		end := start + chainhash.HashSize
+		copy(hash[:], serialized[start:end])
+		tips[i] = &hash
+	}
+
+	return tips, nil
 }
 
 // dbIndexConnectBlock adds all of the index entries associated with the
@@ -72,63 +114,45 @@ func dbFetchIndexerTip(dbTx database.Tx, idxKey []byte) (*chainhash.Hash, int32,
 func dbIndexConnectBlock(dbTx database.Tx, indexer Indexer, block *soterutil.Block,
 	stxo []blockdag.SpentTxOut) error {
 
-	// Assert that the block being connected properly connects to the
-	// current tip of the index.
 	idxKey := indexer.Key()
-	curTipHash, _, err := dbFetchIndexerTip(dbTx, idxKey)
+
+	// if already processed block, skip
+	exists := dbFetchBlockHash(dbTx, idxKey, block.Hash())
+	if exists {
+		return nil
+	}
+
+	curTips, err := dbFetchIndexerTips(dbTx, idxKey)
 	if err != nil {
 		return err
 	}
 
-	// NOTE(cedric): Checking if the curTipHash is not in the block's parents covers the DAG case,
-	// and checking if the curTipHash is not equal to the block's PrevBlock covers the genesis block case.
-	// (For genesis block, the PrevBlock is set to the same hash as genesis, but parent sub-header Parents array is empty)
-	if !block.MsgBlock().Parents.IsParent(curTipHash) && !curTipHash.IsEqual(&block.MsgBlock().Header.PrevBlock) {
-		return AssertError(fmt.Sprintf("dbIndexConnectBlock must be "+
-			"called with a block that extends the current index "+
-			"tip (%s, tip %s, block %s)", indexer.Name(),
-			curTipHash, block.Hash()))
+	parents := make([]*chainhash.Hash, 0)
+	nonParents := make([]*chainhash.Hash, 0)
+	for _, curTip := range curTips {
+		if block.MsgBlock().Parents.IsParent(curTip) {
+			parents = append(parents, curTip)
+		} else {
+			nonParents = append(nonParents, curTip)
+		}
 	}
+
+	// TODO(jenlouie): can we check if new block extend tips? Would need to make sure
+	// blocks are added in topographic order
 
 	// Notify the indexer with the connected block so it can index it.
 	if err := indexer.ConnectBlock(dbTx, block, stxo); err != nil {
 		return err
 	}
 
-	// Update the current index tip.
-	return dbPutIndexerTip(dbTx, idxKey, block.Hash(), block.Height())
-}
-
-// dbIndexDisconnectBlock removes all of the index entries associated with the
-// given block using the provided indexer and updates the tip of the indexer
-// accordingly.  An error will be returned if the current tip for the indexer is
-// not the passed block.
-func dbIndexDisconnectBlock(dbTx database.Tx, indexer Indexer, block *soterutil.Block,
-	stxo []blockdag.SpentTxOut) error {
-
-	// Assert that the block being disconnected is the current tip of the
-	// index.
-	idxKey := indexer.Key()
-	curTipHash, _, err := dbFetchIndexerTip(dbTx, idxKey)
-	if err != nil {
-		return err
-	}
-	if !curTipHash.IsEqual(block.Hash()) {
-		return AssertError(fmt.Sprintf("dbIndexDisconnectBlock must "+
-			"be called with the block at the current index tip "+
-			"(%s, tip %s, block %s)", indexer.Name(),
-			curTipHash, block.Hash()))
-	}
-
-	// Notify the indexer with the disconnected block so it can remove all
-	// of the appropriate entries.
-	if err := indexer.DisconnectBlock(dbTx, block, stxo); err != nil {
+	// Mark block as seen
+	if err := dbPutBlockHash(dbTx, idxKey, block.Hash()); err != nil {
 		return err
 	}
 
 	// Update the current index tip.
-	prevHash := &block.MsgBlock().Header.PrevBlock
-	return dbPutIndexerTip(dbTx, idxKey, prevHash, block.Height()-1)
+	newTips := append(nonParents, block.Hash())
+	return dbPutIndexerTips(dbTx, idxKey, newTips)
 }
 
 // Manager defines an index manager that manages multiple optional indexes and
@@ -221,7 +245,7 @@ func (m *Manager) maybeCreateIndexes(dbTx database.Tx) error {
 
 		// Set the tip for the index to values which represent an
 		// uninitialized index.
-		err := dbPutIndexerTip(dbTx, idxKey, &chainhash.Hash{}, -1)
+		err := dbPutIndexerTips(dbTx, idxKey, make([]*chainhash.Hash,0))
 		if err != nil {
 			return err
 		}
@@ -274,118 +298,24 @@ func (m *Manager) Init(chain *blockdag.BlockDAG, interrupt <-chan struct{}) erro
 			return err
 		}
 	}
+	// jenlouie: All blocks should be in main chain
 
-	// Rollback indexes to the main chain if their tip is an orphaned fork.
-	// This is fairly unlikely, but it can happen if the chain is
-	// reorganized while the index is disabled.  This has to be done in
-	// reverse order because later indexes can depend on earlier ones.
-	for i := len(m.enabledIndexes); i > 0; i-- {
-		indexer := m.enabledIndexes[i-1]
-
-		// Fetch the current tip for the index.
-		var height int32
-		var hash *chainhash.Hash
-		err := m.db.View(func(dbTx database.Tx) error {
-			idxKey := indexer.Key()
-			hash, height, err = dbFetchIndexerTip(dbTx, idxKey)
-			return err
-		})
-		if err != nil {
-			return err
-		}
-
-		// Nothing to do if the index does not have any entries yet.
-		if height == -1 {
-			continue
-		}
-
-		// Loop until the tip is a block that exists in the main chain.
-		initialHeight := height
-		for !chain.MainChainHasBlock(hash) {
-			// At this point the index tip is orphaned, so load the
-			// orphaned block from the database directly and
-			// disconnect it from the index.  The block has to be
-			// loaded directly since it is no longer in the main
-			// chain and thus the chain.BlockByHash function would
-			// error.
-			var block *soterutil.Block
-			err := m.db.View(func(dbTx database.Tx) error {
-				blockBytes, err := dbTx.FetchBlock(hash)
-				if err != nil {
-					return err
-				}
-				block, err = soterutil.NewBlockFromBytes(blockBytes)
-				if err != nil {
-					return err
-				}
-				block.SetHeight(height)
-				return err
-			})
-			if err != nil {
-				return err
-			}
-
-			// We'll also grab the set of outputs spent by this
-			// block so we can remove them from the index.
-			spentTxos, err := chain.FetchSpendJournal(block)
-			if err != nil {
-				return err
-			}
-
-			// With the block and stxo set for that block retrieved,
-			// we can now update the index itself.
-			err = m.db.Update(func(dbTx database.Tx) error {
-				// Remove all of the index entries associated
-				// with the block and update the indexer tip.
-				err = dbIndexDisconnectBlock(
-					dbTx, indexer, block, spentTxos,
-				)
-				if err != nil {
-					return err
-				}
-
-				// Update the tip to the previous block.
-				hash = &block.MsgBlock().Header.PrevBlock
-				height--
-
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-
-			if interruptRequested(interrupt) {
-				return errInterruptRequested
-			}
-		}
-
-		if initialHeight != height {
-			log.Infof("Removed %d orphaned blocks from %s "+
-				"(heights %d to %d)", initialHeight-height,
-				indexer.Name(), height+1, initialHeight)
-		}
-	}
-
-	// Fetch the current tip heights for each index along with tracking the
-	// lowest one so the catchup code only needs to start at the earliest
-	// block and is able to skip connecting the block for the indexes that
-	// don't need it.
-	bestHeight := chain.BestSnapshot().Height
-	lowestHeight := bestHeight
-	indexerHeights := make([]int32, len(m.enabledIndexes))
+	// Fetch current DAG tips
+	// If index has different tips, need to catch up
+	tipHash := chain.DAGSnapshot().Hash
+	needUpdate := false
+	tips := make([][]*chainhash.Hash, len(m.enabledIndexes))
 	err = m.db.View(func(dbTx database.Tx) error {
 		for i, indexer := range m.enabledIndexes {
 			idxKey := indexer.Key()
-			hash, height, err := dbFetchIndexerTip(dbTx, idxKey)
+			indexerTips, err := dbFetchIndexerTips(dbTx, idxKey)
 			if err != nil {
 				return err
 			}
-
-			log.Debugf("Current %s tip (height %d, hash %v)",
-				indexer.Name(), height, hash)
-			indexerHeights[i] = height
-			if height < lowestHeight {
-				lowestHeight = height
+			tips[i] = indexerTips
+			indexerTipsHash := blockdag.GenerateTipsHash(indexerTips)
+			if !indexerTipsHash.IsEqual(&tipHash) {
+				needUpdate = true
 			}
 		}
 		return nil
@@ -395,7 +325,7 @@ func (m *Manager) Init(chain *blockdag.BlockDAG, interrupt <-chan struct{}) erro
 	}
 
 	// Nothing to index if all of the indexes are caught up.
-	if lowestHeight == bestHeight {
+	if !needUpdate {
 		return nil
 	}
 
@@ -405,54 +335,89 @@ func (m *Manager) Init(chain *blockdag.BlockDAG, interrupt <-chan struct{}) erro
 	// At this point, one or more indexes are behind the current best chain
 	// tip and need to be caught up, so log the details and loop through
 	// each block that needs to be indexed.
-	log.Infof("Catching up indexes from height %d to %d", lowestHeight,
-		bestHeight)
-	for height := lowestHeight + 1; height <= bestHeight; height++ {
-		// Load the block for the height since it is required to index
-		// it.
-		blocks, err := chain.BlocksByHeight(height)
-		if err != nil {
-			return err
+	log.Infof("Catching up indexes to tips %v", tipHash)
+
+	// Getting missing blocks from each index
+	// Keep track of which index is missing which block
+	missingHashesIndex := make(map[chainhash.Hash][]int)
+	hashHeight := make(map[chainhash.Hash]int32)
+	for i := range m.enabledIndexes {
+		indexerTips := tips[i]
+		indexerTipsHash := blockdag.GenerateTipsHash(indexerTips)
+		if indexerTipsHash.IsEqual(&tipHash) {
+			continue
 		}
+
+		missingHashes := chain.GetBlockDiff(indexerTips)
+		for _, hash := range missingHashes {
+			if interruptRequested(interrupt) {
+				return errInterruptRequested
+			}
+			missingHashesIndex[*hash] = append(missingHashesIndex[*hash], i)
+			height, err := chain.BlockHeightByHash(hash)
+				if err != nil {
+					return err
+				}
+			hashHeight[*hash] = height
+		}
+	}
+	log.Debugf("Missing hash index %v", missingHashesIndex)
+
+	// sort by height
+	type kv struct {
+		Key   chainhash.Hash
+		Value int32
+	}
+
+	var ss []kv
+	for k, v := range hashHeight {
+		ss = append(ss, kv{k, v})
+	}
+
+	sort.Slice(ss, func(i, j int) bool {
+		return ss[i].Value < ss[j].Value
+	})
+
+
+	// loop through missing blocks by height
+	for _, entry := range ss {
+
+		hash := entry.Key
+		idxarr := missingHashesIndex[hash]
 
 		if interruptRequested(interrupt) {
 			return errInterruptRequested
 		}
 
-		// Connect the block for all indexes that need it.
+		// Fetch block
+		block, err := chain.BlockByHash(&hash)
+		if err != nil {
+			return err
+		}
+
+		// Get spend journal if needed
+		// and add block to index
 		var spentTxos []blockdag.SpentTxOut
-		for i, indexer := range m.enabledIndexes {
-			// Skip indexes that don't need to be updated with this
-			// block.
-			if indexerHeights[i] >= height {
-				continue
-			}
-
-			for _, block := range blocks {
-				// When the index requires all of the referenced txouts
-				// and they haven't been loaded yet, they need to be
-				// retrieved from the spend journal.
-				if spentTxos == nil && indexNeedsInputs(indexer) {
-					spentTxos, err = chain.FetchSpendJournal(block)
-					if err != nil {
-						return err
-					}
-				}
-
-				err := m.db.Update(func(dbTx database.Tx) error {
-					return dbIndexConnectBlock(
-						dbTx, indexer, block, spentTxos,
-					)
-				})
+		for _, idxidx := range idxarr {
+			indexer := m.enabledIndexes[idxidx]
+			if spentTxos == nil && indexNeedsInputs(indexer) {
+				spentTxos, err = chain.FetchSpendJournal(block)
 				if err != nil {
 					return err
 				}
-
-				// Log indexing progress.
-				progressLogger.LogBlockHeight(block)
 			}
 
-			indexerHeights[i] = height
+			err := m.db.Update(func(dbTx database.Tx) error {
+				return dbIndexConnectBlock(
+					dbTx, indexer, block, spentTxos,
+				)
+			})
+			if err != nil {
+				return err
+			}
+			log.Debugf("Added block %v to indexer %v", block.Hash(), indexer.Name())
+			// Log indexing progress.
+			progressLogger.LogBlockHeight(block)
 		}
 
 		if interruptRequested(interrupt) {
@@ -460,7 +425,7 @@ func (m *Manager) Init(chain *blockdag.BlockDAG, interrupt <-chan struct{}) erro
 		}
 	}
 
-	log.Infof("Indexes caught up to height %d", bestHeight)
+	log.Infof("Indexes caught up to tips %v", chain.DAGSnapshot().Tips)
 	return nil
 }
 
@@ -514,26 +479,6 @@ func (m *Manager) ConnectBlock(dbTx database.Tx, block *soterutil.Block,
 	// being connected so they can update accordingly.
 	for _, index := range m.enabledIndexes {
 		err := dbIndexConnectBlock(dbTx, index, block, stxos)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// DisconnectBlock must be invoked when a block is being disconnected from the
-// end of the main chain.  It keeps track of the state of each index it is
-// managing, performs some sanity checks, and invokes each indexer to remove
-// the index entries associated with the block.
-//
-// This is part of the blockchain.IndexManager interface.
-func (m *Manager) DisconnectBlock(dbTx database.Tx, block *soterutil.Block,
-	stxo []blockdag.SpentTxOut) error {
-
-	// Call each of the currently active optional indexes with the block
-	// being disconnected so they can update accordingly.
-	for _, index := range m.enabledIndexes {
-		err := dbIndexDisconnectBlock(dbTx, index, block, stxo)
 		if err != nil {
 			return err
 		}

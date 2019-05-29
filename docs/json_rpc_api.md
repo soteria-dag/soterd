@@ -251,8 +251,8 @@ the method name for further details such as parameter and return information.
 |Method|getaddrcache|
 |Parameters|None|
 |Description|Returns all known addresses for all peers|
-|Returns|`{`<br />&nbsp;&nbsp;`"addresses": ["ip:port", ...]`<br />`}`|
-|Example Return|`{`<br />&nbsp;&nbsp;`"addresses": ["127.0.0.1:19555", "127.0.0.99:20553"]`<br />`}`|
+|Returns|`{`<br />&nbsp;&nbsp;`"inbound": ["ip:port", ...], "outbound": ["ip:port", ...], "known": ["ip:port", ...]`<br />`}`|
+|Example Return|`{`<br />&nbsp;&nbsp;`"inbound": ["127.0.0.1:19555", "127.0.0.99:20553"], "outbound": [], "known": null`<br />`}`|
 [Return to Overview](#MethodOverview)<br />
 
 ***
@@ -535,7 +535,7 @@ Example Return|`{`<br />&nbsp;&nbsp;`"bytes": 310768,`<br />&nbsp;&nbsp;`"size":
 |Parameters|None|
 |Description|Returns a representation of the dag in graphviz DOT file format.|
 |Returns|`{ (json object)`<br />&nbsp;&nbsp;`"dot": "content" (string) graphviz DOT file contents of rendered dag`<br />`}`|
-|Example Return|`{`<br />&nbsp;&nbsp;`"dot": "digraph dag {\nn0 [label=\"683e86b\", tooltip=\"height 0 hash 683e86bd5c6d110d91b94b97137ba6bfe02dbbdb8e3dff722a669b5d69d77af6\"];\nn1 [label=\"4e66c8f\", tooltip=\"height 1 hash 4e66c8f950dc9731ee90062e4c3d49226d265eed741b33d593704c8423c9ba58\"];\nn2 [label=\"55d61c0\", tooltip=\"height 2 hash 55d61c0e8dd9f100664534e8aa2ecbbd46970d0abbefa53f902034adfdcae70c\"];\nn3 [label=\"6b0c71b\", tooltip=\"height 3 hash 6b0c71b01b81e557a06e082764e1108db74b36f2202c843fcf93f02898b72109\"];\nn4 [label=\"528c46f\", tooltip=\"height 4 hash 528c46fc2807a896ae0d7bd810c487b241844701b8f94c5e50d5ff9bafa542ac\"];\nn1 -\u003e n0;\nn2 -\u003e n1;\nn3 -\u003e n2;\nn4 -\u003e n3;\n}"`<br />`}`|
+|Example Return|`{`<br />&nbsp;&nbsp;`"dot": "digraph dag {\nordering=out;\nn0 [label=\"683e86b\", tooltip=\"height 0 hash 683e86bd5c6d110d91b94b97137ba6bfe02dbbdb8e3dff722a669b5d69d77af6\"];\nn1 [label=\"4e66c8f\", tooltip=\"height 1 hash 4e66c8f950dc9731ee90062e4c3d49226d265eed741b33d593704c8423c9ba58\"];\nn2 [label=\"55d61c0\", tooltip=\"height 2 hash 55d61c0e8dd9f100664534e8aa2ecbbd46970d0abbefa53f902034adfdcae70c\"];\nn3 [label=\"6b0c71b\", tooltip=\"height 3 hash 6b0c71b01b81e557a06e082764e1108db74b36f2202c843fcf93f02898b72109\"];\nn4 [label=\"528c46f\", tooltip=\"height 4 hash 528c46fc2807a896ae0d7bd810c487b241844701b8f94c5e50d5ff9bafa542ac\"];\nn1 -\u003e n0;\nn2 -\u003e n1;\nn3 -\u003e n2;\nn4 -\u003e n3;\n}"`<br />`}`|
 [Return to Overview](#MethodOverview)<br />
 
 ***

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -326,6 +327,70 @@ func (h *Harness) TearDown() error {
 	defer harnessStateMtx.Unlock()
 
 	return h.tearDown()
+}
+
+// Restart stops and restarts the soterd process with new extra arguments.
+func (h *Harness) Restart(extraArgs []string, removeArgs []string) error {
+	//stop current process
+	if err := h.node.stop(); err != nil {
+		return err
+	}
+
+	if h.node.pidFile != "" {
+		if err := os.Remove(h.node.pidFile); err != nil {
+			fmt.Printf("unable to remove file %s: %v", h.node.pidFile,
+				err)
+		}
+	}
+
+	// clear Process object, Setup will create new one with new args in cmd
+	h.node.cmd.Process = nil
+
+	// append new args
+	argMap := make(map[string]string)
+	for _, arg := range h.node.config.extra {
+		eqSignIdx := strings.Index(arg, "=")
+		if eqSignIdx < 0 {
+			argMap[arg] = ""
+		} else {
+			s := strings.SplitN(arg, "=", 2)
+			argMap[s[0]] = s[1]
+		}
+	}
+
+	for _, arg := range extraArgs {
+		eqSignIdx := strings.Index(arg, "=")
+		if eqSignIdx < 0 {
+			argMap[arg] = ""
+		} else {
+			s := strings.SplitN(arg, "=", 2)
+			argMap[s[0]] = s[1]
+		}
+	}
+
+	for _, removeArg := range removeArgs {
+		delete(argMap, removeArg)
+	}
+
+	argLine := make([]string, len(argMap))
+	i := 0
+	for k,v := range argMap {
+		if len(v) > 0 {
+			argLine[i] = k + "=" + v
+		} else {
+			argLine[i] = k
+		}
+		i++
+	}
+	h.node.config.extra = argLine
+	h.node.cmd = h.node.config.command()
+
+	// create new cmd
+	if err := h.SetUp(false, 0); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // connectRPCClient attempts to establish an RPC connection to the created soterd

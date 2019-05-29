@@ -4,102 +4,226 @@
 
 package phantom
 
-const (
-	// We'll cache the order of a graph every interval of additions to the graph
-	maxOrderCacheSize = 200
+import (
+	"fmt"
+	"sort"
+	"sync"
 )
 
-type orderCache struct {
-	// Tips for OrderDAG calls
-	tips [][]*node
-	// blueSet for OrderDAG calls
-	blueSet []*nodeSet
-	// The cache of OrderDAG results, limited to maxOrderCacheSize length
-	order [][]*node
+const (
+	// The minimum dag height distance from the last orderCache entry that we'll create new entries at
+	minOrderCacheDistance = int32(200)
+
+	// The maximum size of the orderCache
+	maxOrderCacheSize = 100
+)
+
+type OrderCacheEntry struct {
+	Tips []*Node
+	Order []*Node
 }
 
-func newOrderCache() *orderCache {
-	return &orderCache{}
+type OrderCache struct {
+	// Mapping of height of tips of cache entry, to the dag order for that height
+	cache map[int32]*OrderCacheEntry
+
+	// Methods use locks to ensure stable access to the cache between goroutines
+	sync.RWMutex
 }
 
-// add adds the values to the cache
-func (oc *orderCache) add(tips []*node, blueSet *nodeSet, order []*node) {
-	oc.tips = append(oc.tips, tips)
-	oc.blueSet = append(oc.blueSet, blueSet)
-	oc.order = append(oc.order, order)
+// Define an interface we can use to sort the order cache height entries
+type byHeight []int32
+func (h byHeight) Len() int { return len(h) }
+func (h byHeight) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+func (h byHeight) Less(i, j int) bool { return h[i] < h[j] }
 
-	if oc.size() > maxOrderCacheSize {
-		// Prune order cache size
-		pruneFrom := oc.size() - maxOrderCacheSize
+// NewOrderCache returns an orderCache, which can be used to help reduce repetitive computation as dag size increases
+func NewOrderCache() *OrderCache {
+	oc := OrderCache{
+		cache: make(map[int32]*OrderCacheEntry),
+	}
 
-		oc.tips = oc.tips[pruneFrom:]
-		oc.blueSet = oc.blueSet[pruneFrom:]
-		oc.order = oc.order[pruneFrom:]
+	return &oc
+}
+
+// add adds the entry to the cache
+func (oc *OrderCache) add(height int32, tips, order []*Node) error {
+	reason, ok := oc.canAdd(height)
+	if !ok {
+		return fmt.Errorf("failed to add to OrderCache, %s", reason)
+	}
+
+	size := oc.size()
+	if size >= maxOrderCacheSize {
+		n := (size - maxOrderCacheSize) + 1
+		log.Debugf("Expiring %d lowest orderCache items", n)
+		oc.expire(n)
+	}
+
+	oc.cache[height] = &OrderCacheEntry{
+		Tips: tips,
+		Order: order,
+	}
+
+	return nil
+}
+
+// Add adds the entry to the cache
+func (oc *OrderCache) Add(height int32, tips, order []*Node) error {
+	oc.Lock()
+	defer oc.Unlock()
+
+	return oc.add(height, tips, order)
+}
+
+// canAdd returns true if it looks like it's ok to add an entry to the cache at the given height
+func (oc *OrderCache) canAdd(height int32) (string, bool) {
+	if height < minOrderCacheDistance {
+		reason := fmt.Sprintf("height is too low; got %d, want >= %d", height, minOrderCacheDistance)
+		return reason, false
+	}
+
+	if _, ok := oc.cache[height]; ok {
+		// We don't allow duplicate cache entries
+		reason := fmt.Sprintf("existing cache entry at height %d", height)
+		return reason, false
+	}
+
+	max, exists := oc.maxHeight()
+	if exists {
+		distance := height - max
+		if distance < minOrderCacheDistance {
+			reason := fmt.Sprintf(
+				"distance between height and cache maxHeight is not far enough; " +
+				"got %d, want >= %d",
+				distance, minOrderCacheDistance)
+			return reason, false
+		}
+	}
+
+	return "", true
+}
+
+// canAdd returns true if it looks like it's ok to add an entry to the cache at the given height
+func (oc *OrderCache) CanAdd(height int32) (string, bool) {
+	oc.Lock()
+	defer oc.Unlock()
+
+	return oc.canAdd(height)
+}
+
+// expire removes the lowest n entries from the cache
+func (oc *OrderCache) expire(n int) {
+	heights := oc.heights()
+
+	var count int
+	if len(heights) < n {
+		count = len(heights)
+	} else {
+		count = n
+	}
+
+	for i := 0; i < count; i++ {
+		delete(oc.cache, heights[i])
 	}
 }
 
-// canUseCache returns true if the cached order data is old enough to be considered safe to use
-// as a continuation point of calculating dag order.
-func (oc *orderCache) canUseCache() bool {
-	if oc.size() >= maxOrderCacheSize {
-		return true
-	}
+// Expire removes the lowest n entries from the cache
+func (oc *OrderCache) Expire(n int) {
+	oc.Lock()
+	defer oc.Unlock()
 
-	return false
+	oc.expire(n)
 }
 
-// returns a graph made from the oldest dag order, with a virtual node at the end,
-// whose parents are the tips of the oldest dag order.
-func (oc *orderCache) getOldestVirtual() *Graph {
-	vg := NewGraph()
-
-	order := oc.oldestOrder()
-	tips := oc.oldestTips()
-	if order == nil || tips == nil {
-		return nil
+// get returns a cache entry appropriate for the height, and whether a matching cache entry was found
+func (oc *OrderCache) get(height int32) (*OrderCacheEntry, bool) {
+	if height < minOrderCacheDistance {
+		return nil, false
 	}
 
-	for _, n := range order {
-		vg.nodes[n.id] = n
+	target := height - minOrderCacheDistance
+	cacheHeights := oc.heights()
+	// We'll try to find matches from highest to lowest-height
+	sort.Sort(sort.Reverse(byHeight(cacheHeights)))
+
+	for _, h := range cacheHeights {
+		if h > target {
+			continue
+		}
+
+		entry, exists := oc.cache[h]
+		if !exists {
+			continue
+		}
+
+		return entry, true
 	}
 
-	vnode := newNode("VIRTUAL")
-	vg.AddNode(vnode)
-	for _, tip := range tips {
-		vg.AddEdge(vnode, tip)
-	}
-
-	return vg
+	return nil, false
 }
 
-// oldestBlueSet returns the oldest blue set cached from OrderDAG calls
-func (oc *orderCache) oldestBlueSet() *nodeSet {
+// Get returns a cache entry appropriate for the height, and whether a matching cache entry was found
+func (oc *OrderCache) Get(height int32) (*OrderCacheEntry, bool) {
+	oc.RLock()
+	defer oc.RUnlock()
+
+	return oc.get(height)
+}
+
+// heights returns a slice of cache heights, sorted from lowest to highest
+func (oc *OrderCache) heights() []int32 {
+	heights := make([]int32, 0, oc.size())
+	for h := range oc.cache {
+		heights = append(heights, h)
+	}
+
+	sort.Sort(byHeight(heights))
+
+	return heights
+}
+
+// Heights returns a slice of cache heights, sorted from lowest to highest
+func (oc *OrderCache) Heights() []int32 {
+	oc.RLock()
+	defer oc.RUnlock()
+
+	return oc.heights()
+}
+
+// maxHeight returns the height of the highest cache entry, and if there are entries
+func (oc *OrderCache) maxHeight() (int32, bool) {
+	max := int32(-1)
 	if oc.size() == 0 {
-		return nil
+		return max, false
 	}
 
-	return oc.blueSet[0]
-}
-
-// oldestOrder returns the oldest dag order cached from OrderDAG calls
-func (oc *orderCache) oldestOrder() []*node {
-	if oc.size() == 0 {
-		return nil
+	for h := range oc.cache {
+		if h > max {
+			max = h
+		}
 	}
 
-	return oc.order[0]
+	return max, true
 }
 
-// oldestTips returns the oldest tips cached from OrderDAG calls
-func (oc *orderCache) oldestTips() []*node {
-	if oc.size() == 0 {
-		return nil
-	}
+// MaxHeight returns the height of the highest cache entry, and if there are entries
+func (oc *OrderCache) MaxHeight() (int32, bool) {
+	oc.RLock()
+	defer oc.RUnlock()
 
-	return oc.tips[0]
+	return oc.maxHeight()
 }
 
-// size returns the number of cached OrderDAG results
-func (oc *orderCache) size() int {
-	return len(oc.order)
+// size returns the size of the orderCache
+func (oc *OrderCache) size() int {
+	return len(oc.cache)
+}
+
+// Size returns the size of the orderCache
+func (oc *OrderCache) Size() int {
+	oc.RLock()
+	defer oc.RUnlock()
+
+	return oc.size()
 }

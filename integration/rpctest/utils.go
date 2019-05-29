@@ -283,6 +283,12 @@ func RenderDagsDot(nodes []*Harness) ([]byte, error) {
 		return dot.Bytes(), err
 	}
 
+	// Set graph-level attribute to help keep a tighter left-aligned layout of graph in large renderings.
+	_, err = fmt.Fprintln(&dot, "ordering=out;")
+	if err != nil {
+		return dot.Bytes(), err
+	}
+
 	// Create a node in the graph for each block
 	for height, blocks := range dag {
 		for _, block := range blocks {

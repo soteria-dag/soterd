@@ -487,6 +487,21 @@ type Peer struct {
 	quit          chan struct{}
 }
 
+type PeerAddrs struct {
+	Inbound []string
+	Outbound []string
+	Known []string
+}
+
+// NewPeerAddrs returns an instantiated PeerAddrs type
+func NewPeerAddrs() PeerAddrs {
+	return PeerAddrs{
+		Inbound: make([]string, 0),
+		Outbound: make([]string, 0),
+		Known: make([]string, 0),
+	}
+}
+
 // String returns the peer's address and directionality as a human-readable
 // string.
 //
@@ -815,22 +830,51 @@ func (p *Peer) IsWitnessEnabled() bool {
 }
 
 // PushAddrCacheMsg pushes one or more addrcache messages to the peer, based on how many addresses it needs to send.
-func (p *Peer) PushAddrCacheMsg(addresses []*wire.NetAddress) error {
+func (p *Peer) PushAddrCacheMsg(inbound, outbound, known []*wire.NetAddress) error {
 	msgs := make([]*wire.MsgAddrCache, 0)
 	msg := wire.NewMsgAddrCache()
-	for _, a := range addresses {
-		if len(msg.AddrList) >= wire.MaxAddrPerMsg {
+
+	// Add outbound addresses first, since they are most important for connectivity purposes
+	for _, a := range outbound {
+		if msg.Count() >= wire.MaxAddrPerMsg {
+			// This message is at capacity, so create a new one.
 			msgs = append(msgs, msg)
 			msg = wire.NewMsgAddrCache()
 		}
 
-		err := msg.AddAddress(a)
+		err := msg.AddOutbound(a)
 		if err != nil {
 			return err
 		}
 	}
 
-	if len(msg.AddrList) > 0 {
+	// Add inbound addresses
+	for _, a := range inbound {
+		if msg.Count() >= wire.MaxAddrPerMsg {
+			msgs = append(msgs, msg)
+			msg = wire.NewMsgAddrCache()
+		}
+
+		err := msg.AddInbound(a)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Add known addresses
+	for _, a := range known {
+		if msg.Count() >= wire.MaxAddrPerMsg {
+			msgs = append(msgs, msg)
+			msg = wire.NewMsgAddrCache()
+		}
+
+		err := msg.AddKnown(a)
+		if err != nil {
+			return err
+		}
+	}
+
+	if msg.Count() > 0 {
 		msgs = append(msgs, msg)
 	}
 

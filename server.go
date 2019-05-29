@@ -1253,87 +1253,98 @@ func (sp *serverPeer) OnGetAddr(_ *peer.Peer, msg *wire.MsgGetAddr) {
 // - All addrs are sent in response, using multiple addrcache messages if necessary (instead of 23% of peers)
 // - Includes outbound peer addresses
 func (sp *serverPeer) OnGetAddrCache(_ *peer.Peer, msg *wire.MsgGetAddrCache) {
-	ourAddr := addrmgr.NetAddressKey(sp.NA())
-	addrs := make([]*wire.NetAddress, 0)
-	added := make(map[string]int)
+	// Get peer and advertised addresses from all peers
+	var addrs = sp.server.PeerAddrs()
 
-	// Get the known addresses from the address manager and peer cache
-	addrCache := sp.server.addrManager.EntireAddressCache()
-	peerCache := sp.KnownAddresses()
+	inIndex := make(map[string]struct{})
+	outIndex := make(map[string]struct{})
+	knownIndex := make(map[string]struct{})
 
-	// Get addresses of connected peers
-	replyChan := make(chan []*serverPeer)
-	sp.server.query <- getPeersMsg{reply: replyChan}
-	serverPeers := <-replyChan
-
-	// Add outbound peers
-	for _, p := range serverPeers {
-		if p.Addr() == sp.Addr() || p.Inbound() {
-			continue
-		}
-
-		na := p.NA()
-		a := addrmgr.NetAddressKey(na)
-		_, exists := added[a]
-		if exists {
-			continue
-		}
-
-		addrs = append(addrs, na)
-		added[a] = 1
+	for _, a := range addrs.Inbound {
+		inIndex[a] = struct{}{}
+	}
+	for _, a := range addrs.Outbound {
+		outIndex[a] = struct{}{}
+	}
+	for _, a := range addrs.Known {
+		knownIndex[a] = struct{}{}
 	}
 
-	// Add contents of address manager cache
+	// Add known addresses from the address manager to the peer results
+	addrCache := sp.server.addrManager.EntireAddressCache()
 	for _, na := range addrCache {
 		a := addrmgr.NetAddressKey(na)
-		if a == ourAddr {
-			continue
-		}
 
-		_, exists := added[a]
-		if exists {
+		if _, exists := inIndex[a]; exists {
 			continue
+		} else if _, exists := outIndex[a]; exists {
+			continue
+		} else if _, exists := knownIndex[a]; exists {
+			continue
+		} else {
+			addrs.Known = append(addrs.Known, a)
+			knownIndex[a] = struct{}{}
 		}
-
-		addrs = append(addrs, na)
-		added[a] = 1
 	}
 
-	// Add contents of peer address cache
-	for _, a := range peerCache {
-		if a == ourAddr {
-			continue
-		}
-
-		_, exists := added[a]
-		if exists {
-			continue
-		}
+	// Define a function for converting a string to a NetAddress
+	toNetAddress := func(a string) (*wire.NetAddress, error) {
+		var na *wire.NetAddress
 
 		// Convert the IP address string into a wire.NetAddress type
 		parts := strings.Split(a, ":")
 		ip := parts[0]
 		port64, err := strconv.ParseUint(parts[1], 10, 16)
 		if err != nil {
-			peerLog.Errorf("OnGetAddrCache failed to convert peer address %s to wire.NetAddress: %s", a, err)
-			continue
+			return na, fmt.Errorf("failed to convert address %s to wire.NetAddress: %s", a, err)
 		}
 		port := uint16(port64)
 
-		na, err := sp.server.addrManager.HostToNetAddress(ip, port, defaultServices)
+		na, err = sp.server.addrManager.HostToNetAddress(ip, port, defaultServices)
 		if err != nil {
-			peerLog.Errorf("OnGetAddrCache failed to convert peer address %s to wire.NetAddress: %s", a, err)
-			continue
+			return na, fmt.Errorf("failed to convert address %s to wire.NetAddress: %s", a, err)
 		}
 
-		addrs = append(addrs, na)
-		added[a] = 1
+		return na, nil
 	}
 
-	peerLog.Tracef("OnGetAddrCache found %d addresses", len(addrs))
+	// Convert addresses to NetAddress, because wire package currently has functionality
+	// for encoding/decoding wire.NetAddress (and not strings).
+	inbound := make([]*wire.NetAddress, 0, len(addrs.Inbound))
+	for _, a := range addrs.Inbound {
+		na, err := toNetAddress(a)
+		if err != nil {
+			peerLog.Errorf("OnGetAddrCache inbound address; %s", err.Error())
+		}
+
+		inbound = append(inbound, na)
+	}
+
+	outbound := make([]*wire.NetAddress, 0, len(addrs.Outbound))
+	for _, a := range addrs.Outbound {
+		na, err := toNetAddress(a)
+		if err != nil {
+			peerLog.Errorf("OnGetAddrCache outbound address; %s", err.Error())
+		}
+
+		outbound = append(outbound, na)
+	}
+
+	known := make([]*wire.NetAddress, 0, len(addrs.Known))
+	for _, a := range addrs.Known {
+		na, err := toNetAddress(a)
+		if err != nil {
+			peerLog.Errorf("OnGetAddrCache known address; %s", err.Error())
+		}
+
+		known = append(known, na)
+	}
+
+	peerLog.Tracef("OnGetAddrCache found %d inbound, %d outbound, %d known addresses",
+		len(addrs.Inbound), len(addrs.Outbound), len(addrs.Known))
 
 	// Push the addresses.
-	err := sp.PushAddrCacheMsg(addrs)
+	err := sp.PushAddrCacheMsg(inbound, outbound, known)
 	if err != nil {
 		peerLog.Errorf("Failed to send addrcache msgs to peer %s: %s", sp.Peer, err)
 	}
@@ -1342,7 +1353,8 @@ func (sp *serverPeer) OnGetAddrCache(_ *peer.Peer, msg *wire.MsgGetAddrCache) {
 // OnAddrCache is called when a peer receives an addrcache message. It caches the addresses in the serverPeer
 // Unlike the addr message, addresses found while in simnet mode aren't dropped
 func (sp *serverPeer) OnAddrCache(_ *peer.Peer, msg *wire.MsgAddrCache) {
-	sp.addKnownAddresses(msg.AddrList)
+	sp.addKnownAddresses(msg.Outbound)
+	sp.addKnownAddresses(msg.Known)
 }
 
 // OnAddr is invoked when a peer receives an addr soter message and is
@@ -1873,8 +1885,8 @@ type getConnCountMsg struct {
 	reply chan int32
 }
 
-type getKnownAddrsMsg struct {
-	reply chan []string
+type getPeerAddrsMsg struct {
+	reply chan peer.PeerAddrs
 }
 
 type getPeersMsg struct {
@@ -1909,6 +1921,51 @@ type removeNodeMsg struct {
 // handleQuery is the central handler for all queries and commands from other
 // goroutines related to peer state.
 func (s *server) handleQuery(state *peerState, querymsg interface{}) {
+	// Define a function we can use to handle getPeerMsg messages, which collects peer addresses.
+	// Responses are sent via the reply channel of the message.
+	answerGetPeers := func(msg getPeerAddrsMsg) {
+		var addrs = peer.NewPeerAddrs()
+		defer func() {
+			msg.reply <- addrs
+		}()
+
+		var inbound = make(map[string]struct{})
+		var outbound = make(map[string]struct{})
+		var known = make(map[string]struct{})
+
+		// Sort peer address and advertised addresses from peer into different categories.
+		sortPeers := func(sp *serverPeer) {
+			if !sp.Connected() {
+				known[sp.Addr()] = struct{}{}
+			} else if sp.Inbound() {
+				inbound[sp.Addr()] = struct{}{}
+			} else {
+				outbound[sp.Addr()] = struct{}{}
+			}
+
+			for _, a := range sp.KnownAddresses() {
+				_, isInbound := inbound[a]
+				_, isOutbound := outbound[a]
+				if !isInbound && !isOutbound {
+					known[a] = struct{}{}
+				}
+			}
+		}
+
+		state.forAllPeers(sortPeers)
+
+		for a := range inbound {
+			addrs.Inbound = append(addrs.Inbound, a)
+		}
+		for a := range outbound {
+			addrs.Outbound = append(addrs.Outbound, a)
+		}
+		for a := range known {
+			addrs.Known = append(addrs.Known, a)
+		}
+	}
+
+	// Handle message
 	switch msg := querymsg.(type) {
 	case getConnCountMsg:
 		nconnected := int32(0)
@@ -1919,21 +1976,8 @@ func (s *server) handleQuery(state *peerState, querymsg interface{}) {
 		})
 		msg.reply <- nconnected
 
-	case getKnownAddrsMsg:
-		collected := make(map[string]int, 0)
-		collectAddrs := func(sp *serverPeer) {
-			for _, addr := range sp.KnownAddresses() {
-				collected[addr] = 1
-			}
-		}
-		state.forAllPeers(collectAddrs)
-
-		allAddrs := make([]string, 0)
-		for a := range collected {
-			allAddrs = append(allAddrs, a)
-		}
-
-		msg.reply <- allAddrs
+	case getPeerAddrsMsg:
+		answerGetPeers(msg)
 
 	case getPeersMsg:
 		peers := make([]*serverPeer, 0, state.Count())
@@ -2124,9 +2168,9 @@ func (s *server) inboundPeerConnected(conn net.Conn) {
 // manager of the attempt.
 func (s *server) outboundPeerConnected(c *connmgr.ConnReq, conn net.Conn) {
 	sp := newServerPeer(s, c.Permanent)
-	p, err := peer.NewOutboundPeer(newPeerConfig(sp), c.Addr.String())
+	p, err := peer.NewOutboundPeer(newPeerConfig(sp), c.GetAddr().String())
 	if err != nil {
-		srvrLog.Debugf("Cannot create outbound peer %s: %v", c.Addr, err)
+		srvrLog.Debugf("Cannot create outbound peer %s: %v", c.GetAddr(), err)
 		s.connManager.Disconnect(c.ID())
 	}
 	sp.Peer = p
@@ -2317,6 +2361,15 @@ func (s *server) AddBytesReceived(bytesReceived uint64) {
 func (s *server) NetTotals() (uint64, uint64) {
 	return atomic.LoadUint64(&s.bytesReceived),
 		atomic.LoadUint64(&s.bytesSent)
+}
+
+// PeerAddrs returns addresses of peers connected to or known to the server
+func (s *server) PeerAddrs() peer.PeerAddrs {
+	reply := make(chan peer.PeerAddrs, 1)
+	s.query <- getPeerAddrsMsg{reply: reply}
+	addrs := <-reply
+
+	return addrs
 }
 
 // UpdatePeerHeights updates the heights of all peers who have have announced
@@ -2927,6 +2980,7 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 		Dial:           soterdDial,
 		OnConnection:   s.outboundPeerConnected,
 		GetNewAddress:  newAddressFunc,
+		NoDuplicate: true,
 	})
 	if err != nil {
 		return nil, err

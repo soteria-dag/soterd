@@ -197,7 +197,7 @@ func createSpendTxForTest(outpoints []*wire.OutPoint, amount soterutil.Amount, f
 	return spendTx
 }
 
-func addBlockForTest(dag *BlockDAG, msgBlock *wire.MsgBlock, t *testing.T) (bool, error) {
+func addBlockForTest(dag *BlockDAG, msgBlock *wire.MsgBlock) (bool, error) {
 	block := soterutil.NewBlock(msgBlock)
 	_, isOrphan, err := dag.ProcessBlock(block, BFNone)
 	if err != nil {
@@ -288,14 +288,14 @@ func TestHaveBlock(t *testing.T) {
 		time.Now().Unix(),
 		[]*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock},
 		nil)
-	isOrphan, _ := addBlockForTest(dag, msgblock1, t)
+	isOrphan, _ := addBlockForTest(dag, msgblock1)
 	if isOrphan {
 		t.Errorf("ProcessBlock incorrectly returned block1"+
 			"is an orphan\n")
 		return
 	}
 
-	isOrphan, err = addBlockForTest(dag, &BlockOrphan, t)
+	isOrphan, err = addBlockForTest(dag, &BlockOrphan)
 	if err != nil {
 		t.Errorf("Error adding block %v\n", err)
 	}
@@ -376,7 +376,7 @@ func TestDAGSnapshot(t *testing.T) {
 
 	// block1 w/ parent block0
 	block1Hash := blocks[0].BlockHash()
-	addBlockForTest(dag, blocks[0], t)
+	addBlockForTest(dag, blocks[0])
 
 	snapshot = dag.DAGSnapshot()
 	tipHashes = snapshot.Tips
@@ -390,7 +390,7 @@ func TestDAGSnapshot(t *testing.T) {
 
 	// add block2 w/ parent block0
 	block2Hash := blocks[1].BlockHash()
-	addBlockForTest(dag, blocks[1], t)
+	addBlockForTest(dag, blocks[1])
 
 	snapshot = dag.DAGSnapshot()
 	tipHashes = snapshot.Tips
@@ -413,7 +413,7 @@ func TestDAGSnapshot(t *testing.T) {
 
 	// add block3 with parents block1 and block2
 	block3Hash := blocks[2].BlockHash()
-	addBlockForTest(dag, blocks[2], t)
+	addBlockForTest(dag, blocks[2])
 
 	snapshot = dag.DAGSnapshot()
 	tipHashes = snapshot.Tips
@@ -451,7 +451,7 @@ func TestGetOrphanRoot(t *testing.T) {
 	blocks[4] = createMsgBlockForTest(3, now-600, []*wire.MsgBlock{blocks[2]}, nil)
 	blocks[5] = createMsgBlockForTest(4, now-500, []*wire.MsgBlock{blocks[3], blocks[4]}, nil)
 
-	isOrphan, _ := addBlockForTest(dag, blocks[5], t)
+	isOrphan, _ := addBlockForTest(dag, blocks[5])
 	block6Hash := blocks[5].BlockHash()
 	fmt.Printf("Block 6 hash: %v\n", block6Hash)
 	if !isOrphan {
@@ -468,14 +468,14 @@ func TestGetOrphanRoot(t *testing.T) {
 	}
 
 	// add parents block 4 and 5, still orphans
-	isOrphan,_ = addBlockForTest(dag, blocks[4], t)
+	isOrphan,_ = addBlockForTest(dag, blocks[4])
 	block5Hash := blocks[4].BlockHash()
 	fmt.Printf("Block 5 hash: %v\n", block5Hash)
 	if !isOrphan {
 		t.Errorf("ProcessBlock block 5 should be an orphan\n")
 	}
 
-	isOrphan,_ = addBlockForTest(dag, blocks[3], t)
+	isOrphan,_ = addBlockForTest(dag, blocks[3])
 	block4Hash := blocks[3].BlockHash()
 	fmt.Printf("Block 4 hash: %v\n", block4Hash)
 	if !isOrphan {
@@ -503,18 +503,18 @@ func TestGetOrphanRoot(t *testing.T) {
 	}
 
 	// add rest of blocks
-	isOrphan,_ = addBlockForTest(dag, blocks[2], t)
+	isOrphan,_ = addBlockForTest(dag, blocks[2])
 	block3Hash := blocks[2].BlockHash()
 	fmt.Printf("Block 3 hash: %v\n", block3Hash)
 	if !isOrphan {
 		t.Errorf("ProcessBlock block 3 should be an orphan\n")
 	}
 
-	addBlockForTest(dag, blocks[1], t)
+	addBlockForTest(dag, blocks[1])
 	block2Hash := blocks[1].BlockHash()
 	fmt.Printf("Block 2 hash: %v\n", block2Hash)
 
-	addBlockForTest(dag, blocks[0], t)
+	addBlockForTest(dag, blocks[0])
 	block1Hash := blocks[0].BlockHash()
 	fmt.Printf("Block 1 hash: %v\n", block1Hash)
 
@@ -846,7 +846,7 @@ func TestGraphUpdate(t *testing.T) {
 	blocks[0] = chaincfg.SimNetParams.GenesisBlock
 	for i := 1; i <= numBlocks - 1; i++ {
 		blocks[i] = createMsgBlockForTest(uint32(i), now-int64((numBlocks-i)*10), []*wire.MsgBlock{blocks[i-1]}, nil)
-		addBlockForTest(dag, blocks[i], t)
+		addBlockForTest(dag, blocks[i])
 	}
 
 	expected := ""

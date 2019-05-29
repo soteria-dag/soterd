@@ -58,7 +58,7 @@ type Indexer interface {
 	// the main chain. The set of outputs scripts that were spent within
 	// this block is also returned so indexers can clean up the prior index
 	// state for this block
-	DisconnectBlock(database.Tx, *soterutil.Block, []blockdag.SpentTxOut) error
+	//DisconnectBlock(database.Tx, *soterutil.Block, []blockdag.SpentTxOut) error
 }
 
 // AssertError identifies an error that indicates an internal code consistency

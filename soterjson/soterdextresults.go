@@ -22,7 +22,9 @@ type VersionResult struct {
 
 // GetAddrCacheResult models the data returned from the getaddrcache RPC command.
 type GetAddrCacheResult struct {
-	Addresses []string `json:"addresses"`
+	Inbound []string `json:inbound`
+	Outbound []string `json:outbound`
+	Known []string `json:known`
 }
 
 // GetDAGColoringResult models the data returned from the getdagcoloring command.

@@ -7,7 +7,6 @@ package dagindexers
 
 import (
 	"errors"
-
 	"github.com/soteria-dag/soterd/blockdag"
 	"github.com/soteria-dag/soterd/chaincfg"
 	"github.com/soteria-dag/soterd/chaincfg/chainhash"
@@ -118,6 +117,10 @@ func (idx *CfIndex) Name() string {
 // indexes (regular only currently).
 func (idx *CfIndex) Create(dbTx database.Tx) error {
 	meta := dbTx.Metadata()
+
+	if _, err := meta.CreateBucket(getProcessedBucketName(idx.Key())); err != nil {
+		return err
+	}
 
 	cfIndexParentBucket, err := meta.CreateBucket(cfIndexParentBucketKey)
 	if err != nil {

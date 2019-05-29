@@ -1035,10 +1035,12 @@ func handleGetAddrCache(s *rpcServer, cmd interface{}, closeChan <-chan struct{}
 	s.cfg.ConnMgr.BroadcastMessage(wire.NewMsgGetAddrCache())
 
 	// Collect known addresses from all peers
-	addrs := s.cfg.ConnMgr.KnownAddrs()
+	addrs := s.cfg.ConnMgr.GetPeerAddrs()
 
 	result := &soterjson.GetAddrCacheResult{
-		Addresses: addrs,
+		Inbound: addrs.Inbound,
+		Outbound: addrs.Outbound,
+		Known: addrs.Known,
 	}
 
 	return result, nil
@@ -4348,8 +4350,8 @@ type rpcserverConnManager interface {
 	// ListenAddrs returns a slice of p2p addresses the server is listening on
 	ListenAddrs() []string
 
-	// KnownAddrs returns a slice of all addresses known to peers
-	KnownAddrs() []string
+	// GetPeerAddrs returns a slice of all addresses known to peers
+	GetPeerAddrs() peer.PeerAddrs
 
 	// PersistentPeers returns an array consisting of all the persistent
 	// peers.

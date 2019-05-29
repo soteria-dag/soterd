@@ -75,9 +75,24 @@ func (c *ConnReq) updateState(state ConnState) {
 	c.stateMtx.Unlock()
 }
 
+// GetAddr returns the Addr field of the ConnReq, in a way that is safe for concurrent access.
+func (c *ConnReq) GetAddr() net.Addr {
+	c.stateMtx.RLock()
+	addr := c.Addr
+	c.stateMtx.RUnlock()
+	return addr
+}
+
 // ID returns a unique identifier for the connection request.
 func (c *ConnReq) ID() uint64 {
 	return atomic.LoadUint64(&c.id)
+}
+
+// SetAddr sets the Addr field, in a way that is safe for concurrent access.
+func (c *ConnReq) SetAddr(addr net.Addr) {
+	c.stateMtx.Lock()
+	c.Addr = addr
+	c.stateMtx.Unlock()
 }
 
 // State is the connection state of the requested connection.
@@ -90,10 +105,10 @@ func (c *ConnReq) State() ConnState {
 
 // String returns a human-readable string for the connection request.
 func (c *ConnReq) String() string {
-	if c.Addr.String() == "" {
+	if c.GetAddr().String() == "" {
 		return fmt.Sprintf("reqid %d", atomic.LoadUint64(&c.id))
 	}
-	return fmt.Sprintf("%s (reqid %d)", c.Addr, atomic.LoadUint64(&c.id))
+	return fmt.Sprintf("%s (reqid %d)", c.GetAddr(), atomic.LoadUint64(&c.id))
 }
 
 // Config holds the configuration options related to the connection manager.
@@ -143,6 +158,9 @@ type Config struct {
 
 	// Dial connects to the address on the named network. It cannot be nil.
 	Dial func(net.Addr) (net.Conn, error)
+
+	// NoDuplicate controls whether connection handler will avoid making duplicate requests to the same address
+	NoDuplicate bool
 }
 
 // registerPending is used to register a pending connection attempt. By
@@ -170,6 +188,13 @@ type handleDisconnected struct {
 type handleFailed struct {
 	c   *ConnReq
 	err error
+}
+
+// askIsConnected is used to ask the connection handler if the address of the
+// ConnReq is already in a pending or established connection state.
+type askIsConnected struct {
+	c *ConnReq
+	answer chan bool
 }
 
 // ConnManager provides a manager to handle network connections.
@@ -237,11 +262,72 @@ func (cm *ConnManager) connHandler() {
 		conns = make(map[uint64]*ConnReq, cm.cfg.TargetOutbound)
 	)
 
+	// Define a function we can use to handle askIsConnected messages, which answers whether a connection
+	// in the message is in a pending or established connection state.
+	// Responses are sent via the answer channel of the message.
+	answerIsConnected := func(msg askIsConnected) {
+		var found bool
+		defer func() {
+			msg.answer <- found
+		}()
+
+		connReq := msg.c
+		connAddr := connReq.GetAddr()
+		if connAddr == nil {
+			// The address of the connection request we've been asked to check is nil.
+			// It's not possible to match its non-existent address against anything, so we say that it's not connected.
+			return
+		}
+
+		for _, c := range pending {
+			if connReq.ID() == c.ID() {
+				// We don't consider matches to our own id as a valid pending connection, because
+				// NewConnReq() will create a pending connection entry before the actual connection
+				// attempt is made.
+				continue
+			}
+
+			addr := c.GetAddr()
+			if addr == nil {
+				// This is a pending request made by NewConnReq(), whose address hasn't been set yet.
+				continue
+			}
+			state := c.State()
+			addrMatch := connAddr.String() == addr.String()
+			stateMatch := (state == ConnPending || state == ConnEstablished)
+			if addrMatch && stateMatch {
+				found = true
+				return
+			}
+		}
+
+		for _, c := range conns {
+			addr := c.GetAddr()
+			if addr == nil {
+				// Somehow the Addr field of the connection request has been removed.
+				// We will ignore this so that soterd doesn't panic.
+				continue
+			}
+			state := c.State()
+			addrMatch := connAddr.String() == addr.String()
+			stateMatch := (state == ConnPending || state == ConnEstablished)
+			if addrMatch && stateMatch {
+				found = true
+				return
+			}
+		}
+	}
+
 out:
 	for {
 		select {
 		case req := <-cm.requests:
 			switch msg := req.(type) {
+
+			case askIsConnected:
+				// We'll respond to the sender via the answer channel in the message, about whether the address of the
+				// connection in the message is in a pending or established connection state.
+				answerIsConnected(msg)
 
 			case registerPending:
 				connReq := msg.c
@@ -398,7 +484,7 @@ func (cm *ConnManager) NewConnReq() {
 		return
 	}
 
-	c.Addr = addr
+	c.SetAddr(addr)
 
 	cm.Connect(c)
 }
@@ -409,6 +495,14 @@ func (cm *ConnManager) Connect(c *ConnReq) {
 	if atomic.LoadInt32(&cm.stop) != 0 {
 		return
 	}
+
+	if cm.cfg.NoDuplicate && cm.IsConnected(c) {
+		// Skip connection if we're not supposed to have duplicate connections and there's already
+		// a pending or established connection to the address of this connection request.
+		log.Debugf("Aborting duplicate connection attempt to %v; Connection already in progress or established", c)
+		return
+	}
+
 	if atomic.LoadUint64(&c.id) == 0 {
 		atomic.StoreUint64(&c.id, atomic.AddUint64(&cm.connReqCount, 1))
 
@@ -434,7 +528,7 @@ func (cm *ConnManager) Connect(c *ConnReq) {
 
 	log.Debugf("Attempting to connect to %v", c)
 
-	conn, err := cm.cfg.Dial(c.Addr)
+	conn, err := cm.cfg.Dial(c.GetAddr())
 	if err != nil {
 		select {
 		case cm.requests <- handleFailed{c, err}:
@@ -460,6 +554,33 @@ func (cm *ConnManager) Disconnect(id uint64) {
 	select {
 	case cm.requests <- handleDisconnected{id, true}:
 	case <-cm.quit:
+	}
+}
+
+// IsConnected returns true if the connection handler tells us that there's already a pending or established connection
+// for the address of this connection request.
+func (cm *ConnManager) IsConnected(c *ConnReq) bool {
+	// We use a buffered channel here, so that if we quit before we have a chance to read from the answer channel,
+	// The function writing to the channel won't block indefinitely. (the connHandler function running in a goroutine)
+	answer := make(chan bool, 1)
+	select {
+	case cm.requests <- askIsConnected{c: c, answer: answer}:
+	// It's ok for multiple parts of ConnManager code to all select on cm.quit channel.
+	// No messages are sent on the channel; it is only ever closed when cm.Stop() is called, so we aren't preventing
+	// another part of code from processing a value on the channel by receiving from it here.
+	//
+	// A closed channel acts like a broadcast to all receivers of it. Any time a receive is attempted
+	// from the channel, the receiver gets an initial-value appropriate for the type for the channel,
+	// and a bool value of false indicating that the channel has been closed.
+	case <-cm.quit:
+		return false
+	}
+
+	select {
+	case isConnected := <-answer:
+		return isConnected
+	case <-cm.quit:
+		return false
 	}
 }
 

@@ -156,11 +156,12 @@ type BlockDAG struct {
 	// lock to help prevent logic races when blocks are being processed.
 	//
 	// index houses the entire block index in memory.
-	index *blockIndex
-	dView *dagView
-	graph *phantom.Graph
-	blueSet *phantom.BlueSetCache
-	nodeOrder []*chainhash.Hash
+	index             *blockIndex
+	dView             *dagView
+	graph             *phantom.Graph
+	blueSet           *phantom.BlueSetCache
+	nodeOrder         []*chainhash.Hash
+	orderCache        *phantom.OrderCache
 
 	// These fields are related to handling of orphan blocks.  They are
 	// protected by a combination of the chain lock and the orphan lock.
@@ -824,6 +825,37 @@ func LockTimeToSequence(isSeconds bool, locktime uint32) uint32 {
 }
 */
 
+// Returns all input txns, even ones not spend b/c they have already been spent or are invalid.
+// Needed for indexes.
+func (b *BlockDAG) getAllInputTxos(block *soterutil.Block, view *UtxoViewpoint) ([]SpentTxOut, error) {
+	stxos := make([]SpentTxOut, countSpentOutputs(block))
+	index := 0
+	for _, tx:= range block.Transactions() {
+		if IsCoinBase(tx) {
+			continue
+		}
+		for _, txIn := range tx.MsgTx().TxIn {
+			entry := view.entries[txIn.PreviousOutPoint]
+
+			if entry == nil {
+				return nil, AssertError(fmt.Sprintf("view missing input %v",
+					txIn.PreviousOutPoint))
+			}
+
+			var stxo = SpentTxOut{
+				Amount:     entry.Amount(),
+				PkScript:   entry.PkScript(),
+				Height:     entry.BlockHeight(),
+				IsCoinBase: entry.IsCoinBase(),
+			}
+			stxos[index] = stxo
+			index++
+		}
+	}
+
+	return stxos, nil
+}
+
 // connectBlock handles connecting the passed node/block to the end of the main
 // (best) chain.
 //
@@ -928,12 +960,6 @@ func (b *BlockDAG) connectBlock(node *blockNode, block *soterutil.Block,
 			return err
 		}
 
-		// Update the utxo set using the state of the utxo view.  This
-		// entails removing all of the utxos spent and adding the new
-		// ones created by the block.
-		// TODO: Update the UTXO set after coloring/ordering
-		// NOTE(jenlouie, 12/17/18): when testing DAG, will double spend until sorting is completed
-
 		// add new node to graph
 		var strHash = block.Hash().String()
 		var nodeAdded = b.graph.AddNodeById(strHash)
@@ -951,7 +977,10 @@ func (b *BlockDAG) connectBlock(node *blockNode, block *soterutil.Block,
 
 		// sort blocks
 		genesisHash := b.dView.Genesis().hash.String()
-		sortOrder := phantom.OrderDAG(b.graph, b.graph.GetNodeById(genesisHash), coloringK, b.blueSet)
+		_, sortOrder, err := phantom.OrderDAG(b.graph, b.graph.GetNodeById(genesisHash), coloringK, b.blueSet, dagState.MinHeight, b.orderCache)
+		if err != nil {
+			return err
+		}
 
 		// array to save sort order
 		sortedHashes := make([]*chainhash.Hash, len(sortOrder))
@@ -959,6 +988,7 @@ func (b *BlockDAG) connectBlock(node *blockNode, block *soterutil.Block,
 		// generate new utxo set (from genesis to tips)
 		// jenlouie: view will contain all tx, this might take too much space
 		// might have to save utxo set to db, then load it back out every so often
+
 		for i, node := range sortOrder {
 			blockHash, err := chainhash.NewHashFromStr(node.GetId())
 			if err != nil {
@@ -975,7 +1005,7 @@ func (b *BlockDAG) connectBlock(node *blockNode, block *soterutil.Block,
 					return err
 				}
 			}
-			//fmt.Printf("Connecting TXs from block %v\n", soterBlock.Hash())
+
 			err = newView.connectTransactionsForSorting(soterBlock, nil, b.chainParams)
 			if err != nil {
 				return err
@@ -990,9 +1020,14 @@ func (b *BlockDAG) connectBlock(node *blockNode, block *soterutil.Block,
 			return err
 		}
 
+		blockStxos, err := b.getAllInputTxos(block, newView)
+		if err != nil {
+			return err
+		}
+
 		// Update the transaction spend journal by adding a record for
 		// the block that contains all txos spent by it.
-		err = dbPutSpendJournalEntry(dbTx, block.Hash(), stxos)
+		err = dbPutSpendJournalEntry(dbTx, block.Hash(), blockStxos)
 		if err != nil {
 			return err
 		}
@@ -1001,7 +1036,7 @@ func (b *BlockDAG) connectBlock(node *blockNode, block *soterutil.Block,
 		// optional indexes with the block being connected so they can
 		// update themselves accordingly.
 		if b.indexManager != nil {
-			err := b.indexManager.ConnectBlock(dbTx, block, stxos)
+			err := b.indexManager.ConnectBlock(dbTx, block, blockStxos)
 			if err != nil {
 				return err
 			}
@@ -1009,7 +1044,10 @@ func (b *BlockDAG) connectBlock(node *blockNode, block *soterutil.Block,
 
 		return nil
 	})
+	
 	if err != nil {
+		// Remove the block from the graph
+		b.graph.RemoveTipById(block.Hash().String())
 		return err
 	}
 
@@ -1499,14 +1537,16 @@ func (b *BlockDAG) connectBestChain(node *blockNode, block *soterutil.Block, fla
 	// utxos, spend them, and add the new utxos being created by
 	// this block.
 	if fastAdd {
-		//err := view.fetchInputUtxos(b.db, block)
-		//if err != nil {
-		//	return false, err
-		//}
-		//err = view.connectTransactions(block, &stxos)
-		//if err != nil {
-		//	return false, err
-		//}
+		/*
+		err := view.fetchInputUtxos(b.db, block)
+		if err != nil {
+			return false, err
+		}
+		err = view.connectTransactions(block, &stxos)
+		if err != nil {
+			return false, err
+		}
+		*/
 	}
 
 	// Connect the block to the main chain.
@@ -2072,6 +2112,24 @@ func (b *BlockDAG) LocateHeaders(locator BlockLocator, hashStop *chainhash.Hash)
 	return headers
 }
 
+// Given nodes that are the tips of a subgraph, return list of blocks that
+// are missing from the subgraph tips to the tips of the graph
+func (b *BlockDAG) GetBlockDiff(subtips []*chainhash.Hash) []*chainhash.Hash {
+	ids := make([]string, len(subtips))
+	for i, hash := range subtips {
+		ids[i] = hash.String()
+	}
+
+	missingIds := b.graph.GetMissingNodes(ids)
+
+	missingHashes := make([]*chainhash.Hash, len(missingIds))
+	for i, id := range missingIds {
+		missingHashes[i], _ = chainhash.NewHashFromStr(id)
+	}
+
+	return missingHashes
+}
+
 // IndexManager provides a generic interface that the is called when blocks are
 // connected and disconnected to and from the tip of the main chain for the
 // purpose of supporting optional indexes.
@@ -2212,6 +2270,7 @@ func New(config *Config) (*BlockDAG, error) {
 		graph:               phantom.NewGraph(),
 		nodeOrder:           make([]*chainhash.Hash, 0),
 		blueSet:             phantom.NewBlueSetCache(),
+		orderCache:          phantom.NewOrderCache(),
 		orphans:             make(map[chainhash.Hash]*orphanBlock),
 		prevOrphans:         make(map[chainhash.Hash][]*orphanBlock),
 		warningCaches:       newThresholdCaches(vbNumBits),

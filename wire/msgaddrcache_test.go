@@ -30,7 +30,7 @@ func TestAddrCache(t *testing.T) {
 
 	// Ensure max payload is expected value for latest protocol version.
 	// Num addresses (varInt) + max allowed addresses.
-	wantPayload := uint32(30009)
+	wantPayload := uint32(30027)
 	maxPayload := msg.MaxPayloadLength(pver)
 	if maxPayload != wantPayload {
 		t.Errorf("MaxPayloadLength: wrong max payload length for "+
@@ -41,60 +41,50 @@ func TestAddrCache(t *testing.T) {
 	// Ensure NetAddresses are added properly.
 	tcpAddr := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8333}
 	na := NewNetAddress(tcpAddr, SFNodeNetwork)
-	err := msg.AddAddress(na)
+	err := msg.AddInbound(na)
 	if err != nil {
-		t.Errorf("AddAddress: %v", err)
+		t.Errorf("AddInbound: %v", err)
 	}
-	if msg.AddrList[0] != na {
-		t.Errorf("AddAddress: wrong address added - got %v, want %v",
-			spew.Sprint(msg.AddrList[0]), spew.Sprint(na))
+	err = msg.AddOutbound(na)
+	if err != nil {
+		t.Errorf("AddOutbound: %v", err)
+	}
+	err = msg.AddKnown(na)
+	if err != nil {
+		t.Errorf("AddKnown: %v", err)
 	}
 
-	// Ensure the address list is cleared properly.
-	msg.ClearAddresses()
-	if len(msg.AddrList) != 0 {
-		t.Errorf("ClearAddresses: address list is not empty - "+
-			"got %v [%v], want %v", len(msg.AddrList),
-			spew.Sprint(msg.AddrList[0]), 0)
+	if msg.Count() != 3 {
+		t.Errorf("Count: got %d, want %d", msg.Count(), 3)
+	}
+
+	if msg.Inbound[0] != na {
+		t.Errorf("AddInbound: wrong address added - got %v, want %v",
+			spew.Sprint(msg.Inbound[0]), spew.Sprint(na))
+	}
+	if msg.Outbound[0] != na {
+		t.Errorf("AddOutbound: wrong address added - got %v, want %v",
+			spew.Sprint(msg.Outbound[0]), spew.Sprint(na))
+	}
+	if msg.Known[0] != na {
+		t.Errorf("AddKnown: wrong address added - got %v, want %v",
+			spew.Sprint(msg.Known[0]), spew.Sprint(na))
+	}
+
+	// Ensure the address lists are cleared properly.
+	msg.Reset()
+	if msg.Count() != 0 {
+		t.Errorf("Reset: address lists not empty; got %d, want %d", msg.Count(), 0)
 	}
 
 	// Ensure adding more than the max allowed addresses per message returns
 	// error.
-	for i := 0; i < MaxAddrPerMsg+1; i++ {
-		err = msg.AddAddress(na)
+	err = nil
+	for i := 0; i < MaxAddrPerMsg + 5; i++ {
+		err = msg.AddInbound(na)
 	}
 	if err == nil {
-		t.Errorf("AddAddress: expected error on too many addresses " +
-			"not received")
-	}
-	err = msg.AddAddresses(na)
-	if err == nil {
-		t.Errorf("AddAddresses: expected error on too many addresses " +
-			"not received")
-	}
-
-	// Ensure max payload is expected value for protocol versions before
-	// timestamp was added to NetAddress.
-	// Num addresses (varInt) + max allowed addresses.
-	pver = NetAddressTimeVersion - 1
-	wantPayload = uint32(26009)
-	maxPayload = msg.MaxPayloadLength(pver)
-	if maxPayload != wantPayload {
-		t.Errorf("MaxPayloadLength: wrong max payload length for "+
-			"protocol version %d - got %v, want %v", pver,
-			maxPayload, wantPayload)
-	}
-
-	// Ensure max payload is expected value for protocol versions before
-	// multiple addresses were allowed.
-	// Num addresses (varInt) + a single net addresses.
-	pver = MultipleAddressVersion - 1
-	wantPayload = uint32(35)
-	maxPayload = msg.MaxPayloadLength(pver)
-	if maxPayload != wantPayload {
-		t.Errorf("MaxPayloadLength: wrong max payload length for "+
-			"protocol version %d - got %v, want %v", pver,
-			maxPayload, wantPayload)
+		t.Errorf("AddInbound: expected error on too many addresses not received")
 	}
 }
 
@@ -118,25 +108,29 @@ func TestAddrCacheWire(t *testing.T) {
 	// Empty address message.
 	noAddr := NewMsgAddrCache()
 	noAddrEncoded := []byte{
-		0x00, // Varint for number of addresses
+		0x00, // Varint for number of Inbound addresses
+		0x00, // Varint for number of Outbound addresses
+		0x00, // Varint for number of Known addresses
 	}
 
 	// Address message with multiple addresses.
 	multiAddr := NewMsgAddrCache()
-	multiAddr.AddAddresses(na, na2)
+	_ = multiAddr.AddInbound(na)
+	_ = multiAddr.AddOutbound(na2)
 	multiAddrEncoded := []byte{
-		0x02,                   // Varint for number of addresses
+		0x01,                   // Varint for number of Inbound addresses
 		0x29, 0xab, 0x5f, 0x49, // Timestamp
 		0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // SFNodeNetwork
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0xff, 0xff, 0x7f, 0x00, 0x00, 0x01, // IP 127.0.0.1
 		0x20, 0x8d, // Port 8333 in big-endian
+		0x01,                   // Varint for number of Outbound addresses
 		0x29, 0xab, 0x5f, 0x49, // Timestamp
 		0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // SFNodeNetwork
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0xff, 0xff, 0xc0, 0xa8, 0x00, 0x01, // IP 192.168.0.1
 		0x20, 0x8e, // Port 8334 in big-endian
-
+		0x00, // Varint for number of Known addresses
 	}
 
 	tests := []struct {
@@ -161,15 +155,6 @@ func TestAddrCacheWire(t *testing.T) {
 			multiAddr,
 			multiAddrEncoded,
 			ProtocolVersion,
-			BaseEncoding,
-		},
-
-		// Protocol version MultipleAddressVersion-1 with no addresses.
-		{
-			noAddr,
-			noAddr,
-			noAddrEncoded,
-			MultipleAddressVersion - 1,
 			BaseEncoding,
 		},
 	}
@@ -209,7 +194,6 @@ func TestAddrCacheWire(t *testing.T) {
 // of MsgAddr to confirm error paths work correctly.
 func TestAddrCacheWireErrors(t *testing.T) {
 	pver := ProtocolVersion
-	pverMA := MultipleAddressVersion
 	wireErr := &MessageError{}
 
 	// A couple of NetAddresses to use for testing.
@@ -228,9 +212,9 @@ func TestAddrCacheWireErrors(t *testing.T) {
 
 	// Address message with multiple addresses.
 	baseAddr := NewMsgAddrCache()
-	baseAddr.AddAddresses(na, na2)
+	_ = baseAddr.AddManyInbound(na, na2)
 	baseAddrEncoded := []byte{
-		0x02,                   // Varint for number of addresses
+		0x02,                   // Varint for number of Inbound addresses
 		0x29, 0xab, 0x5f, 0x49, // Timestamp
 		0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // SFNodeNetwork
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -241,16 +225,17 @@ func TestAddrCacheWireErrors(t *testing.T) {
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0xff, 0xff, 0xc0, 0xa8, 0x00, 0x01, // IP 192.168.0.1
 		0x20, 0x8e, // Port 8334 in big-endian
-
+		0x00, // Varint for number of Outbound addresses
+		0x00, // Varint for number of Known addresses
 	}
 
 	// Message that forces an error by having more than the max allowed
 	// addresses.
 	maxAddr := NewMsgAddrCache()
 	for i := 0; i < MaxAddrPerMsg; i++ {
-		maxAddr.AddAddress(na)
+		_ = maxAddr.AddInbound(na)
 	}
-	maxAddr.AddrList = append(maxAddr.AddrList, na)
+	maxAddr.Inbound = append(maxAddr.Inbound, na)
 	maxAddrEncoded := []byte{
 		0xfd, 0x03, 0xe9, // Varint for number of addresses (1001)
 	}
@@ -271,9 +256,6 @@ func TestAddrCacheWireErrors(t *testing.T) {
 		{baseAddr, baseAddrEncoded, pver, BaseEncoding, 1, io.ErrShortWrite, io.EOF},
 		// Force error with greater than max inventory vectors.
 		{maxAddr, maxAddrEncoded, pver, BaseEncoding, 3, wireErr, wireErr},
-		// Force error with greater than max inventory vectors for
-		// protocol versions before multiple addresses were allowed.
-		{maxAddr, maxAddrEncoded, pverMA - 1, BaseEncoding, 3, wireErr, wireErr},
 	}
 
 	t.Logf("Running %d tests", len(tests))

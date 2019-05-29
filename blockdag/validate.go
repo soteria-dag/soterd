@@ -1120,7 +1120,6 @@ func (b *BlockDAG) checkConnectBlock(node *blockNode, block *soterutil.Block, vi
 	// bounds.
 	var totalFees int64
 	for _, tx := range transactions {
-		//TODO(jenlouie): fee amt will be wrong due to double spend utxos that are missing from block
 		txFee, err := CheckTransactionInputs(tx, node.height, view, b.chainParams, true)
 		if err != nil {
 			return err
@@ -1139,10 +1138,13 @@ func (b *BlockDAG) checkConnectBlock(node *blockNode, block *soterutil.Block, vi
 		// provably unspendable as available utxos.  Also, the passed
 		// spent txos slice is updated to contain an entry for each
 		// spent txout in the order each transaction spends them.
-		//err = view.connectTransaction(tx, node.height, stxos)
-		//if err != nil {
-		//	return err
-		//}
+		// jenlouie: connectTransaction will be called in connectBlock
+		/*
+		err = view.connectTransaction(tx, node.height, stxos)
+		if err != nil {
+			return err
+		}
+		*/
 	}
 
 	// The total output values of the coinbase transaction must not exceed

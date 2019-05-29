@@ -5,149 +5,123 @@
 package phantom
 
 import (
-	"fmt"
+	"math"
 	"reflect"
 	"testing"
 )
 
+func modInt32(x, y int32) int32 {
+	return int32(math.Mod(float64(x), float64(y)))
+}
+
 func TestOrderCache(t *testing.T) {
-	oc := newOrderCache()
+	oc := NewOrderCache()
 
-	genesis := newNode("genesis")
-	a1 := newNode("a1")
-	a1.parents[genesis] = keyExists
-	a2 := newNode("a2")
-	a2.parents[a1] = keyExists
+	a := newNode("a")
+	order := []*Node{a}
+	tips := []*Node{a}
 
-	tips := []*node{a2}
-	blueSet := newNodeSet()
-	blueSet.add(a1)
-	order := []*node{genesis, a1, a2}
-
-	// Add the node info to the orderCache
-	oc.add(tips, blueSet, order)
-
-	// Check the orderCache contents
-	if oc.size() != 1 {
-		t.Errorf("orderCache size want %d, got %d", 1, oc.size())
+	// Check that we can't add to cache for low heights
+	err := oc.Add(0, tips, order)
+	if err == nil {
+		t.Fatalf("Should have failed to add to orderCache when height is too low")
 	}
 
-	if len(oc.tips) != 1 {
-		t.Errorf("orderCache tips len want %d, got %d", 1, len(oc.tips))
+	_, exists := oc.MaxHeight()
+	if exists {
+		t.Fatalf("orderCache should not have a cache entry yet")
 	}
 
-	if len(oc.blueSet) != 1 {
-		t.Errorf("orderCache blueSet len want %d, got %d", 1, len(oc.blueSet))
+	// Check that it's ok to add to cache at minOrderCacheDistance or higher
+	height := minOrderCacheDistance
+	err = oc.Add(height, tips, order)
+	if err != nil {
+		t.Error(err.Error())
 	}
 
-	if !reflect.DeepEqual(oc.blueSet[0], blueSet) {
-		t.Errorf("orderCache blueSet want %v, got %v",
-			getIds(blueSet.elements()), getIds(oc.blueSet[0].elements()))
+	if oc.Size() != 1 {
+		t.Fatalf("wrong orderCache size; got %d, want %d", oc.Size(), 1)
 	}
 
-	if !reflect.DeepEqual(oc.order[0], order) {
-		t.Errorf("orderCache order want %v, got %v", getIds(order), getIds(oc.order[0]))
+	max, exists := oc.MaxHeight()
+	if !exists {
+		t.Fatalf("orderCache should have a cache entry")
 	}
 
-	// Check return values of other orderCache methods
-	wantVirtual := "VIRTUAL->a2\na2->a1\na1->genesis\ngenesis\n"
-	if oc.getOldestVirtual().PrintGraph() != wantVirtual {
-		t.Errorf("orderCache getOldestVirtual want %s, got %s",
-			wantVirtual, oc.getOldestVirtual().PrintGraph())
+	if max != height {
+		t.Fatalf("orderCache MaxHeight incorrect; got %d, want %d", max, height)
 	}
 
-	if !reflect.DeepEqual(oc.oldestBlueSet(), blueSet) {
-		t.Errorf("orderCache oldestBlueSet want %v, got %v",
-			getIds(blueSet.elements()), getIds(oc.oldestBlueSet().elements()))
+	// Check cache retrieval
+	//
+	// oc.Get returns the first cache match ~below~ the given height,
+	// so it should miss when there's only one entry and its at the same height
+	// as our request.
+	entry, hit := oc.Get(height)
+	if hit {
+		t.Fatalf("orderCache should miss for height %d", height)
 	}
 
-	a3 := newNode("a3")
-	a3.parents[a2] = keyExists
-	newTips := []*node{a3}
-	newOrder := []*node{genesis, a1, a2, a3}
-
-	// After adding the new tips and order, the oldestOrder and Tips should still be equal to the first addition
-	oc.add(newTips, blueSet, newOrder)
-
-	if !reflect.DeepEqual(oc.oldestOrder(), order) {
-		t.Errorf("orderCache oldestOrder want %v, got %v", getIds(order), getIds(oc.oldestOrder()))
+	newHeight := minOrderCacheDistance * int32(2)
+	err = oc.Add(newHeight, tips, order)
+	entry, hit = oc.Get(newHeight)
+	if !hit {
+		t.Fatalf("orderCache miss for height %d", newHeight)
 	}
 
-	if !reflect.DeepEqual(oc.oldestTips(), tips) {
-		t.Errorf("orderCache oldestTips want %v, got %v", getIds(tips), getIds(oc.oldestTips()))
+	if !reflect.DeepEqual(entry.Order, order) {
+		t.Fatalf("orderCache hit entry order incorrect; got %v, want %v", GetIds(entry.Order), GetIds(order))
 	}
 
-	// Check result of canUseCache as a sub-test
-	t.Run("canUseCache", func(t *testing.T) {
-		oc := newOrderCache()
-		blueSet := newNodeSet()
+	if !reflect.DeepEqual(entry.Tips, tips) {
+		t.Fatalf("orderCache hit entry tips incorrect; got %v, want %v", GetIds(entry.Tips), GetIds(tips))
+	}
 
-		var nodes []*node
-		var prevNode *node
-		for i := 0; i < maxOrderCacheSize - 1; i++ {
-			var name string
-			if i == 0 {
-				name = "genesis"
-			} else {
-				name = "n" + fmt.Sprintf("%d", i)
+	oc.Expire(oc.Size())
+	if oc.Size() != 0 {
+		t.Fatalf("orderCache expiry failed; got %d, want %d", oc.Size(), 0)
+	}
+
+	// Check that entries are only added at correct intervals
+	desiredEntries := 4
+	count := minOrderCacheDistance * int32(desiredEntries)
+	for h := int32(0); h <= count; h++ {
+		_ = oc.Add(int32(h), tips, order)
+
+		if modInt32(h, minOrderCacheDistance) == 0 {
+			if _, ok := oc.CanAdd(h); ok {
+				t.Fatalf("orderCache shouldn't say it's ok to add duplicate cache entries at the same height")
 			}
 
-			n := newNode(name)
-
-			if prevNode != nil {
-				n.parents[prevNode] = keyExists
+			size := oc.Size()
+			_ = oc.Add(int32(h), tips, order)
+			if oc.Size() > size {
+				t.Fatalf("orderCache shouldn't allow duplicate cache entries at the same height; got %d, want %d", oc.Size(), size)
 			}
-
-			nodes = append(nodes, n)
-			prevNode = n
-
-			oc.add([]*node{n}, blueSet, nodes)
 		}
+	}
 
-		if oc.canUseCache() {
-			t.Error("orderCache canUseCache should return false when orderCache size is < maxOrderCacheSize")
-		}
+	if oc.Size() != desiredEntries {
+		t.Fatalf("wrong orderCache size for multiple additions; got %d, want %d", oc.Size(), desiredEntries)
+	}
 
-		n := newNode("final")
-		n.parents[prevNode] = keyExists
-		nodes = append(nodes, n)
-		oc.add([]*node{n}, blueSet, nodes)
+	max, exists = oc.MaxHeight()
+	if max != count {
+		t.Fatalf("orderCache MaxHeight incorrect for multiple additions; got %d, want %d", max, count)
+	}
 
-		if !oc.canUseCache() {
-			t.Errorf("orderCache canUseCache should return true when orderCache size is >= maxOrderCacheSize")
-		}
+	expectedHeights := make([]int32, 0, desiredEntries)
+	for i := 1; i <= desiredEntries; i++ {
+		expectedHeights = append(expectedHeights, minOrderCacheDistance* int32(i))
+	}
 
-	})
+	if !reflect.DeepEqual(oc.Heights(), expectedHeights) {
+		t.Fatalf("orderCache Heights incorrect; got %v, want %v", oc.Heights(), expectedHeights)
+	}
 
-	// Check pruning of orderCache as a sub-test
-	t.Run("pruning", func(t *testing.T) {
-		oc := newOrderCache()
-		blueSet := newNodeSet()
-
-		var nodes []*node
-		var prevNode *node
-		for i := 0; i < maxOrderCacheSize * 2; i++ {
-			var name string
-			if i == 0 {
-				name = "genesis"
-			} else {
-				name = "n" + fmt.Sprintf("%d", i)
-			}
-
-			n := newNode(name)
-
-			if prevNode != nil {
-				n.parents[prevNode] = keyExists
-			}
-
-			nodes = append(nodes, n)
-			prevNode = n
-
-			oc.add([]*node{n}, blueSet, nodes)
-		}
-
-		if oc.size() > maxOrderCacheSize {
-			t.Errorf("orderCache size should have been pruned to %d; got %d", maxOrderCacheSize, oc.size())
-		}
-	})
+	// Check expiry for an amount larger than the cache
+	oc.Expire(oc.Size() + 1)
+	if oc.Size() != 0 {
+		t.Fatalf("orderCache expiry failed when desired expiry count higher than orderCache size; got %d, want %d", oc.Size(), 0)
+	}
 }

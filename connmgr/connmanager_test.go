@@ -164,16 +164,16 @@ func TestConnectMode(t *testing.T) {
 	wantID := cr.ID()
 	gotID := gotConnReq.ID()
 	if gotID != wantID {
-		t.Fatalf("connect mode: %v - want ID %v, got ID %v", cr.Addr, wantID, gotID)
+		t.Fatalf("connect mode: %v - want ID %v, got ID %v", cr.GetAddr(), wantID, gotID)
 	}
 	gotState := cr.State()
 	wantState := ConnEstablished
 	if gotState != wantState {
-		t.Fatalf("connect mode: %v - want state %v, got state %v", cr.Addr, wantState, gotState)
+		t.Fatalf("connect mode: %v - want state %v, got state %v", cr.GetAddr(), wantState, gotState)
 	}
 	select {
 	case c := <-connected:
-		t.Fatalf("connect mode: got unexpected connection - %v", c.Addr)
+		t.Fatalf("connect mode: got unexpected connection - %v", c.GetAddr())
 	case <-time.After(time.Millisecond):
 		break
 	}
@@ -210,7 +210,7 @@ func TestTargetOutbound(t *testing.T) {
 
 	select {
 	case c := <-connected:
-		t.Fatalf("target outbound: got unexpected connection - %v", c.Addr)
+		t.Fatalf("target outbound: got unexpected connection - %v", c.GetAddr())
 	case <-time.After(time.Millisecond):
 		break
 	}
@@ -252,12 +252,12 @@ func TestRetryPermanent(t *testing.T) {
 	wantID := cr.ID()
 	gotID := gotConnReq.ID()
 	if gotID != wantID {
-		t.Fatalf("retry: %v - want ID %v, got ID %v", cr.Addr, wantID, gotID)
+		t.Fatalf("retry: %v - want ID %v, got ID %v", cr.GetAddr(), wantID, gotID)
 	}
 	gotState := cr.State()
 	wantState := ConnEstablished
 	if gotState != wantState {
-		t.Fatalf("retry: %v - want state %v, got state %v", cr.Addr, wantState, gotState)
+		t.Fatalf("retry: %v - want state %v, got state %v", cr.GetAddr(), wantState, gotState)
 	}
 
 	cmgr.Disconnect(cr.ID())
@@ -265,24 +265,24 @@ func TestRetryPermanent(t *testing.T) {
 	wantID = cr.ID()
 	gotID = gotConnReq.ID()
 	if gotID != wantID {
-		t.Fatalf("retry: %v - want ID %v, got ID %v", cr.Addr, wantID, gotID)
+		t.Fatalf("retry: %v - want ID %v, got ID %v", cr.GetAddr(), wantID, gotID)
 	}
 	gotState = cr.State()
 	wantState = ConnPending
 	if gotState != wantState {
-		t.Fatalf("retry: %v - want state %v, got state %v", cr.Addr, wantState, gotState)
+		t.Fatalf("retry: %v - want state %v, got state %v", cr.GetAddr(), wantState, gotState)
 	}
 
 	gotConnReq = <-connected
 	wantID = cr.ID()
 	gotID = gotConnReq.ID()
 	if gotID != wantID {
-		t.Fatalf("retry: %v - want ID %v, got ID %v", cr.Addr, wantID, gotID)
+		t.Fatalf("retry: %v - want ID %v, got ID %v", cr.GetAddr(), wantID, gotID)
 	}
 	gotState = cr.State()
 	wantState = ConnEstablished
 	if gotState != wantState {
-		t.Fatalf("retry: %v - want state %v, got state %v", cr.Addr, wantState, gotState)
+		t.Fatalf("retry: %v - want state %v, got state %v", cr.GetAddr(), wantState, gotState)
 	}
 
 	cmgr.Remove(cr.ID())
@@ -290,12 +290,12 @@ func TestRetryPermanent(t *testing.T) {
 	wantID = cr.ID()
 	gotID = gotConnReq.ID()
 	if gotID != wantID {
-		t.Fatalf("retry: %v - want ID %v, got ID %v", cr.Addr, wantID, gotID)
+		t.Fatalf("retry: %v - want ID %v, got ID %v", cr.GetAddr(), wantID, gotID)
 	}
 	gotState = cr.State()
 	wantState = ConnDisconnected
 	if gotState != wantState {
-		t.Fatalf("retry: %v - want state %v, got state %v", cr.Addr, wantState, gotState)
+		t.Fatalf("retry: %v - want state %v, got state %v", cr.GetAddr(), wantState, gotState)
 	}
 	cmgr.Stop()
 }
@@ -369,7 +369,7 @@ func TestNetworkFailure(t *testing.T) {
 			}, nil
 		},
 		OnConnection: func(c *ConnReq, conn net.Conn) {
-			t.Fatalf("network failure: got unexpected connection - %v", c.Addr)
+			t.Fatalf("network failure: got unexpected connection - %v", c.GetAddr())
 		},
 	})
 	if err != nil {
@@ -551,6 +551,124 @@ func TestCancelIgnoreDelayedConnection(t *testing.T) {
 	case <-time.After(5 * retryTimeout):
 	}
 
+}
+
+// TestNoDuplicateConn checks if we can make duplicate connections to the same address,
+// based on the NoDuplicate field of the connection manager.
+func TestNoDuplicateConn(t *testing.T) {
+
+	subTests := []struct{
+		name string
+		noDup bool
+		tryConns uint32
+		expectedConns int
+	}{
+		// Check that with NoDuplicate: true, only one connection is made to the same address
+		{
+			name: "noDup",
+			noDup: true,
+			tryConns: uint32(2),
+			expectedConns: 1,
+		},
+		// Check that with NoDuplicate: false, multiple connections can be made to the same address
+		{
+			name: "yesDup",
+			noDup: false,
+			tryConns: uint32(3),
+			expectedConns: 3,
+		},
+	}
+
+	for _, st := range subTests {
+		st := st // Capture range variables for use in anonymous functions
+		t.Run(st.name, func(t *testing.T) {
+			var totalConns int
+			connected := make(chan *ConnReq)
+			cmgr, err := New(&Config{
+				TargetOutbound: st.tryConns,
+				Dial:           mockDialer,
+				GetNewAddress: func() (net.Addr, error) {
+					return &net.TCPAddr{
+						IP:   net.ParseIP("127.0.0.1"),
+						Port: 18555,
+					}, nil
+				},
+				OnConnection: func(c *ConnReq, conn net.Conn) {
+					connected <- c
+				},
+				NoDuplicate: st.noDup,
+			})
+			if err != nil {
+				t.Fatalf("New error: %v", err)
+			}
+
+			cmgr.Start()
+			defer func() {
+				cmgr.Stop()
+				cmgr.Wait()
+			}()
+
+			out:
+			for {
+				select {
+				case <-connected:
+					totalConns += 1
+					if totalConns == st.expectedConns {
+						break out
+					}
+				case <-time.After(time.Second * 4):
+					t.Fatalf("Timeout waiting for connections; got %d, expected %d", totalConns, st.expectedConns)
+				}
+			}
+
+			if totalConns != st.expectedConns {
+				t.Errorf("ConnManager with NoDuplicate: %v; got %d connections, expected %d", st.noDup, totalConns, st.expectedConns)
+			}
+		})
+	}
+}
+
+// TestIsConnected checks that the IsConnected method returns the correct response
+func TestIsConnected(t *testing.T) {
+	connected := make(chan *ConnReq)
+	cmgr, err := New(&Config{
+		Dial:           mockDialer,
+		OnConnection: func(c *ConnReq, conn net.Conn) {
+			connected <- c
+		},
+	})
+	if err != nil {
+		t.Fatalf("New error: %v", err)
+	}
+
+	cmgr.Start()
+	defer func() {
+		cmgr.Stop()
+		cmgr.Wait()
+	}()
+
+	cr := &ConnReq{
+		Addr: &net.TCPAddr{
+			IP:   net.ParseIP("127.0.0.1"),
+			Port: 18555,
+		},
+	}
+
+	if cmgr.IsConnected(cr) {
+		t.Errorf("should not be connected to %v", cr)
+	}
+
+	cmgr.Connect(cr)
+
+	select {
+	case <-connected:
+	case <-time.After(time.Second * 4):
+		t.Fatalf("Timeout waiting for connection to %v", cr)
+	}
+
+	if !cmgr.IsConnected(cr) {
+		t.Errorf("should be connected to %v", cr)
+	}
 }
 
 // mockListener implements the net.Listener interface and is used to test

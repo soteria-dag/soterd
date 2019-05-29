@@ -182,16 +182,12 @@ func (cm *rpcConnManager) ConnectedPeers() []rpcserverPeer {
 	return peers
 }
 
-// KnownAddrs returns a slice of all addresses known to peers
+// GetPeerAddrs returns a slice of all addresses known to peers
 //
 // This function is safe for concurrent access and is part of the
 // rpcserverConnManager interface implementation
-func (cm *rpcConnManager) KnownAddrs() []string {
-	reply := make(chan []string)
-	cm.server.query <- getKnownAddrsMsg{reply: reply}
-	addrs := <- reply
-
-	return addrs
+func (cm *rpcConnManager) GetPeerAddrs() peer.PeerAddrs {
+	return cm.server.PeerAddrs()
 }
 
 // PersistentPeers returns an array consisting of all the added persistent

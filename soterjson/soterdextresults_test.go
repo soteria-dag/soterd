@@ -39,9 +39,10 @@ func TestSoterdExtCustomResults(t *testing.T) {
 		{
 			name: "getaddrcacheresult",
 			result: &soterjson.GetAddrCacheResult{
-				Addresses: []string{"127.0.0.1:18555"},
+				Inbound: []string{"127.0.0.1:18555"},
+				Outbound: []string{},
 			},
-			expected: `{"addresses":["127.0.0.1:18555"]}`,
+			expected: `{"Inbound":["127.0.0.1:18555"],"Outbound":[],"Known":null}`,
 		},
 	}
 

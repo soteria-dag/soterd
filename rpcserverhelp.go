@@ -133,7 +133,7 @@ var helpDescsEnUS = map[string]string{
 
 	// GetAddedNodeInfoResultAddr help.
 	"getaddednodeinforesultaddr-address":   "The ip address for this DNS entry",
-	"getaddednodeinforesultaddr-connected": "The connection 'direction' (inbound/outbound/false)",
+	"getaddednodeinforesultaddr-connected": "The connection 'direction' (Inbound/outbound/false)",
 
 	// GetAddedNodeInfoResult help.
 	"getaddednodeinforesult-addednode": "The ip address or domain of the added peer",
@@ -152,7 +152,9 @@ var helpDescsEnUS = map[string]string{
 	"getaddrcache--synopsis": "Returns all known addresses for all connected peers.",
 
 	// GetAddrCacheResult help.
-	"getaddrcacheresult-addresses": "A list of address strings in ip:port format",
+	"getaddrcacheresult-inbound": "A list of inbound address strings in ip:port format",
+	"getaddrcacheresult-outbound": "A list of outbound address strings in ip:port format",
+	"getaddrcacheresult-known": "A list of known address strings in ip:port format",
 
 	// GetBestBlockResult help.
 	"getbestblockresult-hash":   "Hex-encoded bytes of the best block hash",

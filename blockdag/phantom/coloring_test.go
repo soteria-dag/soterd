@@ -5,21 +5,10 @@
 package phantom
 
 import (
-	"crypto/rand"
 	"fmt"
-	"math/big"
 	"reflect"
-	"strings"
 	"testing"
 )
-
-func getIds(nodes []*node) []string {
-	var ids = make([]string, len(nodes))
-	for i, node := range nodes {
-		ids[i] = node.GetId()
-	}
-	return ids
-}
 
 // Figure 3 in PHANTOM paper
 func createGraph() *Graph {
@@ -105,143 +94,175 @@ func createFigure4DAG() *Graph {
 	return g
 }
 
-// genNodes generates a random number of nodes, and connects them to a random number of tips as parents
-func genNodes(g *Graph, maxNodes int) error {
-	if g.GetSize() == 0 {
-		g.AddNodeById("GENESIS")
-		return nil
+// nodeSame returns true if the nodes are the same
+// NOTE(cedric): We only check the children, so that we don't loop checking between parents and children forever.
+// We're assuming that we will be calling the *Same functions across an entire set of nodes/graph.
+func nodeSame(a, b *Node) (string, bool) {
+	aId := a.GetId()
+	bId := b.GetId()
+
+	if aId != bId {
+		return fmt.Sprintf("node ids differ; got %s, want %s", bId, aId), false
 	}
 
-	tips := g.GetTips()
+	aChildren := a.getChildren()
+	bChildren := b.getChildren()
 
-	pick, err := RandInt(maxNodes)
-	if err != nil {
-		return err
-	}
-	// We add 1 to the chosen number because RandInt picks number from 0 to max exclusive.
-	nodeCount := pick + 1
-
-	for i := 0; i < nodeCount; i++ {
-		pick, err := RandInt(len(tips))
-		if err != nil {
-			return err
-		}
-		parentCount := pick + 1
-
-		parents := PickNodes(tips, parentCount)
-		parentIds := getIds(parents)
-
-		id, err := RandString(7)
-		if err != nil {
-			return err
-		}
-
-		g.AddNodeById(id)
-		g.AddEdgesById(id, parentIds)
+	reason, same := nodeSetSame(aChildren, bChildren)
+	if !same {
+		return fmt.Sprintf("node %s children differ between a and b: %s", aId, reason), false
 	}
 
-	return nil
+	return "", true
 }
 
-// genRepeatedDAG returns a graph with a pattern of connectivity between blocks repeated the given number of times.
-func genRepeatedDAG(count int) *Graph {
-	g := NewGraph()
-	g.AddNodeById("GENESIS")
-	tips := g.tips
-	for i := 0; i < count; i++ {
-		n := fmt.Sprintf("%d", i)
-		g.AddNodeById("B" + n)
-		g.AddNodeById("C" + n)
-		g.AddNodeById("D" + n)
-		g.AddNodeById("E" + n)
-		g.AddNodeById("F" + n)
-		g.AddNodeById("H" + n)
-		g.AddNodeById("I" + n)
-		g.AddNodeById("J" + n)
-		g.AddNodeById("K" + n)
-		g.AddNodeById("L" + n)
-		g.AddNodeById("M" + n)
+// nodeSetSame returns true if the nodeSets are the same
+func nodeSetSame(a, b *nodeSet) (string, bool) {
+	checked := make(map[string]struct{})
 
-		tipIds := getIds(tips.elements())
-		g.AddEdgesById("B" + n, tipIds)
-		g.AddEdgesById("C" + n, tipIds)
-		g.AddEdgesById("D" + n, tipIds)
-		g.AddEdgesById("E" + n, tipIds)
+	// Check if corresponding nodes between nodeSets are the same
+	for i, n := range a.elements() {
+		id := n.GetId()
 
-		g.AddEdgesById("F" + n, []string{"B" + n, "C" + n})
-		g.AddEdgesById("H" + n, []string{"C" + n, "D" + n, "E" + n})
-		g.AddEdgeById("I" + n, "E" + n)
+		if !b.contains(n) {
+			return fmt.Sprintf("node %s in a but not b", id), false
+		}
 
-		g.AddEdgesById("J" + n, []string{"F" + n, "H" + n})
-		g.AddEdgesById("K" + n, []string{"B" + n, "H" + n, "I" + n})
-		g.AddEdgesById("L" + n, []string{"D" + n, "I" + n})
-		g.AddEdgesById("M" + n, []string{"F" + n, "K" + n})
+		var index int
+		var found bool
+		var bNodes = b.elements()
+		for j, bn := range bNodes {
+			if n == bn || id == bn.GetId() {
+				index = j
+				found = true
+				break
+			}
+		}
 
-		tips = g.tips
+		if !found {
+			return fmt.Sprintf("node %s in a and b, but not found in order of b", id), false
+		}
+
+		if i != index {
+			return fmt.Sprintf("node %s order not same between a and b; got %d, want %d", id, index, i), false
+		}
+
+		// Check that nodes are the same
+		reason, same := nodeSame(n, bNodes[i])
+		if !same {
+			return fmt.Sprintf("node %s differs between a and b; %s", id, reason), false
+		}
+
+		checked[id] = keyExists
 	}
 
-	return g
-}
-
-// PickNodes returns a randomly-chosen amount of nodes to return
-func PickNodes(nodes []*node, amount int) []*node {
-	available := make([]*node, len(nodes))
-	copy(available, nodes)
-
-	if amount <= 0 {
-		return []*node{}
-	} else if amount >= len(nodes) {
-		return available
-	} else if len(nodes) == 0 {
-		return available
-	}
-
-	picks := make([]*node, 0)
-	for len(picks) < amount {
-		i, err := RandInt(len(available))
-		if err != nil {
+	for _, n := range b.elements() {
+		id := n.GetId()
+		if _, ok := checked[id]; ok {
 			continue
 		}
 
-		picks = append(picks, available[i])
-		available = append(available[:i], available[i+1:]...)
-	}
-
-	return picks
-}
-
-// RandInt returns a random number between 0 and max value.
-// The zero is inclusive, and the max value is exclusive; randInt(3) returns values from 0 to 2.
-func RandInt(max int) (int, error) {
-	if max == 0 {
-		return 0, nil
-	}
-
-	val, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
-	if err != nil {
-		return -1, err
-	}
-	return int(val.Int64()), nil
-}
-
-// RandString returns a randomly-generated string of the given length
-func RandString(length int) (string, error) {
-	runes := []rune(
-		"ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
-			"abcdefghijklmnopqrstuvwxyz" +
-			"0123456789")
-
-	var s strings.Builder
-	for i := 0; i < length; i++ {
-		choice, err := RandInt(len(runes))
-		if err != nil {
-			return "", err
+		if !a.contains(n) {
+			return fmt.Sprintf("node %s in b but not a", id), false
 		}
-		s.WriteRune(runes[choice])
+	}
+	return "", true
+}
+
+// orderedNodeSetSame returns true if the nodeSets are the same
+func orderedNodeSetSame(a, b *orderedNodeSet) (string, bool) {
+	checked := make(map[string]struct{})
+
+	// Check if corresponding nodes between nodeSets are the same
+	for i, n := range a.elements() {
+		id := n.GetId()
+
+		if !b.contains(n) {
+			return fmt.Sprintf("node %s in a but not b", id), false
+		}
+
+		var index int
+		var found bool
+		var bNodes = b.elements()
+		for j, bn := range bNodes {
+			if n == bn || id == bn.GetId() {
+				index = j
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return fmt.Sprintf("node %s in a and b, but not found in order of b", id), false
+		}
+
+		if i != index {
+			return fmt.Sprintf("node %s order not same between a and b; got %d, want %d", id, index, i), false
+		}
+
+		// Check that nodes are the same
+		reason, same := nodeSame(n, bNodes[i])
+		if !same {
+			return fmt.Sprintf("node %s differs between a and b; %s", id, reason), false
+		}
+
+		checked[id] = keyExists
 	}
 
-	return s.String(), nil
+	for _, n := range b.elements() {
+		id := n.GetId()
+		if _, ok := checked[id]; ok {
+			continue
+		}
+
+		if !a.contains(n) {
+			return fmt.Sprintf("node %s in b but not a", id), false
+		}
+	}
+	return "", true
 }
+
+// blueSetSame returns true if the BlueSetCaches are the same
+func blueSetSame(a, b *BlueSetCache) (string, bool) {
+	// Check if the caches have the same nodes
+	aIds := make(map[string]*Node)
+	bIds := make(map[string]*Node)
+	for n := range a.cache {
+		aIds[n.GetId()] = n
+	}
+	for n := range b.cache {
+		bIds[n.GetId()] = n
+	}
+
+	// Check if nodes are the same
+	for id, n := range aIds {
+		bn, exists := bIds[id]
+		if !exists {
+			return fmt.Sprintf("node %s in a but not b", id), false
+		}
+
+		reason, same := nodeSame(n, bn)
+		if !same {
+			return fmt.Sprintf("node %s differs between a and b\n\t\t%s", id, reason), false
+		}
+
+		// Check if nodeSets are the same
+		reason, same = nodeSetSame(a.cache[n], b.cache[bn])
+		if !same {
+			return fmt.Sprintf("node %s orderedNodeSet differs between a and b\n\t\t%s", id, reason), false
+		}
+	}
+
+	for id := range bIds {
+		_, exists := aIds[id]
+		if !exists {
+			return fmt.Sprintf("node %s b but not a", id), false
+		}
+	}
+
+	return "", true
+}
+
 
 func TestCalculateBlueSet(t *testing.T) {
 	var graph = createGraph()
@@ -250,49 +271,94 @@ func TestCalculateBlueSet(t *testing.T) {
 
 	var expected = []string{"C", "GENESIS", "H", "K", "M"}
 
-	if !reflect.DeepEqual(expected, getIds(blueSet.elements())) {
+	if !reflect.DeepEqual(expected, GetIds(blueSet.elements())) {
 		t.Errorf("Incorrect blue set for k = 0. Expecting %v, got %v",
-			expected, getIds(blueSet.elements()))
+			expected, GetIds(blueSet.elements()))
 	}
 
 	blueSet = calculateBlueSet(graph, genesis, 3, nil)
 	expected = []string{"B", "C", "D", "F", "GENESIS", "H", "J", "K", "M"}
 
-	if !reflect.DeepEqual(expected, getIds(blueSet.elements())) {
+	if !reflect.DeepEqual(expected, GetIds(blueSet.elements())) {
 		t.Errorf("Incorrect blue set for k = 3. Expecting %v, got %v",
-			expected, getIds(blueSet.elements()))
+			expected, GetIds(blueSet.elements()))
 	}
 }
 
-func TestOrderDAG(t *testing.T) {
-	var graph = createGraph()
-	var genesis = graph.GetNodeById("GENESIS")
-
-	var orderedNodes = OrderDAG(graph, genesis, 0, nil)
-	var expected = []string{"GENESIS", "C","D","E", "H", "B", "I", "K", "F", "M", "J", "L"}
-
-	if !reflect.DeepEqual(expected, getIds(orderedNodes)) {
-		t.Errorf("Incorrect ordering for k = 0. Expecting %v, got %v", expected, getIds(orderedNodes))
+func TestOrderDAGColoring(t *testing.T) {
+	var steps = []struct{
+		node string
+		parents []string
+	}{
+		{node: "GENESIS"},
+		{node: "B", parents: []string{"GENESIS"}},
+		{node: "C", parents: []string{"GENESIS"}},
+		{node: "D", parents: []string{"GENESIS"}},
+		{node: "E", parents: []string{"GENESIS"}},
+		{node: "F", parents: []string{"B", "C"}},
+		{node: "H", parents: []string{"C", "D", "E"}},
+		{node: "I", parents: []string{"E"}},
+		{node: "J", parents: []string{"F", "H"}},
+		{node: "K", parents: []string{"B", "H", "I"}},
+		{node: "L", parents: []string{"D", "I"}},
+		{node: "M", parents: []string{"F", "K"}},
 	}
 
-	var blueSetCache = NewBlueSetCache()
-
-	orderedNodes = OrderDAG(graph, genesis, 3, blueSetCache)
-	expected = []string{"GENESIS", "B", "C", "D", "F", "E", "H", "I", "K", "J", "M", "L"}
-
-	if !reflect.DeepEqual(expected, getIds(orderedNodes)) {
-		t.Errorf("Incorrect ordering for k = 3. Expecting %v, got %v", expected, getIds(orderedNodes))
+	genStep := func(g *Graph, i int) {
+		step := steps[i]
+		g.addNodeById(step.node)
+		if len(step.parents) > 0 {
+			g.AddEdgesById(step.node, step.parents)
+		}
 	}
 
-	// Check use of orderCache in OrderDAG, by generating a larger dag with repeated patterns of connectivity
-	largeGraph := genRepeatedDAG(maxOrderCacheSize * 2)
-	largeGraphGenesis := largeGraph.GetNodeById("GENESIS")
-	largeGraphBlueSet := NewBlueSetCache()
+	cacheGraph := NewGraph()
+	orderCache := NewOrderCache()
+	cacheBlueSet := NewBlueSetCache()
+	var cacheGenesis *Node
 
-	orderedNodesUsingCache := OrderDAG(largeGraph, largeGraphGenesis, 3, largeGraphBlueSet)
-	orderedNodesNoCache := OrderDAGNoCache(largeGraph, largeGraphGenesis, 3, largeGraphBlueSet)
-	if !reflect.DeepEqual(orderedNodesUsingCache, orderedNodesNoCache) {
-		t.Error("OrderDAG result is not the same between using cache and not using cache!")
+	noCacheGraph := NewGraph()
+	noCacheBlueSet := NewBlueSetCache()
+	var noCacheGenesis *Node
+
+	for i, _ := range steps {
+		genStep(cacheGraph, i)
+		genStep(noCacheGraph, i)
+
+		if i == 0 {
+			cacheGenesis = cacheGraph.GetNodeById("GENESIS")
+			noCacheGenesis = noCacheGraph.GetNodeById("GENESIS")
+		}
+
+		cacheTips, cacheOrder, err := OrderDAG(cacheGraph, cacheGenesis, 3, cacheBlueSet, int32(i), orderCache)
+		if err != nil {
+			t.Fatalf("Step %d OrderDAG with orderCache failed: %s", i, err)
+		}
+		noCacheTips, noCacheOrder, err := OrderDAG(noCacheGraph, noCacheGenesis, 3, noCacheBlueSet, int32(i), nil)
+		if err != nil {
+			t.Fatalf("Step %d OrderDAG no orderCache failed: %s", i, err)
+		}
+
+		if !reflect.DeepEqual(GetIds(cacheTips), GetIds(noCacheTips)) {
+			t.Fatalf("Step %d OrderDAG tips not the same between cache and no-cache", i)
+		}
+
+		// Order should always be the same in this case, because we aren't generating enough generations of the
+		// graph to trigger caching hits.
+		if !reflect.DeepEqual(GetIds(cacheOrder), GetIds(noCacheOrder)) {
+			t.Fatalf("Step %d OrderDAG order not the same between cache and no-cache", i)
+		}
+
+		reason, ok := blueSetSame(cacheBlueSet, noCacheBlueSet)
+		if !ok {
+
+			fmt.Println("cacheBlueSet")
+			fmt.Print(cacheBlueSet.String())
+			fmt.Println("noCacheBlueSet")
+			fmt.Print(noCacheBlueSet.String())
+
+			t.Fatalf("Step %d OrderDAG BlueSetCache not the same between cache and no-cache:\n\t%s", i, reason)
+		}
 	}
 }
 
@@ -304,50 +370,21 @@ func TestFigure4BlueSet(t *testing.T) {
 	var blueSet = calculateBlueSet(graph, genesis, 3, blueSetCache)
 	var expected = []string{"B", "C", "D", "E", "F", "GENESIS", "I", "J", "K", "M", "O", "P", "R"}
 
-	if !reflect.DeepEqual(expected, getIds(blueSet.elements())) {
+	if !reflect.DeepEqual(expected, GetIds(blueSet.elements())) {
 		t.Errorf("Incorrect blue set for figure 4,  k = 3. Expecting %v, got %v",
-			expected, getIds(blueSet.elements()))
+			expected, GetIds(blueSet.elements()))
 	}
 
-	var orderedNodes = OrderDAG(graph, genesis, 3, blueSetCache)
+	var _, orderedNodes, err = OrderDAG(graph, genesis, 3, blueSetCache, int32(-1), nil)
+	if err != nil {
+		t.Fatalf("Failed to sort dag: %s", err)
+	}
+
 	expected = []string{"GENESIS", "B", "C", "D", "E", "F", "I", "J", "K", "L", "M",
 		"O", "P", "H", "N", "Q", "R", "S", "T", "U"}
 
-	if !reflect.DeepEqual(expected, getIds(orderedNodes)) {
+	if !reflect.DeepEqual(expected, GetIds(orderedNodes)) {
 		t.Errorf("Incorrect ordering for figure 4,  k = 3. Expecting %v, got %v",
-			expected, getIds(orderedNodes))
-	}
-}
-
-// BenchmarkOrderDAG helps to compare the ordering speed when using OrderDAG with and without orderCache.
-// You can target the benchmark like this:
-// go test -v -timeout 3h -bench=BenchmarkOrderDAG -benchtime 1x -run Benchmark github.com/soteria-dag/soterd/blockdag/phantom
-func BenchmarkOrderDAG(b *testing.B) {
-	maxNodesPerGeneration := 4
-	generations := maxOrderCacheSize * 2
-
-	g := NewGraph()
-	g.AddNodeById("GENESIS")
-	genesis := g.GetNodeById("GENESIS")
-	blueSetCache := NewBlueSetCache()
-
-	for i := 0; i < generations; i++ {
-		_ = genNodes(g, maxNodesPerGeneration)
-		_ = OrderDAG(g, genesis, 3, blueSetCache)
-	}
-}
-
-func BenchmarkOrderDAGNoCache(b *testing.B) {
-	maxNodesPerGeneration := 4
-	generations := maxOrderCacheSize * 2
-
-	g := NewGraph()
-	g.AddNodeById("GENESIS")
-	genesis := g.GetNodeById("GENESIS")
-	blueSetCache := NewBlueSetCache()
-
-	for i := 0; i < generations; i++ {
-		_ = genNodes(g, maxNodesPerGeneration)
-		_ = OrderDAGNoCache(g, genesis, 3, blueSetCache)
+			expected, GetIds(orderedNodes))
 	}
 }

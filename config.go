@@ -68,7 +68,7 @@ const (
 	sampleConfigFilename         = "sample-soterd.conf"
 	defaultTxIndex               = false
 	defaultAddrIndex             = false
-	defaultNoCFilters            = true
+	defaultNoCFilters            = false
 )
 
 var (

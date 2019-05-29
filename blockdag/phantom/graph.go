@@ -13,146 +13,17 @@ import (
 
 var keyExists = struct{}{}
 
-// NODE
-// in the BlockDAG case:
-// parent of the node has an edge from the node to it: node -> parent
-// child of the node has an edge from it to the node: child -> node
-type node struct {
-	id string
-	parents map[*node]struct{}
-	children map[*node]struct{}
-}
-
-func newNode(id string) *node {
-	return &node{
-		id: id,
-		parents: make(map[*node]struct{}),
-		children: make(map[*node]struct{}),
-	}
-}
-
-func (n *node) GetId() string {
-	return n.id
-}
-
-func (n *node) getChildren() *nodeSet {
-	set := newNodeSet()
-
-	for k := range n.children {
-		set.add(k)
-	}
-
-	return set
-}
-
-// NODESET
-type nodeSet struct {
-	nodes map[*node]struct{}
-}
-
-func newNodeSet() *nodeSet {
-	return &nodeSet{
-		nodes: make(map[*node]struct{}),
-	}
-}
-
-func (nset *nodeSet) size() int {
-	return len(nset.nodes)
-}
-
-func (nset *nodeSet) add(node *node) {
-	if node != nil {
-		nset.nodes[node] = keyExists
-	}
-	//fmt.Printf("Added node %s\n", node.id)
-}
-
-func (nset *nodeSet) remove(node *node) {
-	delete(nset.nodes, node)
-	//fmt.Printf("Removed node %s\n", node.id)
-}
-
-// returns elements of set, sorted by id
-func (nset *nodeSet) elements() []*node {
-	nodes := make([]*node, 0, len(nset.nodes))
-
-	for k := range nset.nodes {
-		nodes = append(nodes, k)
-		//fmt.Print(k.id)
-	}
-
-	sort.Slice(nodes, func(i, j int) bool {
-		if nodes[i].id < nodes[j].id {
-			return true
-		} else {
-			return false
-		}
-	})
-
-	return nodes
-}
-
-func (nset *nodeSet) contains(node *node) bool {
-	if _, ok := nset.nodes[node]; ok {
-		return true
-	} else {
-		return false
-	}
-}
-
-// returns nset - nset2
-func (nset *nodeSet) difference(nset2 *nodeSet) *nodeSet {
-	diff := newNodeSet()
-	if nset2 == nil {
-		return diff
-	}
-
-	for k := range nset.nodes {
-		if _, ok := nset2.nodes[k]; !ok {
-			diff.add(k)
-		}
-	}
-	return diff
-}
-
-// returns nset intersection nset2
-func (nset *nodeSet) intersection(nset2 *nodeSet) *nodeSet {
-	intersection := newNodeSet()
-	if nset2 == nil {
-		return intersection
-	}
-
-	for k := range nset.nodes {
-		if _, ok := nset2.nodes[k]; ok {
-			intersection.add(k)
-		}
-	}
-	return intersection
-
-}
-
-func (nset *nodeSet) clone() *nodeSet {
-	clone := newNodeSet()
-	for k := range nset.nodes {
-		clone.add(k)
-	}
-
-	return clone
-}
-
 // GRAPH
 type Graph struct {
-	tips *nodeSet
-	nodes map[string]*node
-	orderCache *orderCache
+	tips *orderedNodeSet
+	nodes map[string]*Node
 	sync.RWMutex
 }
 
 func NewGraph() *Graph {
 	return &Graph {
-		tips: newNodeSet(),
-		nodes: make(map[string]*node),
-		orderCache: newOrderCache(),
+		tips: newOrderedNodeSet(),
+		nodes: make(map[string]*Node),
 	}
 }
 
@@ -176,7 +47,7 @@ func (g *Graph) AddNodeById(id string) bool {
 	return response
 }
 
-func (g *Graph) addNode(n *node) bool {
+func (g *Graph) addNode(n *Node) bool {
 	if n == nil {
 		return false
 	}
@@ -191,7 +62,7 @@ func (g *Graph) addNode(n *node) bool {
 	return true
 }
 
-func (g *Graph) AddNode(n *node) bool {
+func (g *Graph) AddNode(n *Node) bool {
 	g.Lock()
 	response := g.addNode(n)
 	g.Unlock()
@@ -202,8 +73,8 @@ func (g *Graph) AddNode(n *node) bool {
 // add edge n1 -> n2
 func (g *Graph) addEdgeById(n1 string, n2 string) bool {
 
-	var node1 *node
-	var node2 *node
+	var node1 *Node
+	var node2 *Node
 
 	node1, ok := g.nodes[n1]
 	if !ok {
@@ -215,13 +86,13 @@ func (g *Graph) addEdgeById(n1 string, n2 string) bool {
 		return false
 	}
 
-	if _, ok := node1.parents[node2]; ok {
+	if node1.parents.contains(node2) {
 		return false
 	}
 
 	// edge points from parent to child
-	node1.parents[node2] = keyExists
-	node2.children[node1] = keyExists
+	node1.parents.add(node2)
+	node2.children.add(node1)
 	g.tips.remove(node2)
 
 	return true
@@ -235,7 +106,7 @@ func (g *Graph) AddEdgeById(n1 string, n2 string) bool {
 	return response
 }
 
-func (g *Graph) addEdge(n1 *node, n2 *node) bool {
+func (g *Graph) addEdge(n1 *Node, n2 *Node) bool {
 
 	if _, ok := g.nodes[n1.id]; !ok {
 		return false
@@ -244,18 +115,36 @@ func (g *Graph) addEdge(n1 *node, n2 *node) bool {
 		return false
 	}
 
-	if _, ok := n1.parents[n2]; ok {
+	if n1.parents.contains(n2) {
 		return false
 	}
 
-	n1.parents[n2] = keyExists
-	n2.children[n1] = keyExists
+	n1.parents.add(n2)
+	n2.children.add(n1)
 	g.tips.remove(n2)
 
 	return true
 }
 
-func (g *Graph) AddEdge(n1 *node, n2 *node) bool {
+func (g *Graph) removeEdge(n1 *Node, n2 *Node) bool {
+	if _, ok := g.nodes[n1.id]; !ok {
+		return false
+	}
+	if _, ok := g.nodes[n2.id]; !ok {
+		return false
+	}
+
+	if !n1.parents.contains(n2) {
+		return false
+	}
+
+	n1.parents.remove(n2)
+	n2.children.remove(n1)
+
+	return true
+}
+
+func (g *Graph) AddEdge(n1 *Node, n2 *Node) bool {
 	g.Lock()
 	response := g.addEdge(n1, n2)
 	g.Unlock()
@@ -275,7 +164,7 @@ func (g *Graph) AddEdgesById(n1 string, parents []string) []bool{
 
 func (g *Graph) PrintGraph() string {
 	var sb strings.Builder
-	expanded := make(map[*node]bool)
+	expanded := make(map[*Node]bool)
 	todo := list.New()
 
 	g.RLock()
@@ -285,15 +174,15 @@ func (g *Graph) PrintGraph() string {
 	}
 
 	for todo.Len() > 0 {
-		node2 := todo.Front().Value.(*node)
+		node2 := todo.Front().Value.(*Node)
 
 		if !expanded[node2] {
 			//fmt.Printf("node2 ID not expanded: %s\n", node2.id)
-			if len(node2.parents) > 0 {
+			if node2.parents.size() > 0 {
 				// sort parents so order is always the same
-				var parents = make([]*node, len(node2.parents))
+				var parents = make([]*Node, node2.parents.size())
 				x := 0
-				for k := range node2.parents {
+				for _, k := range node2.parents.elements() {
 					parents[x] = k
 					x++
 				}
@@ -324,7 +213,7 @@ func (g *Graph) PrintGraph() string {
 	return sb.String()
 }
 
-func (g *Graph) getNodeById(nodeId string) *node {
+func (g *Graph) getNodeById(nodeId string) *Node {
 	node, ok := g.nodes[nodeId]
 
 	if ok {
@@ -334,7 +223,7 @@ func (g *Graph) getNodeById(nodeId string) *node {
 	return nil
 }
 
-func (g *Graph) GetNodeById(nodeId string) *node {
+func (g *Graph) GetNodeById(nodeId string) *Node {
 	g.RLock()
 	response := g.getNodeById(nodeId)
 	g.RUnlock()
@@ -354,11 +243,11 @@ func (g *Graph) GetSize() int {
 	return response
 }
 
-func (g *Graph) getTips() []*node {
+func (g *Graph) getTips() []*Node {
 	return g.tips.elements()
 }
 
-func (g *Graph) GetTips() []*node {
+func (g *Graph) GetTips() []*Node {
 	g.RLock()
 	response := g.getTips()
 	g.RUnlock()
@@ -367,25 +256,25 @@ func (g *Graph) GetTips() []*node {
 }
 
 // sub graph with node's parents as tips
-func (g *Graph) getPast(node2 *node) *Graph {
+func (g *Graph) getPast(node2 *Node) *Graph {
 	if node2 == nil {
 		return nil
 	}
 
 	var subgraph = NewGraph()
 	todo := list.New()
-	expanded := make(map[*node]bool)
+	expanded := make(map[*Node]bool)
 
-	for p := range node2.parents {
+	for _, p := range node2.parents.elements() {
 		todo.PushBack(p)
 		subgraph.tips.add(p)
 	}
 
 	for todo.Len() > 0 {
-		node := todo.Front().Value.(*node)
+		node := todo.Front().Value.(*Node)
 
-		if len(node.parents) > 0 && !expanded[node] {
-			for p := range node.parents {
+		if node.parents.size() > 0 && !expanded[node] {
+			for _, p := range node.parents.elements() {
 				todo.PushBack(p)
 
 			}
@@ -393,13 +282,20 @@ func (g *Graph) getPast(node2 *node) *Graph {
 		todo.Remove(todo.Front())
 		expanded[node] = true
 		subgraph.nodes[node.id] = node
-		//fmt.Printf("Past added %s\n", node2.id)
 	}
 	
 	return subgraph
 }
 
-func (g *Graph) getFuture(node2 *node) *nodeSet {
+// GetPast returns a sub graph with node's parents as tips
+func (g *Graph) GetPast(node2 *Node) *Graph {
+	g.RLock()
+	defer g.RUnlock()
+
+	return g.getPast(node2)
+}
+
+func (g *Graph) getFuture(node2 *Node) *nodeSet {
 	if node2 == nil {
 		return nil
 	}
@@ -407,18 +303,18 @@ func (g *Graph) getFuture(node2 *node) *nodeSet {
 	var futureNodes = newNodeSet()
 
 	todo := list.New()
-	expanded := make(map[*node]bool)
+	expanded := make(map[*Node]bool)
 
-	for c := range node2.children {
+	for _, c := range node2.children.elements() {
 		todo.PushBack(c)
 
 	}
 
 	for todo.Len() > 0 {
-		node := todo.Front().Value.(*node)
+		node := todo.Front().Value.(*Node)
 
-		if len(node.children) > 0 && !expanded[node] {
-			for c := range node.children {
+		if node.children.size() > 0 && !expanded[node] {
+			for _, c := range node.children.elements() {
 				todo.PushBack(c)
 
 			}
@@ -426,14 +322,13 @@ func (g *Graph) getFuture(node2 *node) *nodeSet {
 		todo.Remove(todo.Front())
 		expanded[node] = true
 		futureNodes.add(node)
-		//fmt.Printf("Future added %s\n", node2.id)
 	}
 
 	return futureNodes
 }
 
 // anticone of node on g: set of all nodes of g - past(node) - future(node) - node
-func (g *Graph) getAnticone(node *node) *nodeSet {
+func (g *Graph) getAnticone(node *Node) *nodeSet {
 	if node == nil {
 		return nil
 	}
@@ -445,11 +340,9 @@ func (g *Graph) getAnticone(node *node) *nodeSet {
 	futureNodes := g.getFuture(node)
 	for k := range g.nodes {
 		candidate := g.getNodeById(k)
-		//fmt.Printf("Testing node %s\n", k)
 		_, past := pastOfNode.nodes[k];
 		future := futureNodes.contains(candidate)
 		if !past && !future {
-			//fmt.Printf("node %s\n", k)
 			anticone.add(candidate)
 		}
 	}
@@ -457,6 +350,52 @@ func (g *Graph) getAnticone(node *node) *nodeSet {
 	anticone.remove(node)
 
 	return anticone
+}
+
+// GetAnticone returns anticone of node on g: set of all nodes of g - past(node) - future(node) - node
+func (g *Graph) GetAnticone(node *Node) *nodeSet {
+	g.RLock()
+	defer g.RUnlock()
+
+	return g.getAnticone(node)
+}
+
+func (g *Graph) GetMissingNodes(subtips []string) []string {
+	subtipMap := make(map[string]struct{})
+
+	subtipPasts := make(map[string]*Graph)
+	missing := make([]string, 0)
+
+	// get pasts of subtips
+	for _, subtip := range subtips {
+		node := g.getNodeById(subtip)
+		if node != nil {
+			subtipPast := g.getPast(node)
+			subtipPasts[subtip] = subtipPast
+			subtipMap[subtip] = struct{}{}
+		}
+	}
+
+	// loop through all nodes,
+	// include nodes not in any of the subtips' pasts
+	for id := range g.nodes {
+		if _, ok := subtipMap[id]; ok {
+			continue
+		}
+		includeNode := true
+		for _, subgraph := range subtipPasts {
+			node := subgraph.GetNodeById(id)
+			if node != nil {
+				includeNode = false
+			}
+		}
+
+		if includeNode {
+			missing = append(missing, id)
+		}
+	}
+
+	return missing
 }
 
 // returns a copy of the graph with a virtual node at the end, whose parents are the tips of the graph
@@ -474,4 +413,51 @@ func (g *Graph) getVirtual() *Graph {
 	}
 
 	return vg
+}
+
+// GetVirtual returns a copy of the graph with a virtual node at the end, whose parents are the tips of the graph
+func (g *Graph) GetVirtual() *Graph {
+	g.RLock()
+	vg := g.getVirtual()
+	g.RUnlock()
+
+	return vg
+}
+
+// Remove node from graph
+// Can only remove tips
+// Undefined what would happen if remove a node from the middle of the DAG
+
+func (g *Graph) removeTip(n1 *Node) {
+	if g.tips.contains(n1) {
+		// remove from tip set
+		g.tips.remove(n1)
+		for _, parent := range n1.parents.elements() {
+			// remove from children
+			parent.children.remove(n1)
+			// add to tips set if parent has no children
+			if parent.children.size() == 0 {
+				g.tips.add(parent)
+			}
+		}
+		// remove from graph
+		delete(g.nodes, n1.GetId())
+	}
+}
+
+func (g *Graph) RemoveTip(n1 *Node) {
+	g.Lock()
+	defer g.Unlock()
+
+	g.removeTip(n1)
+}
+
+func (g *Graph) RemoveTipById(nodeId string) {
+	g.Lock()
+	defer g.Unlock()
+
+	node, exists := g.nodes[nodeId]
+	if exists {
+		g.removeTip(node)
+	}
 }
