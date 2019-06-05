@@ -13,10 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/soteria-dag/soterd/blockdag/phantom"
 	"github.com/soteria-dag/soterd/chaincfg/chainhash"
 	"github.com/soteria-dag/soterd/database"
-	"github.com/soteria-dag/soterd/wire"
 	"github.com/soteria-dag/soterd/soterutil"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 const (
@@ -1390,6 +1391,29 @@ func (b *BlockDAG) initChainState() error {
 		b.stateSnapshot = newBestState(tip, blockSize, blockWeight,
 			numTxns, state.totalTxns, tip.CalcPastMedianTime())
 		b.dagSnapshot = newDAGState(b.dView.Tips(), dagState.blkCount)
+
+
+		// initialize sort order
+		genesisHash := b.dView.Genesis().hash.String()
+		_, sortOrder, err := phantom.OrderDAG(b.graph,
+			b.graph.GetNodeById(genesisHash),
+			coloringK,
+			b.blueSet,
+			b.dagSnapshot.MinHeight,
+			b.orderCache)
+
+		if err != nil {
+			return err
+		}
+		sortedHashes := make([]*chainhash.Hash, len(sortOrder))
+		for i, node := range sortOrder {
+			blockHash, err := chainhash.NewHashFromStr(node.GetId())
+			if err != nil {
+				return err
+			}
+			sortedHashes[i] = blockHash
+		}
+		b.nodeOrder = sortedHashes
 
 		return nil
 	})

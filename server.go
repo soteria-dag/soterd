@@ -410,7 +410,13 @@ func (sp *serverPeer) KnownAddresses() []string {
 // OnVersion is invoked when a peer receives a version soter message
 // and is used to negotiate the protocol version details as well as kick start
 // the communications.
-func (sp *serverPeer) OnVersion(_ *peer.Peer, msg *wire.MsgVersion) {
+func (sp *serverPeer) OnVersion(_ *peer.Peer, msg *wire.MsgVersion) *wire.MsgReject {
+	// Ignore peers that have a protocol version that is too old. The peer
+	// negotiation logic will disconnect it after this callback returns.
+	if msg.ProtocolVersion < int32(peer.MinAcceptableProtocolVersion) {
+		return nil
+	}
+
 	// Add the remote peer time as a sample for creating an offset against
 	// the local clock to keep the network time in sync.
 	sp.server.timeSource.AddTimeSample(sp.Addr(), msg.Timestamp)
@@ -440,7 +446,7 @@ func (sp *serverPeer) OnVersion(_ *peer.Peer, msg *wire.MsgVersion) {
 			if err != nil {
 				peerLog.Errorf("Unable to query for segwit "+
 					"soft-fork state: %v", err)
-				return
+				return nil
 			}
 
 			if segwitActive && !sp.IsWitnessEnabled() {
@@ -448,7 +454,7 @@ func (sp *serverPeer) OnVersion(_ *peer.Peer, msg *wire.MsgVersion) {
 					"peer %v, isn't segwit enabled and "+
 					"we need more segwit enabled peers", sp)
 				sp.Disconnect()
-				return
+				return nil
 			}
 
 			// TODO(davec): Only do this if not doing the initial block
@@ -479,6 +485,8 @@ func (sp *serverPeer) OnVersion(_ *peer.Peer, msg *wire.MsgVersion) {
 
 	// Add valid peer to the server.
 	sp.server.AddPeer(sp)
+
+	return nil
 }
 
 // OnMemPool is invoked when a peer receives a mempool soter message.

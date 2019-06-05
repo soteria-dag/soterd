@@ -10,13 +10,11 @@ import (
 
 // NODESET
 type nodeSet struct {
-	ids map[string]*Node
 	nodes map[*Node]struct{}
 }
 
 func newNodeSet() *nodeSet {
 	return &nodeSet{
-		ids: make(map[string]*Node),
 		nodes: make(map[*Node]struct{}),
 	}
 }
@@ -34,31 +32,22 @@ func (nset *nodeSet) add(node *Node) {
 		return
 	}
 
-	nset.ids[node.GetId()] = node
 	nset.nodes[node] = keyExists
 	//fmt.Printf("Added node %s\n", node.id)
 }
 
 func (nset *nodeSet) remove(node *Node) {
-
-	n, same := nset.ids[node.GetId()]
-	if same && n != node {
-		// Attempt to remove other node with the same id as this one
-		delete(nset.nodes, n)
-		delete(nset.ids, n.GetId())
-	}
-
 	// Remove this node
 	delete(nset.nodes, node)
-	delete(nset.ids, node.GetId())
 }
 
 // returns elements of set, sorted by id
 func (nset *nodeSet) elements() []*Node {
-	nodes := make([]*Node, 0, len(nset.nodes))
-
+	nodes := make([]*Node, len(nset.nodes))
+	index := 0
 	for k := range nset.nodes {
-		nodes = append(nodes, k)
+		nodes[index] = k
+		index += 1
 	}
 
 	sort.Slice(nodes, func(i, j int) bool {
@@ -73,11 +62,7 @@ func (nset *nodeSet) elements() []*Node {
 }
 
 func (nset *nodeSet) contains(node *Node) bool {
-	if _, ok := nset.nodes[node]; ok {
-		return true
-	}
-
-	_, ok := nset.ids[node.GetId()]
+	_, ok := nset.nodes[node]
 	return ok
 }
 
@@ -123,7 +108,6 @@ func (nset *nodeSet) clone() *nodeSet {
 
 // ORDEREDNODESET
 type orderedNodeSet struct {
-	ids map[string]*Node
 	nodes map[*Node]int
 	order map[int]*Node
 	counter int
@@ -131,7 +115,6 @@ type orderedNodeSet struct {
 
 func newOrderedNodeSet() *orderedNodeSet {
 	return &orderedNodeSet {
-		ids: make(map[string]*Node),
 		nodes: make(map[*Node]int),
 		order: make(map[int]*Node),
 		counter: 0,
@@ -149,7 +132,6 @@ func (ons *orderedNodeSet) add(node *Node) {
 	}
 
 	ons.counter += 1
-	ons.ids[node.GetId()] = node
 	ons.nodes[node] = ons.counter
 	ons.order[ons.counter] = node
 }
@@ -167,11 +149,6 @@ func (ons *orderedNodeSet) clone() *orderedNodeSet {
 // contains returns true if the node is in the ordered node set
 func (ons *orderedNodeSet) contains(node *Node) bool {
 	_, ok := ons.nodes[node]
-	if ok {
-		return ok
-	}
-
-	_, ok = ons.ids[node.GetId()]
 	return ok
 }
 
@@ -229,27 +206,104 @@ func (ons *orderedNodeSet) remove(node *Node) {
 		return
 	}
 
-	n, same := ons.ids[node.GetId()]
-	if same && n != node {
-		// Attempt to remove other node with the same id as this one
-		i, ok := ons.nodes[n]
-		if ok {
-			delete(ons.order, i)
-		}
-		delete(ons.nodes, n)
-		delete(ons.ids, n.GetId())
-	}
-
 	// Remove this node
 	i, ok := ons.nodes[node]
 	if ok {
 		delete(ons.order, i)
 	}
 	delete(ons.nodes, node)
-	delete(ons.ids, node.GetId())
 }
 
 // size returns the size of the ordered node set
 func (ons *orderedNodeSet) size() int {
 	return len(ons.nodes)
+}
+
+// An alternative to using a container/list List type, for managing a list of nodes
+type nodeList struct {
+	elements []*Node
+}
+
+func newNodeList(cap int) *nodeList {
+	return &nodeList{
+		elements: make([]*Node, 0, cap),
+	}
+}
+
+// at returns the node at the given index, or nil if there's no Node there.
+func (nl *nodeList) at(i int) *Node {
+	if i > len(nl.elements) - 1 || i < 0 {
+		return nil
+	}
+
+	return nl.elements[i]
+}
+
+// delete removes a node at the given index, and returns it
+func (nl *nodeList) delete(i int) *Node {
+	end := len(nl.elements) - 1
+	n := nl.elements[i]
+	// Copy values from the deletion point to the left by one
+	copy(nl.elements[i:], nl.elements[i+1:])
+	// Dereference the last value
+	nl.elements[end] = nil
+	// Truncate the slice
+	nl.elements = nl.elements[:end]
+
+	return n
+}
+
+// insert adds a Node at the given index.
+// This method of insertion avoids creating a new slice, so garbage collection isn't involved.
+func (nl *nodeList) insert(i int, n *Node) {
+	// Add a nil value to the end of the slice, to make room for the new Node.
+	nl.elements = append(nl.elements, nil)
+	// Copy values from the insertion point to the right by one
+	copy(nl.elements[i+1:], nl.elements[i:])
+	// Set the value at the insertion point
+	nl.elements[i] = n
+}
+
+// push adds a Node to the end of the list
+func (nl *nodeList) push(n *Node) {
+	nl.elements = append(nl.elements, n)
+}
+
+// pop removes a Node from the end of the list, and returns it. nil is returned if there's no Node to pop.
+func (nl *nodeList) pop() *Node {
+	size := len(nl.elements)
+	if size == 0 {
+		return nil
+	}
+
+	// This method of deletion is used instead of calling nl.Delete(), because it's faster.
+	end := size - 1
+	n := nl.elements[end]
+	nl.elements[end] = nil
+	nl.elements = nl.elements[0:end]
+
+	return n
+}
+
+// shift removes a Node from the front of the list, and returns it
+func (nl *nodeList) shift() *Node {
+	if len(nl.elements) == 0 {
+		return nil
+	}
+
+	// This method of deletion is used instead of calling nl.Delete(), because it's faster.
+	n := nl.elements[0]
+	nl.elements[0] = nil
+	nl.elements = nl.elements[1:]
+	return n
+}
+
+// size returns the size of the nodeList
+func (nl *nodeList) size() int {
+	return len(nl.elements)
+}
+
+// unshift adds a Node to the front of the list
+func (nl *nodeList) unshift(n *Node) {
+	nl.insert(0, n)
 }

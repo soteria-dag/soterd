@@ -15,7 +15,7 @@ const (
 	minOrderCacheDistance = int32(200)
 
 	// The maximum size of the orderCache
-	maxOrderCacheSize = 100
+	maxOrderCacheSize = int(minOrderCacheDistance) * 20
 )
 
 type OrderCacheEntry struct {
@@ -26,6 +26,9 @@ type OrderCacheEntry struct {
 type OrderCache struct {
 	// Mapping of height of tips of cache entry, to the dag order for that height
 	cache map[int32]*OrderCacheEntry
+
+	// This is used to determine if we should trigger an expiry when the cache is full
+	addsSinceLastExpire int
 
 	// Methods use locks to ensure stable access to the cache between goroutines
 	sync.RWMutex
@@ -54,16 +57,20 @@ func (oc *OrderCache) add(height int32, tips, order []*Node) error {
 	}
 
 	size := oc.size()
-	if size >= maxOrderCacheSize {
+	if size >= maxOrderCacheSize && oc.addsSinceLastExpire >= cacheFullExpireInterval {
 		n := (size - maxOrderCacheSize) + 1
 		log.Debugf("Expiring %d lowest orderCache items", n)
 		oc.expire(n)
+
+		oc.addsSinceLastExpire = 0
 	}
 
 	oc.cache[height] = &OrderCacheEntry{
 		Tips: tips,
 		Order: order,
 	}
+
+	oc.addsSinceLastExpire += 1
 
 	return nil
 }
@@ -89,18 +96,6 @@ func (oc *OrderCache) canAdd(height int32) (string, bool) {
 		return reason, false
 	}
 
-	max, exists := oc.maxHeight()
-	if exists {
-		distance := height - max
-		if distance < minOrderCacheDistance {
-			reason := fmt.Sprintf(
-				"distance between height and cache maxHeight is not far enough; " +
-				"got %d, want >= %d",
-				distance, minOrderCacheDistance)
-			return reason, false
-		}
-	}
-
 	return "", true
 }
 
@@ -113,27 +108,29 @@ func (oc *OrderCache) CanAdd(height int32) (string, bool) {
 }
 
 // expire removes the lowest n entries from the cache
-func (oc *OrderCache) expire(n int) {
-	heights := oc.heights()
-
-	var count int
-	if len(heights) < n {
-		count = len(heights)
-	} else {
-		count = n
+func (oc *OrderCache) expire(amt int) {
+	if amt <= 0 {
+		return
 	}
 
-	for i := 0; i < count; i++ {
+	heights := oc.heights()
+
+	size := len(heights)
+	if size < amt {
+		amt = size
+	}
+
+	for i := 0; i < amt; i++ {
 		delete(oc.cache, heights[i])
 	}
 }
 
 // Expire removes the lowest n entries from the cache
-func (oc *OrderCache) Expire(n int) {
+func (oc *OrderCache) Expire(amt int) {
 	oc.Lock()
 	defer oc.Unlock()
 
-	oc.expire(n)
+	oc.expire(amt)
 }
 
 // get returns a cache entry appropriate for the height, and whether a matching cache entry was found
@@ -143,8 +140,15 @@ func (oc *OrderCache) get(height int32) (*OrderCacheEntry, bool) {
 	}
 
 	target := height - minOrderCacheDistance
+
+	// Check for a cache entry at the target height
+	entry, exists := oc.cache[target]
+	if exists {
+		return entry, true
+	}
+
 	cacheHeights := oc.heights()
-	// We'll try to find matches from highest to lowest-height
+	// Try to find cache matches from highest to lowest-height
 	sort.Sort(sort.Reverse(byHeight(cacheHeights)))
 
 	for _, h := range cacheHeights {
@@ -173,9 +177,11 @@ func (oc *OrderCache) Get(height int32) (*OrderCacheEntry, bool) {
 
 // heights returns a slice of cache heights, sorted from lowest to highest
 func (oc *OrderCache) heights() []int32 {
-	heights := make([]int32, 0, oc.size())
+	heights := make([]int32, oc.size())
+	index := 0
 	for h := range oc.cache {
-		heights = append(heights, h)
+		heights[index] = h
+		index += 1
 	}
 
 	sort.Sort(byHeight(heights))

@@ -5,15 +5,22 @@
 package phantom
 
 import (
-	"container/list"
 	"fmt"
 	"sort"
 	"strings"
 	"sync"
 )
 
+const (
+	// The maximum size of the BlueSetCache
+	maxBlueSetCacheSize = 5000
+)
+
 type BlueSetCache struct {
 	cache map[*Node]*nodeSet
+
+	addsSinceLastExpire int
+
 	sync.RWMutex
 }
 
@@ -25,7 +32,16 @@ func NewBlueSetCache() *BlueSetCache {
 
 // add the node associated with the set to the cache
 func (blueset *BlueSetCache) add(n *Node, set *nodeSet) {
+	size := len(blueset.cache)
+	if size >= maxBlueSetCacheSize && blueset.addsSinceLastExpire >= cacheFullExpireInterval {
+		amt := (size - maxBlueSetCacheSize) + 1
+		blueset.expire(amt)
+		blueset.addsSinceLastExpire = 0
+	}
+
 	blueset.cache[n] = set
+
+	blueset.addsSinceLastExpire += 1
 }
 
 // Add the node associated with the set to the cache
@@ -34,6 +50,40 @@ func (blueset *BlueSetCache) Add(n *Node, set *nodeSet) {
 	defer blueset.Unlock()
 
 	blueset.add(n, set)
+}
+
+// expire removes a number of entries from the cache
+func (blueset *BlueSetCache) expire(amt int) {
+	if amt <= 0 {
+		return
+	}
+
+	size := len(blueset.cache)
+	if size < amt {
+		amt = size
+	}
+
+	nodes := make([]*Node, amt)
+	index := 0
+	for n := range blueset.cache {
+		nodes[index] = n
+		index += 1
+		if index >= amt {
+			break
+		}
+	}
+
+	for _, n := range nodes {
+		delete(blueset.cache, n)
+	}
+}
+
+// Expire removes a number of entries from the cache
+func (blueset *BlueSetCache) Expire(amt int) {
+	blueset.Lock()
+	defer blueset.Unlock()
+
+	blueset.expire(amt)
 }
 
 func (blueset *BlueSetCache) GetBlueNodes(n *Node) []*Node {
@@ -83,10 +133,11 @@ func (blueset *BlueSetCache) InCache(n *Node) bool {
 func (blueSet *BlueSetCache) String() string {
 	var sb strings.Builder
 
-	nodes := make([]*Node, 0, len(blueSet.cache))
-
+	nodes := make([]*Node, len(blueSet.cache))
+	index := 0
 	for k := range blueSet.cache {
-		nodes = append(nodes, k)
+		nodes[index] = k
+		index += 1
 	}
 
 	less := func(i, j int) bool {
@@ -100,13 +151,13 @@ func (blueSet *BlueSetCache) String() string {
 	sort.Slice(nodes, less)
 
 	for _, n := range nodes {
-		ons, ok := blueSet.cache[n]
+		ns, ok := blueSet.cache[n]
 		if !ok {
 			sb.WriteString(fmt.Sprintln(n.GetId(), "\t", "UNKNOWN"))
 			continue
 		}
 
-		sb.WriteString(fmt.Sprintln(n.GetId(), "\t", GetIds(ons.elements())))
+		sb.WriteString(fmt.Sprintln(n.GetId(), "\t", GetIds(ns.elements())))
 	}
 
 	return sb.String()
@@ -127,9 +178,9 @@ func calculateBlueSet(g *Graph, genesisNode *Node, k int, blueSetCache *BlueSetC
 		return blueSet
 	}
 
-	tipToSet := make(map[*Node]*nodeSet)
-
-	for _, tipBlock := range g.getTips() {
+	var tipToSet = make(map[*Node]*nodeSet)
+	var tips = g.getTips()
+	for _, tipBlock := range tips {
 		nodePast := g.getPast(tipBlock)
 
 		var pastBlueSet *nodeSet
@@ -160,7 +211,7 @@ func calculateBlueSet(g *Graph, genesisNode *Node, k int, blueSetCache *BlueSetC
 	}
 
 	var setSize = 0
-	for _, tip := range g.getTips() {
+	for _, tip := range SortNodes(tips) {
 		var v = tipToSet[tip]
 		//log.Debugf("Tip %s has blue set size %d", tip.GetId(), v.Size())
 		if v.size() > setSize {
@@ -177,7 +228,7 @@ func OrderDAG(g *Graph, genesisNode *Node, k int, blueSetCache *BlueSetCache, mi
 	g.RLock()
 	defer g.RUnlock()
 
-	var todoQueue = list.New()
+	var todoQueue = newNodeList(g.getSize())
 	var seen = make(map[*Node]struct{})
 	var orderingSet = newOrderedNodeSet()
 
@@ -217,21 +268,19 @@ func OrderDAG(g *Graph, genesisNode *Node, k int, blueSetCache *BlueSetCache, mi
 
 		// Start calculating order from the tips of the cache up, instead of the genesis node
 		for _, tn := range entry.Tips {
-			todoQueue.PushBack(tn)
+			todoQueue.push(tn)
 			seen[tn] = keyExists
 		}
 	} else {
 		// Start calculating ordering from genesis node
-		todoQueue.PushBack(genesisNode)
+		todoQueue.push(genesisNode)
 		seen[genesisNode] = keyExists
 	}
 
-	for todoQueue.Len() > 0 {
+	for todoQueue.size() > 0 {
 		// pop from front of queue
 		// and add to ordering
-		elem := todoQueue.Front()
-		todoQueue.Remove(elem)
-		node := elem.Value.(*Node)
+		node := todoQueue.shift()
 		if node.GetId() == "VIRTUAL" {
 			break
 		}
@@ -255,7 +304,7 @@ func OrderDAG(g *Graph, genesisNode *Node, k int, blueSetCache *BlueSetCache, mi
 					//log.Debugf("%s is in %s 's past", anticoneNode.GetId(), blueChild.GetId())
 					_, ok := seen[anticoneNode]
 					if !orderingSet.contains(anticoneNode) && !ok {
-						todoQueue.PushBack(anticoneNode)
+						todoQueue.push(anticoneNode)
 						seen[anticoneNode] = keyExists
 						//log.Debugf("Adding %s to queue", anticoneNode.GetId())
 					}
@@ -264,7 +313,7 @@ func OrderDAG(g *Graph, genesisNode *Node, k int, blueSetCache *BlueSetCache, mi
 			// then add child to queue
 			_, ok := seen[blueChild]
 			if !ok {
-				todoQueue.PushBack(blueChild)
+				todoQueue.push(blueChild)
 				seen[blueChild] = keyExists
 				//log.Debugf("Adding %s to queue", blueChild.GetId())
 			}

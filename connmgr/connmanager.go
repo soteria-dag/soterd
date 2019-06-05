@@ -212,36 +212,29 @@ type ConnManager struct {
 }
 
 // handleFailedConn handles a connection failed due to a disconnect or any
-// other failure. If permanent, it retries the connection after the configured
-// retry duration. Otherwise, if required, it makes a new connection request.
+// other failure. It makes a new connection request.
 // After maxFailedConnectionAttempts new connections will be retried after the
 // configured retry duration.
-func (cm *ConnManager) handleFailedConn(c *ConnReq) {
+func (cm *ConnManager) handleFailedConn() {
 	if atomic.LoadInt32(&cm.stop) != 0 {
 		return
 	}
-	if c.Permanent {
-		c.retryCount++
-		d := time.Duration(c.retryCount) * cm.cfg.RetryDuration
-		if d > maxRetryDuration {
-			d = maxRetryDuration
-		}
-		log.Debugf("Retrying connection to %v in %v", c, d)
-		time.AfterFunc(d, func() {
-			cm.Connect(c)
+
+	if cm.cfg.GetNewAddress == nil {
+		return
+	}
+
+	cm.failedAttempts++
+	if cm.failedAttempts >= maxFailedAttempts {
+		log.Debugf("Max failed connection attempts reached: [%d] "+
+			"-- retrying connection in: %v", maxFailedAttempts,
+			cm.cfg.RetryDuration)
+		time.AfterFunc(cm.cfg.RetryDuration, func() {
+			cm.NewConnReq()
 		})
-	} else if cm.cfg.GetNewAddress != nil {
-		cm.failedAttempts++
-		if cm.failedAttempts >= maxFailedAttempts {
-			log.Debugf("Max failed connection attempts reached: [%d] "+
-				"-- retrying connection in: %v", maxFailedAttempts,
-				cm.cfg.RetryDuration)
-			time.AfterFunc(cm.cfg.RetryDuration, func() {
-				cm.NewConnReq()
-			})
-		} else {
-			go cm.NewConnReq()
-		}
+	} else {
+		log.Debugf("New connection attempt %d", cm.failedAttempts)
+		go cm.NewConnReq()
 	}
 }
 
@@ -265,7 +258,7 @@ func (cm *ConnManager) connHandler() {
 	// Define a function we can use to handle askIsConnected messages, which answers whether a connection
 	// in the message is in a pending or established connection state.
 	// Responses are sent via the answer channel of the message.
-	answerIsConnected := func(msg askIsConnected) {
+	var answerIsConnected = func(msg askIsConnected) {
 		var found bool
 		defer func() {
 			msg.answer <- found
@@ -316,6 +309,22 @@ func (cm *ConnManager) connHandler() {
 				return
 			}
 		}
+	}
+
+	// Define a function for retrying a connection to a peer
+	var retry = func(c *ConnReq) {
+		c.updateState(ConnPending)
+		pending[c.ID()] = c
+		c.retryCount++
+		d := time.Duration(c.retryCount) * cm.cfg.RetryDuration
+		if d > maxRetryDuration {
+			d = maxRetryDuration
+		}
+		log.Debugf("Retrying connection to %v in %v", c, d)
+		time.AfterFunc(d, func() {
+			log.Debugf("Reconnecting to %v", c)
+			cm.Connect(c)
+		})
 	}
 
 out:
@@ -378,7 +387,6 @@ out:
 					log.Debugf("Canceling: %v", connReq)
 					delete(pending, msg.id)
 					continue
-
 				}
 
 				// An existing connection was located, mark as
@@ -388,7 +396,7 @@ out:
 				delete(conns, msg.id)
 
 				if connReq.conn != nil {
-					connReq.conn.Close()
+					_ = connReq.conn.Close()
 				}
 
 				if cm.cfg.OnDisconnection != nil {
@@ -412,11 +420,11 @@ out:
 				if uint32(len(conns)) < cm.cfg.TargetOutbound ||
 					connReq.Permanent {
 
-					connReq.updateState(ConnPending)
-					log.Debugf("Reconnecting to %v",
-						connReq)
-					pending[msg.id] = connReq
-					cm.handleFailedConn(connReq)
+					if connReq.Permanent {
+						retry(connReq)
+					} else {
+						cm.handleFailedConn()
+					}
 				}
 
 			case handleFailed:
@@ -431,7 +439,12 @@ out:
 				connReq.updateState(ConnFailing)
 				log.Debugf("Failed to connect to %v: %v",
 					connReq, msg.err)
-				cm.handleFailedConn(connReq)
+
+				if connReq.Permanent {
+					retry(connReq)
+				} else {
+					cm.handleFailedConn()
+				}
 			}
 
 		case <-cm.quit:
@@ -500,6 +513,7 @@ func (cm *ConnManager) Connect(c *ConnReq) {
 		// Skip connection if we're not supposed to have duplicate connections and there's already
 		// a pending or established connection to the address of this connection request.
 		log.Debugf("Aborting duplicate connection attempt to %v; Connection already in progress or established", c)
+		cm.Remove(c.ID())
 		return
 	}
 

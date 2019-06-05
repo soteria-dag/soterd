@@ -304,11 +304,40 @@ func TestOrderDAGColoring(t *testing.T) {
 		{node: "M", parents: []string{"F", "K"}},
 	}
 
-	genStep := func(g *Graph, i int) {
+	genStep := func(i int, g1, g2 *Graph) {
 		step := steps[i]
-		g.addNodeById(step.node)
-		if len(step.parents) > 0 {
-			g.AddEdgesById(step.node, step.parents)
+		// Make sure that all graphs have a reference to the same node pointer, and not
+		// duplicate Nodes with different pointers.
+		n := newNode(step.node)
+
+		g1.addNode(n)
+		g2.addNode(n)
+
+		if len(step.parents) == 0 {
+			return
+		}
+
+		// We don't need to call AddEdgesById for g2 because addEdgeById modifies the Node type,
+		// which was already done in the call to g1.AddEdgesById().
+		// All we need to do, to keep the graphs consistent is to remove the same nodes from
+		// tips that was done in the call to g1.AddEdgesById().
+		before := g1.tips.elements()
+		g1.AddEdgesById(step.node, step.parents)
+		after := g1.tips.elements()
+
+		bTips := newOrderedNodeSet()
+		for _, tip := range before {
+			bTips.add(tip)
+		}
+
+		aTips := newOrderedNodeSet()
+		for _, tip := range after {
+			aTips.add(tip)
+		}
+
+		removeTips := bTips.difference(aTips)
+		for _, tip := range removeTips.elements() {
+			g2.tips.remove(tip)
 		}
 	}
 
@@ -322,8 +351,7 @@ func TestOrderDAGColoring(t *testing.T) {
 	var noCacheGenesis *Node
 
 	for i, _ := range steps {
-		genStep(cacheGraph, i)
-		genStep(noCacheGraph, i)
+		genStep(i, cacheGraph, noCacheGraph)
 
 		if i == 0 {
 			cacheGenesis = cacheGraph.GetNodeById("GENESIS")
@@ -340,13 +368,15 @@ func TestOrderDAGColoring(t *testing.T) {
 		}
 
 		if !reflect.DeepEqual(GetIds(cacheTips), GetIds(noCacheTips)) {
-			t.Fatalf("Step %d OrderDAG tips not the same between cache and no-cache", i)
+			t.Fatalf("Step %d OrderDAG tips not the same between cache and no-cache:\n\tcacheTips %s\tnoCacheTips %s",
+				i, GetIds(cacheTips), GetIds(noCacheTips))
 		}
 
 		// Order should always be the same in this case, because we aren't generating enough generations of the
 		// graph to trigger caching hits.
 		if !reflect.DeepEqual(GetIds(cacheOrder), GetIds(noCacheOrder)) {
-			t.Fatalf("Step %d OrderDAG order not the same between cache and no-cache", i)
+			t.Fatalf("Step %d OrderDAG order not the same between cache and no-cache:\n\tcacheOrder %s\tnoCacheOrder %s",
+				i, GetIds(cacheOrder), GetIds(noCacheOrder))
 		}
 
 		reason, ok := blueSetSame(cacheBlueSet, noCacheBlueSet)
@@ -386,5 +416,170 @@ func TestFigure4BlueSet(t *testing.T) {
 	if !reflect.DeepEqual(expected, GetIds(orderedNodes)) {
 		t.Errorf("Incorrect ordering for figure 4,  k = 3. Expecting %v, got %v",
 			expected, GetIds(orderedNodes))
+	}
+}
+
+func TestBlueSetCache_Add(t *testing.T) {
+	a := newNode("A")
+	b := newNode("B")
+	ns := newNodeSet()
+	ns.add(b)
+
+	blueSetCache := NewBlueSetCache()
+
+	if len(blueSetCache.cache) != 0 {
+		t.Errorf("wrong cache size; got %d, want %d", len(blueSetCache.cache), 0)
+	}
+
+	blueSetCache.Add(a, ns)
+
+	if len(blueSetCache.cache) != 1 {
+		t.Errorf("wrong cache size; got %d, want %d", len(blueSetCache.cache), 1)
+	}
+
+	cacheNs, ok := blueSetCache.cache[a]
+	if !ok {
+		t.Errorf("failed to create new cache entry for %s", a.GetId())
+	}
+
+	if !reflect.DeepEqual(cacheNs, ns) {
+		t.Errorf("cache entry different from what was added")
+	}
+
+	// Test cache entry expiry  due to Add()
+	for i := 0; i < maxBlueSetCacheSize; i++ {
+		n := newNode(fmt.Sprintf("X%d", i))
+		blueSetCache.Add(n, nil)
+	}
+
+	if len(blueSetCache.cache) != maxBlueSetCacheSize {
+		t.Errorf("wrong cache size; got %d, want %d", len(blueSetCache.cache), maxBlueSetCacheSize)
+	}
+}
+
+func TestBlueSetCache_Expire(t *testing.T) {
+	a := newNode("A")
+	b := newNode("B")
+	ns := newNodeSet()
+	ns.add(b)
+
+	blueSetCache := NewBlueSetCache()
+	blueSetCache.Add(a, ns)
+
+	blueSetCache.Expire(0)
+
+	if len(blueSetCache.cache) != 1 {
+		t.Errorf("wrong cache size; got %d, want %d", len(blueSetCache.cache), 1)
+	}
+
+	blueSetCache.Expire(-1)
+
+	if len(blueSetCache.cache) != 1 {
+		t.Errorf("wrong cache size; got %d, want %d", len(blueSetCache.cache), 1)
+	}
+
+	blueSetCache.Expire(1)
+
+	if len(blueSetCache.cache) != 0 {
+		t.Errorf("wrong cache size; got %d, want %d", len(blueSetCache.cache), 0)
+	}
+
+	blueSetCache.Add(a, ns)
+
+	blueSetCache.Expire(len(blueSetCache.cache) * 2)
+
+	if len(blueSetCache.cache) != 0 {
+		t.Errorf("wrong cache size; got %d, want %d", len(blueSetCache.cache), 0)
+	}
+}
+
+func TestBlueSetCache_GetBlueNodes(t *testing.T) {
+	a := newNode("A")
+	b := newNode("B")
+	c := newNode("C")
+	ns := newNodeSet()
+	ns.add(b)
+	ns.add(c)
+
+	blueSetCache := NewBlueSetCache()
+	blueSetCache.Add(a, ns)
+
+	nodes := blueSetCache.GetBlueNodes(a)
+
+	if len(nodes) != ns.size() {
+		t.Errorf("wrong blue nodes size; got %d, want %d", len(nodes), ns.size())
+	}
+
+	if !reflect.DeepEqual(GetIds(nodes), GetIds(ns.elements())) {
+		t.Errorf("nodes for cache hit don't match; got %v, want %v", GetIds(nodes), GetIds(ns.elements()))
+	}
+
+	nodes = blueSetCache.GetBlueNodes(c)
+	if nodes != nil {
+		t.Errorf("nodes should be nil for non-existent cache entry %s", c.GetId())
+	}
+
+	nodes = blueSetCache.GetBlueNodes(nil)
+	if nodes != nil {
+		t.Errorf("nodes should be nil for non-existent cache entry %v", nil)
+	}
+}
+
+func TestBlueSetCache_GetBlueSet(t *testing.T) {
+	a := newNode("A")
+	b := newNode("B")
+	c := newNode("C")
+	ns := newNodeSet()
+	ns.add(b)
+	ns.add(c)
+
+	blueSetCache := NewBlueSetCache()
+	blueSetCache.Add(a, ns)
+
+	set := blueSetCache.GetBlueSet(a)
+
+	if set.size() != ns.size() {
+		t.Errorf("wrong blueSet size; got %d, want %d", set.size(), ns.size())
+	}
+
+	if !reflect.DeepEqual(GetIds(set.elements()), GetIds(ns.elements())) {
+		t.Errorf("cache-hit doesn't match blueSet; got %v, want %v", GetIds(set.elements()), GetIds(ns.elements()))
+	}
+
+	set = blueSetCache.GetBlueSet(c)
+	if set != nil {
+		t.Errorf("blueSet should be nil for non-existent cache entry %s", c.GetId())
+	}
+
+	set = blueSetCache.GetBlueSet(nil)
+	if set != nil {
+		t.Errorf("blueSet should be nil for non-existent cache entry %v", nil)
+	}
+}
+
+func TestBlueSetCache_InCache(t *testing.T) {
+	a := newNode("A")
+	b := newNode("B")
+	c := newNode("C")
+	ns := newNodeSet()
+	ns.add(b)
+	ns.add(c)
+
+	blueSetCache := NewBlueSetCache()
+	blueSetCache.Add(a, ns)
+
+	ok := blueSetCache.InCache(a)
+	if !ok {
+		t.Errorf("cache miss for %s", a.GetId())
+	}
+
+	ok = blueSetCache.InCache(c)
+	if ok {
+		t.Errorf("cache hit for %s", c.GetId())
+	}
+
+	ok = blueSetCache.InCache(nil)
+	if ok {
+		t.Errorf("cache hit for %v", nil)
 	}
 }

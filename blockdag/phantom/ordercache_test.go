@@ -15,11 +15,11 @@ func modInt32(x, y int32) int32 {
 }
 
 func TestOrderCache(t *testing.T) {
-	oc := NewOrderCache()
+	var oc = NewOrderCache()
 
 	a := newNode("a")
-	order := []*Node{a}
-	tips := []*Node{a}
+	var order = []*Node{a}
+	var tips = []*Node{a}
 
 	// Check that we can't add to cache for low heights
 	err := oc.Add(0, tips, order)
@@ -83,10 +83,11 @@ func TestOrderCache(t *testing.T) {
 	}
 
 	// Check that entries are only added at correct intervals
-	desiredEntries := 4
-	count := minOrderCacheDistance * int32(desiredEntries)
-	for h := int32(0); h <= count; h++ {
-		_ = oc.Add(int32(h), tips, order)
+	offset := int32(1) // We start at height 1, since height 0 is genesis block
+	count := minOrderCacheDistance * int32(3)
+	desiredEntries := int((count + offset) - minOrderCacheDistance)
+	for h := offset; h < count + offset; h++ {
+		_ = oc.Add(h, tips, order)
 
 		if modInt32(h, minOrderCacheDistance) == 0 {
 			if _, ok := oc.CanAdd(h); ok {
@@ -94,7 +95,7 @@ func TestOrderCache(t *testing.T) {
 			}
 
 			size := oc.Size()
-			_ = oc.Add(int32(h), tips, order)
+			_ = oc.Add(h, tips, order)
 			if oc.Size() > size {
 				t.Fatalf("orderCache shouldn't allow duplicate cache entries at the same height; got %d, want %d", oc.Size(), size)
 			}
@@ -111,8 +112,8 @@ func TestOrderCache(t *testing.T) {
 	}
 
 	expectedHeights := make([]int32, 0, desiredEntries)
-	for i := 1; i <= desiredEntries; i++ {
-		expectedHeights = append(expectedHeights, minOrderCacheDistance* int32(i))
+	for i := minOrderCacheDistance; i < minOrderCacheDistance + int32(desiredEntries); i++ {
+		expectedHeights = append(expectedHeights, i)
 	}
 
 	if !reflect.DeepEqual(oc.Heights(), expectedHeights) {
@@ -123,5 +124,15 @@ func TestOrderCache(t *testing.T) {
 	oc.Expire(oc.Size() + 1)
 	if oc.Size() != 0 {
 		t.Fatalf("orderCache expiry failed when desired expiry count higher than orderCache size; got %d, want %d", oc.Size(), 0)
+	}
+
+	// Check maximum size of cache
+	count = int32(maxOrderCacheSize) + (minOrderCacheDistance * 2) + int32(cacheFullExpireInterval + 1)
+	for h := int32(0); h < count; h++ {
+		_ = oc.Add(int32(h), tips, order)
+	}
+
+	if oc.Size() > maxOrderCacheSize {
+		t.Fatalf("orderCache max size greater than limit; got %d, want %d", oc.Size(), maxOrderCacheSize)
 	}
 }
