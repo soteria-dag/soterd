@@ -36,9 +36,9 @@ const (
 	// inv message to a peer.
 	DefaultTrickleInterval = 10 * time.Second
 
-	// minAcceptableProtocolVersion is the lowest protocol version that a
+	// MinAcceptableProtocolVersion is the lowest protocol version that a
 	// connected peer may support.
-	minAcceptableProtocolVersion = wire.MultipleAddressVersion
+	MinAcceptableProtocolVersion = wire.MultipleAddressVersion
 
 	// outputBufferSize is the number of elements the output channels use.
 	outputBufferSize = 50
@@ -195,7 +195,9 @@ type MessageListeners struct {
 	OnMerkleBlock func(p *Peer, msg *wire.MsgMerkleBlock)
 
 	// OnVersion is invoked when a peer receives a version soter message.
-	OnVersion func(p *Peer, msg *wire.MsgVersion)
+	// The caller may return a reject message in which case the message will
+	// be sent to the peer and the peer will be disconnected.
+	OnVersion func(p *Peer, msg *wire.MsgVersion) *wire.MsgReject
 
 	// OnVerAck is invoked when a peer receives a verack soter message.
 	OnVerAck func(p *Peer, msg *wire.MsgVerAck)
@@ -1456,7 +1458,7 @@ out:
 		p.stallControl <- stallControlMsg{sccHandlerStart, rmsg}
 		switch msg := rmsg.(type) {
 		case *wire.MsgVersion:
-
+			// Limit to one version message per peer.
 			p.PushRejectMsg(msg.Command(), wire.RejectDuplicate,
 				"duplicate version message", nil, true)
 			break out
@@ -1972,10 +1974,30 @@ func (p *Peer) Disconnect() {
 	close(p.quit)
 }
 
-// handleRemoteVersionMsg is invoked when a version soter message is received
-// from the remote peer.  It will return an error if the remote peer's version
-// is not compatible with ours.
-func (p *Peer) handleRemoteVersionMsg(msg *wire.MsgVersion) error {
+// readRemoteVersionMsg waits for the next message to arrive from the remote
+// peer. If the next message is not a version message or the version is not
+// acceptable then return an error.
+func (p *Peer) readRemoteVersionMsg() error {
+	// Read their version message.
+	remoteMsg, _, err := p.readMessage(wire.LatestEncoding)
+	if err != nil {
+		return err
+	}
+
+	// Notify and disconnect clients if the first message is not a version message.
+	msg, ok := remoteMsg.(*wire.MsgVersion)
+	if !ok {
+		reason := "a version message must precede all others"
+		log.Errorf(reason)
+
+		rejectMsg := wire.NewMsgReject(remoteMsg.Command(), wire.RejectMalformed,
+			reason)
+		// It doesn't matter much if the peer doesn't get our rejection message, since we
+		// don't intend on communicating with them anyway.
+		_ = p.writeMessage(rejectMsg, wire.LatestEncoding)
+		return errors.New(reason)
+	}
+
 	// Detect self connections.
 	if !allowSelfConns && sentNonces.Exists(msg.Nonce) {
 		return errors.New("disconnecting peer connected to self")
@@ -1986,6 +2008,9 @@ func (p *Peer) handleRemoteVersionMsg(msg *wire.MsgVersion) error {
 	if err == nil {
 		if !genHash.IsEqual(p.cfg.ChainParams.GenesisHash) {
 			reason := fmt.Sprintf("peer genesis block hash different from ours (%s != %s)", genHash, p.cfg.ChainParams.GenesisHash)
+			rejectMsg := wire.NewMsgReject(remoteMsg.Command(), wire.RejectInvalid,
+				reason)
+			_ = p.writeMessage(rejectMsg, wire.LatestEncoding)
 			return errors.New(reason)
 		}
 	}
@@ -1995,20 +2020,21 @@ func (p *Peer) handleRemoteVersionMsg(msg *wire.MsgVersion) error {
 	remoteVer, exists := agents[p.cfg.UserAgentName]
 	if exists && remoteVer.Major != p.cfg.UserAgentVersion.Major {
 		reason := fmt.Sprintf("peer version %s is incompatible with our version %s", remoteVer, p.cfg.UserAgentVersion)
+		rejectMsg := wire.NewMsgReject(remoteMsg.Command(), wire.RejectInvalid,
+			reason)
+		_ = p.writeMessage(rejectMsg, wire.LatestEncoding)
 		return errors.New(reason)
 	}
 
-	// Notify and disconnect clients that have a protocol version that is
-	// too old.
-	//
-	// NOTE: If minAcceptableProtocolVersion is raised to be higher than
-	// wire.RejectVersion, this should send a reject packet before
-	// disconnecting.
-	if uint32(msg.ProtocolVersion) < minAcceptableProtocolVersion {
-		reason := fmt.Sprintf("protocol version must be %d or greater",
-			minAcceptableProtocolVersion)
-		return errors.New(reason)
-	}
+	// Negotiate the protocol version, and set services to what the remote peer advertised.
+	p.flagsMtx.Lock()
+	p.advertisedProtoVer = uint32(msg.ProtocolVersion)
+	p.protocolVersion = minUint32(p.protocolVersion, p.advertisedProtoVer)
+	p.versionKnown = true
+	p.services = msg.Services
+	p.flagsMtx.Unlock()
+	log.Debugf("Negotiated protocol version %d for peer %s",
+		p.protocolVersion, p)
 
 	// Updating a bunch of stats including block based stats, and the
 	// peer's time offset.
@@ -2018,22 +2044,9 @@ func (p *Peer) handleRemoteVersionMsg(msg *wire.MsgVersion) error {
 	p.timeOffset = msg.Timestamp.Unix() - time.Now().Unix()
 	p.statsMtx.Unlock()
 
-	// Negotiate the protocol version.
+	// Set the peer's ID, user agent, supported services.
 	p.flagsMtx.Lock()
-	p.advertisedProtoVer = uint32(msg.ProtocolVersion)
-	p.protocolVersion = minUint32(p.protocolVersion, p.advertisedProtoVer)
-	p.versionKnown = true
-	log.Debugf("Negotiated protocol version %d for peer %s",
-		p.protocolVersion, p)
-
-	// Set the peer's ID.
 	p.id = atomic.AddInt32(&nodeCount, 1)
-
-	// Set the supported services for the peer to what the remote peer
-	// advertised.
-	p.services = msg.Services
-
-	// Set the remote peer's user agent.
 	p.userAgent = msg.UserAgent
 
 	// Determine if the peer would like to receive witness data with
@@ -2052,36 +2065,33 @@ func (p *Peer) handleRemoteVersionMsg(msg *wire.MsgVersion) error {
 		p.wireEncoding = wire.WitnessEncoding
 	}
 
-	return nil
-}
-
-// readRemoteVersionMsg waits for the next message to arrive from the remote
-// peer.  If the next message is not a version message or the version is not
-// acceptable then return an error.
-func (p *Peer) readRemoteVersionMsg() error {
-	// Read their version message.
-	msg, _, err := p.readMessage(wire.LatestEncoding)
-	if err != nil {
-		return err
-	}
-
-	remoteVerMsg, ok := msg.(*wire.MsgVersion)
-	if !ok {
-		errStr := "A version message must precede all others"
-		log.Errorf(errStr)
-
-		rejectMsg := wire.NewMsgReject(msg.Command(), wire.RejectMalformed,
-			errStr)
-		return p.writeMessage(rejectMsg, wire.LatestEncoding)
-	}
-
-	if err := p.handleRemoteVersionMsg(remoteVerMsg); err != nil {
-		return err
-	}
-
+	// Invoke the callback if specified.
 	if p.cfg.Listeners.OnVersion != nil {
-		p.cfg.Listeners.OnVersion(p, remoteVerMsg)
+		rejectMsg := p.cfg.Listeners.OnVersion(p, msg)
+		if rejectMsg != nil {
+			_ = p.writeMessage(rejectMsg, wire.LatestEncoding)
+			return errors.New(rejectMsg.Reason)
+		}
 	}
+
+	// Notify and disconnect clients that have a protocol version that is
+	// too old.
+	//
+	// NOTE: If minAcceptableProtocolVersion is raised to be higher than
+	// wire.RejectVersion, this should send a reject packet before
+	// disconnecting.
+	if uint32(msg.ProtocolVersion) < MinAcceptableProtocolVersion {
+		// Send a reject message indicating the protocol version is
+		// obsolete and wait for the message to be sent before
+		// disconnecting.
+		reason := fmt.Sprintf("protocol version must be %d or greater",
+			MinAcceptableProtocolVersion)
+		rejectMsg := wire.NewMsgReject(msg.Command(), wire.RejectObsolete,
+			reason)
+		_ = p.writeMessage(rejectMsg, wire.LatestEncoding)
+		return errors.New(reason)
+	}
+
 	return nil
 }
 
@@ -2219,9 +2229,11 @@ func (p *Peer) start() error {
 	select {
 	case err := <-negotiateErr:
 		if err != nil {
+			p.Disconnect()
 			return err
 		}
 	case <-time.After(negotiateTimeout):
+		p.Disconnect()
 		return errors.New("protocol negotiation timeout")
 	}
 	log.Debugf("Connected to %s", p.Addr())

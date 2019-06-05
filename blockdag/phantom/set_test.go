@@ -358,3 +358,228 @@ func TestOrderedNodeSetIntersection(t *testing.T) {
 			GetIds(inter.elements()), GetIds(expected))
 	}
 }
+
+func TestNodeListAt(t *testing.T) {
+	nl := newNodeList(0)
+	a := newNode("A")
+	b := newNode("B")
+
+	nl.push(a)
+	nl.push(b)
+
+	if nl.at(-1) != nil {
+		t.Errorf("nodeList should return nil for a negative index")
+	}
+
+	if nl.at(nl.size() + 1) != nil {
+		t.Errorf("nodeList should return nil for an out-of-bounds index")
+	}
+
+	if nl.at(0) != a {
+		t.Errorf("wrong value at index %d; got %s, want %s", 0, nl.at(0).GetId(), a.GetId())
+	}
+
+	if nl.at(1) != b {
+		t.Errorf("wrong value at index %d; got %s, want %s", 1, nl.at(1).GetId(), b.GetId())
+	}
+}
+
+func TestNodeListDelete(t *testing.T) {
+	nl := newNodeList(0)
+	a := newNode("A")
+	b := newNode("B")
+	c := newNode("C")
+
+	nl.push(a)
+	nl.push(b)
+	nl.push(c)
+
+	n := nl.delete(1)
+
+	if n != b {
+		t.Errorf("wrong value deleted; got %s, want %s", n.GetId(), b.GetId())
+	}
+
+	if nl.size() != 2 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 2)
+	}
+
+	expected := []*Node{a, c}
+	if !reflect.DeepEqual(nl.elements, expected) {
+		t.Errorf("contents wrong; got %v, want %v", GetIds(nl.elements), GetIds(expected))
+	}
+}
+
+func TestNodeListInsert(t *testing.T) {
+	nl := newNodeList(0)
+	a := newNode("A")
+	b := newNode("B")
+	c := newNode("C")
+
+	nl.push(a)
+	nl.push(c)
+
+	nl.insert(1, b)
+
+	expected := []*Node{a, b, c}
+
+	if !reflect.DeepEqual(nl.elements, expected) {
+		t.Errorf("contents wrong; got %v, want %v", GetIds(nl.elements), GetIds(expected))
+	}
+
+	if nl.size() != 3 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 3)
+	}
+}
+
+func TestNodeListPush(t *testing.T) {
+	nl := newNodeList(0)
+	a := newNode("A")
+	b := newNode("B")
+
+	if nl.size() != 0 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 0)
+	}
+
+	nl.push(a)
+
+	if nl.size() != 1 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 1)
+	}
+
+	nl.push(b)
+
+	if nl.size() != 2 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 2)
+	}
+
+	nl.push(nil)
+
+	if nl.size() != 3 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 3)
+	}
+
+	expected := []*Node{a, b, nil}
+	if !reflect.DeepEqual(nl.elements, expected) {
+		t.Errorf("contents wrong; got %v, want %v", GetIds(nl.elements), GetIds(expected))
+	}
+}
+
+func TestNodeListPop(t *testing.T) {
+	nl := newNodeList(0)
+	a := newNode("A")
+	b := newNode("B")
+
+	nl.push(a)
+	nl.push(b)
+
+	n := nl.pop()
+
+	if nl.size() != 1 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 1)
+	}
+
+	if n != b {
+		t.Errorf("wrong value popped; got %s, want %s", n.GetId(), b.GetId())
+	}
+
+	n = nl.pop()
+
+	if nl.size() != 0 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 0)
+	}
+
+	if n != a {
+		t.Errorf("wrong value popped; got %s, want %s", n.GetId(), a.GetId())
+	}
+
+	n = nl.pop()
+
+	if nl.size() != 0 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 0)
+	}
+
+	if n != nil {
+		t.Errorf("wrong value popped; got %s, want %v", n.GetId(), nil)
+	}
+}
+
+func TestNodeListShift(t *testing.T) {
+	nl := newNodeList(0)
+	a := newNode("A")
+	b := newNode("B")
+
+	nl.push(a)
+	nl.push(b)
+
+	n := nl.shift()
+
+	if nl.size() != 1 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 1)
+	}
+
+	if n != a {
+		t.Errorf("wrong value shifted; got %s, want %s", n.GetId(), a.GetId())
+	}
+
+	n = nl.shift()
+
+	if nl.size() != 0 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 0)
+	}
+
+	if n != b {
+		t.Errorf("wrong value shifted; got %s, want %s", n.GetId(), b.GetId())
+	}
+
+	n = nl.shift()
+
+	if nl.size() != 0 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 0)
+	}
+
+	if n != nil {
+		t.Errorf("wrong value shifted; got %s, want %v", n.GetId(), nil)
+	}
+}
+
+func TestNodeListSize(t *testing.T) {
+	nl := newNodeList(0)
+	a := newNode("A")
+	b := newNode("B")
+
+	if nl.size() != 0 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 0)
+	}
+
+	nl.push(a)
+
+	if nl.size() != 1 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 1)
+	}
+
+	nl.push(b)
+
+	if nl.size() != 2 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 2)
+	}
+}
+
+func TestNodeListUnshift(t *testing.T) {
+	nl := newNodeList(0)
+	a := newNode("A")
+	b := newNode("B")
+
+	nl.push(b)
+	nl.unshift(a)
+
+	if nl.size() != 2 {
+		t.Errorf("size is wrong; got %d, want %d", nl.size(), 2)
+	}
+
+	expected := []*Node{a, b}
+
+	if !reflect.DeepEqual(nl.elements, expected) {
+		t.Errorf("contents wrong; got %v, want %v", GetIds(nl.elements), GetIds(expected))
+	}
+}

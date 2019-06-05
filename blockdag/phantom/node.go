@@ -12,15 +12,15 @@ import "sort"
 // child of the node has an edge from it to the node: child -> node
 type Node struct {
 	id string
-	parents *nodeSet
-	children *nodeSet
+	parents map[*Node]struct{}
+	children map[*Node]struct{}
 }
 
 func newNode(id string) *Node {
 	return &Node{
 		id: id,
-		parents: newNodeSet(),
-		children: newNodeSet(),
+		parents: make(map[*Node]struct{}),
+		children: make(map[*Node]struct{}),
 	}
 }
 
@@ -31,7 +31,7 @@ func (n *Node) GetId() string {
 func (n *Node) getChildren() *nodeSet {
 	set := newNodeSet()
 
-	for _, k := range n.children.elements() {
+	for k := range n.children {
 		set.add(k)
 	}
 
@@ -50,11 +50,8 @@ func GetIds(nodes []*Node) []string {
 // SortNodes returns a slice of the nodes that are alphabetically-sorted
 // (useful for sorting orderedNodeSet.elements())
 func SortNodes(nodes []*Node) []*Node {
-	sorted := make([]*Node, 0, len(nodes))
-
-	for _, n := range nodes {
-		sorted = append(sorted, n)
-	}
+	sorted := make([]*Node, len(nodes))
+	copy(sorted, nodes)
 
 	less := func(i, j int) bool {
 		if nodes[i].GetId() < nodes[j].GetId() {

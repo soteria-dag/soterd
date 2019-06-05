@@ -22,8 +22,8 @@ func TestNodeGetChildren(t *testing.T) {
 	var c1 = newNode("c1")
 	var c2 = newNode("c2")
 
-	parent.children.add(c1)
-	parent.children.add(c2)
+	parent.children[c1] = keyExists
+	parent.children[c2] = keyExists
 
 	var children = parent.getChildren().elements()
 	var expected = []*Node{c1, c2}

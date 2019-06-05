@@ -38,11 +38,11 @@ func TestGraphAddEdge(t *testing.T) {
 
 	var nodeA = g.GetNodeById("A")
 	var nodeB = g.GetNodeById("B")
-	if !nodeA.parents.contains(nodeB) {
+	if _, ok := nodeA.parents[nodeB]; !ok {
 		t.Errorf("Edge from A -> B not added to parents correctly.")
 	}
 
-	if !nodeB.children.contains(nodeA) {
+	if _, ok := nodeB.children[nodeA]; !ok {
 		t.Errorf("Edge from A -> B not added to children correctly.")
 	}
 }

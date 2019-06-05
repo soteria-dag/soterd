@@ -74,8 +74,9 @@ func Example_newOutboundPeer() {
 		Services:         0,
 		TrickleInterval:  time.Second * 10,
 		Listeners: peer.MessageListeners{
-			OnVersion: func(p *peer.Peer, msg *wire.MsgVersion) {
+			OnVersion: func(p *peer.Peer, msg *wire.MsgVersion) *wire.MsgReject {
 				fmt.Println("outbound: received version")
+				return nil
 			},
 			OnVerAck: func(p *peer.Peer, msg *wire.MsgVerAck) {
 				verack <- struct{}{}

@@ -5,8 +5,6 @@
 package phantom
 
 import (
-	"container/list"
-	"sort"
 	"strings"
 	"sync"
 )
@@ -17,6 +15,7 @@ var keyExists = struct{}{}
 type Graph struct {
 	tips *orderedNodeSet
 	nodes map[string]*Node
+	pastCache *NodeGraphCache
 	sync.RWMutex
 }
 
@@ -24,6 +23,7 @@ func NewGraph() *Graph {
 	return &Graph {
 		tips: newOrderedNodeSet(),
 		nodes: make(map[string]*Node),
+		pastCache: NewNodeGraphCache("past"),
 	}
 }
 
@@ -86,13 +86,13 @@ func (g *Graph) addEdgeById(n1 string, n2 string) bool {
 		return false
 	}
 
-	if node1.parents.contains(node2) {
+	if _, ok := node1.parents[node2]; ok {
 		return false
 	}
 
 	// edge points from parent to child
-	node1.parents.add(node2)
-	node2.children.add(node1)
+	node1.parents[node2] = keyExists
+	node2.children[node1] = keyExists
 	g.tips.remove(node2)
 
 	return true
@@ -115,12 +115,12 @@ func (g *Graph) addEdge(n1 *Node, n2 *Node) bool {
 		return false
 	}
 
-	if n1.parents.contains(n2) {
+	if _, ok := n1.parents[n2]; ok {
 		return false
 	}
 
-	n1.parents.add(n2)
-	n2.children.add(n1)
+	n1.parents[n2] = keyExists
+	n2.children[n1] = keyExists
 	g.tips.remove(n2)
 
 	return true
@@ -134,12 +134,12 @@ func (g *Graph) removeEdge(n1 *Node, n2 *Node) bool {
 		return false
 	}
 
-	if !n1.parents.contains(n2) {
+	if _, ok := n1.parents[n2]; !ok {
 		return false
 	}
 
-	n1.parents.remove(n2)
-	n2.children.remove(n1)
+	delete(n1.parents, n2)
+	delete(n2.children, n1)
 
 	return true
 }
@@ -165,39 +165,31 @@ func (g *Graph) AddEdgesById(n1 string, parents []string) []bool{
 func (g *Graph) PrintGraph() string {
 	var sb strings.Builder
 	expanded := make(map[*Node]bool)
-	todo := list.New()
+	todo := newNodeList(g.GetSize())
 
 	g.RLock()
 	tips := g.tips.elements()
 	for _, tip := range tips {
-		todo.PushBack(tip)
+		todo.push(tip)
 	}
 
-	for todo.Len() > 0 {
-		node2 := todo.Front().Value.(*Node)
+	for todo.size() > 0 {
+		node2 := todo.shift()
 
 		if !expanded[node2] {
 			//fmt.Printf("node2 ID not expanded: %s\n", node2.id)
-			if node2.parents.size() > 0 {
+			size := len(node2.parents)
+			if size > 0 {
 				// sort parents so order is always the same
-				var parents = make([]*Node, node2.parents.size())
+				var parents = make([]*Node, size)
 				x := 0
-				for _, k := range node2.parents.elements() {
+				for k := range node2.parents {
 					parents[x] = k
 					x++
 				}
 
-				sort.Slice(parents, func(i, j int) bool {
-					if parents[i].id < parents[j].id {
-						return true
-					} else {
-						return false
-					}
-				})
-
-
-				for _, p := range parents {
-					todo.PushBack(p)
+				for _, p := range SortNodes(parents) {
+					todo.push(p)
 					sb.WriteString(node2.id + "->" + p.id + "\n")
 				}
 			} else {
@@ -205,7 +197,6 @@ func (g *Graph) PrintGraph() string {
 			}
 		}
 
-		todo.Remove(todo.Front())
 		expanded[node2] = true
 	}
 	g.RUnlock()
@@ -261,28 +252,50 @@ func (g *Graph) getPast(node2 *Node) *Graph {
 		return nil
 	}
 
+	if g.pastCache != nil {
+		e, ok := g.pastCache.Get(node2)
+		if ok {
+			return e.Graph
+		}
+	}
+
 	var subgraph = NewGraph()
-	todo := list.New()
+	todo := newNodeList(g.getSize())
 	expanded := make(map[*Node]bool)
 
-	for _, p := range node2.parents.elements() {
-		todo.PushBack(p)
+	// We add nodes to the subgraph in a deterministic way, because the execution flow is:
+	// Node.parents (as a map) -> getPast -> getAnticone -> calculateBlueSet -> OrderDAG
+	// * blueSet is calculated in order of tips, and
+	// * dag order is calculated based off of blueSet, so
+	// if the tips order here changes between calls, the result produced by OrderDAG can change between calls too.
+	// We want OrderDAG results to be consistent, so we make sure the parents are added in a consistent way here.
+	parents := make([]*Node, len(node2.parents))
+	index := 0
+	for p := range node2.parents {
+		parents[index] = p
+		index += 1
+	}
+
+	for _, p := range SortNodes(parents) {
+		todo.push(p)
 		subgraph.tips.add(p)
 	}
 
-	for todo.Len() > 0 {
-		node := todo.Front().Value.(*Node)
+	for todo.size() > 0 {
+		node := todo.shift()
 
-		if node.parents.size() > 0 && !expanded[node] {
-			for _, p := range node.parents.elements() {
-				todo.PushBack(p)
-
+		if len(node.parents) > 0 && !expanded[node] {
+			for p := range node.parents {
+				todo.push(p)
 			}
 		}
-		todo.Remove(todo.Front())
+
 		expanded[node] = true
 		subgraph.nodes[node.id] = node
 	}
+
+	// Cache the resulting graph
+	g.pastCache.Add(node2, subgraph)
 	
 	return subgraph
 }
@@ -302,24 +315,22 @@ func (g *Graph) getFuture(node2 *Node) *nodeSet {
 
 	var futureNodes = newNodeSet()
 
-	todo := list.New()
+	todo := newNodeList(g.getSize())
 	expanded := make(map[*Node]bool)
 
-	for _, c := range node2.children.elements() {
-		todo.PushBack(c)
-
+	for c := range node2.children {
+		todo.push(c)
 	}
 
-	for todo.Len() > 0 {
-		node := todo.Front().Value.(*Node)
+	for todo.size() > 0 {
+		node := todo.shift()
 
-		if node.children.size() > 0 && !expanded[node] {
-			for _, c := range node.children.elements() {
-				todo.PushBack(c)
-
+		if len(node.children) > 0 && !expanded[node] {
+			for c := range node.children {
+				todo.push(c)
 			}
 		}
-		todo.Remove(todo.Front())
+
 		expanded[node] = true
 		futureNodes.add(node)
 	}
@@ -401,6 +412,8 @@ func (g *Graph) GetMissingNodes(subtips []string) []string {
 // returns a copy of the graph with a virtual node at the end, whose parents are the tips of the graph
 func (g *Graph) getVirtual() *Graph {
 	vg := NewGraph()
+	// Share the node past cache with the copy of the graph
+	vg.pastCache = g.pastCache
 
 	for k,v := range g.nodes {
 		vg.nodes[k] = v
@@ -432,11 +445,11 @@ func (g *Graph) removeTip(n1 *Node) {
 	if g.tips.contains(n1) {
 		// remove from tip set
 		g.tips.remove(n1)
-		for _, parent := range n1.parents.elements() {
+		for parent := range n1.parents {
 			// remove from children
-			parent.children.remove(n1)
+			delete(parent.children, n1)
 			// add to tips set if parent has no children
-			if parent.children.size() == 0 {
+			if len(parent.children) == 0 {
 				g.tips.add(parent)
 			}
 		}

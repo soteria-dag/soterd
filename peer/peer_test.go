@@ -433,8 +433,9 @@ func TestPeerListeners(t *testing.T) {
 			OnMerkleBlock: func(p *peer.Peer, msg *wire.MsgMerkleBlock) {
 				ok <- msg
 			},
-			OnVersion: func(p *peer.Peer, msg *wire.MsgVersion) {
+			OnVersion: func(p *peer.Peer, msg *wire.MsgVersion) *wire.MsgReject {
 				ok <- msg
+				return nil
 			},
 			OnVerAck: func(p *peer.Peer, msg *wire.MsgVerAck) {
 				verack <- struct{}{}
@@ -957,6 +958,16 @@ func TestMismatchedGenesisBlock(t *testing.T) {
 		t.Fatal("Peer did not automatically disconnect")
 	}
 
+	// Expect a reject message from peer
+	select {
+	case msg, chanOpen := <-outboundMessages:
+		if chanOpen && msg.Command() != "reject" {
+			t.Fatalf("Expected a different message from peer; got %s, want %s", msg.Command(), "reject")
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("Timeout waiting for peer to send reject message")
+	}
+
 	// Expect no further outbound messages from peer
 	select {
 	case msg, chanOpen := <-outboundMessages:
@@ -1065,6 +1076,16 @@ func TestIncompatibleUAVersion(t *testing.T) {
 		t.Fatal("Peer did not automatically disconnect")
 	}
 
+	// Expect a reject message from peer
+	select {
+	case msg, chanOpen := <-outboundMessages:
+		if chanOpen && msg.Command() != "reject" {
+			t.Fatalf("Expected a different message from peer; got %s, want %s", msg.Command(), "reject")
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("Timeout waiting for peer to send reject message")
+	}
+
 	// Expect no further outbound messages from peer
 	select {
 	case msg, chanOpen := <-outboundMessages:
@@ -1073,6 +1094,65 @@ func TestIncompatibleUAVersion(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Timeout waiting for remote reader to close")
+	}
+}
+
+// TestDuplicateVersionMsg ensures that receiving a version message after one
+// has already been received results in the peer being disconnected.
+func TestDuplicateVersionMsg(t *testing.T) {
+	// Create a pair of peers that are connected to each other using a fake
+	// connection.
+	verack := make(chan struct{})
+	peerCfg := &peer.Config{
+		Listeners: peer.MessageListeners{
+			OnVerAck: func(p *peer.Peer, msg *wire.MsgVerAck) {
+				verack <- struct{}{}
+			},
+		},
+		UserAgentName:    "peer",
+		UserAgentVersion: semver.Version{Major:1, Minor: 0, Patch: 0},
+		ChainParams:      &chaincfg.MainNetParams,
+		Services:         0,
+	}
+	inConn, outConn := pipe(
+		&conn{laddr: "10.0.0.1:9108", raddr: "10.0.0.2:9108"},
+		&conn{laddr: "10.0.0.2:9108", raddr: "10.0.0.1:9108"},
+	)
+	outPeer, err := peer.NewOutboundPeer(peerCfg, inConn.laddr)
+	if err != nil {
+		t.Fatalf("NewOutboundPeer: unexpected err: %v\n", err)
+	}
+	outPeer.AssociateConnection(outConn)
+	inPeer := peer.NewInboundPeer(peerCfg)
+	inPeer.AssociateConnection(inConn)
+	// Wait for the veracks from the initial protocol version negotiation.
+	for i := 0; i < 2; i++ {
+		select {
+		case <-verack:
+		case <-time.After(time.Second):
+			t.Fatal("verack timeout")
+		}
+	}
+	// Queue a duplicate version message from the outbound peer and wait until
+	// it is sent.
+	done := make(chan struct{})
+	outPeer.QueueMessage(&wire.MsgVersion{}, done)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("send duplicate version timeout")
+	}
+	// Ensure the peer that is the recipient of the duplicate version closes the
+	// connection.
+	disconnected := make(chan struct{}, 1)
+	go func() {
+		inPeer.WaitForDisconnect()
+		disconnected <- struct{}{}
+	}()
+	select {
+	case <-disconnected:
+	case <-time.After(time.Second):
+		t.Fatal("peer did not disconnect")
 	}
 }
 
