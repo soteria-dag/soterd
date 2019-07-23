@@ -8,7 +8,7 @@ These instructions describe getting started with soterd using the [docker](https
 
     ```bash
     mkdir soteria-dag
-    git clone https://github.com:soteria-dag/soterwallet.git soteria-dag/soterwallet
+    git clone https://github.com/soteria-dag/soterwallet.git soteria-dag/soterwallet
     ```
 
 
