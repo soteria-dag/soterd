@@ -8,14 +8,14 @@ These instructions describe getting started with soterd using the [docker](https
 
     ```bash
     mkdir soteria-dag
-    git clone git@github.com:soteria-dag/soterwallet.git soteria-dag/soterwallet
+    git clone https://github.com:soteria-dag/soterwallet.git soteria-dag/soterwallet
     ```
 
 
 1. Clone the soteria-dag soterd git repository
 
     ```bash
-    git clone git@github.com:soteria-dag/soterd.git soteria-dag/soterd
+    git clone https://github.com/soteria-dag/soterd.git soteria-dag/soterd
     ```
 
 2. Build the docker image for soteria-dag/soterd
