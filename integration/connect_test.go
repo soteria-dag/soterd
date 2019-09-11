@@ -129,7 +129,14 @@ func TestRPCGetAddrCache(t *testing.T) {
 		}
 
 		count := 0
-		for _, a := range cache.Addresses {
+		for _, a := range cache.Inbound {
+			if a == m.P2PAddress() {
+				t.Fatalf("miner %d returned its own address (%s) in getaddrcache call. This shouldn't happen!", i, a)
+			}
+			count++
+		}
+
+		for _, a := range cache.Outbound {
 			if a == m.P2PAddress() {
 				t.Fatalf("miner %d returned its own address (%s) in getaddrcache call. This shouldn't happen!", i, a)
 			}

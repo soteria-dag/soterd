@@ -208,7 +208,7 @@ func DumpDAG(i int, node *Harness) error {
 //
 // RenderDagsDot makes use of the "dot" command, which is a part of the "graphviz" suite of software.
 // http://graphviz.org/
-func RenderDagsDot(nodes []*Harness) ([]byte, error) {
+func RenderDagsDot(nodes []*Harness, rankdir string) ([]byte, error) {
 	var dot bytes.Buffer
 	// How many characters of a hash string to use for the 'label' of a block in the graph
 	smallHashLen := 7
@@ -285,6 +285,12 @@ func RenderDagsDot(nodes []*Harness) ([]byte, error) {
 
 	// Set graph-level attribute to help keep a tighter left-aligned layout of graph in large renderings.
 	_, err = fmt.Fprintln(&dot, "ordering=out;")
+	if err != nil {
+		return dot.Bytes(), err
+	}
+
+	// Set graph orientation 
+	_, err = fmt.Fprintf(&dot, "rankdir=\"%s\";", rankdir)
 	if err != nil {
 		return dot.Bytes(), err
 	}

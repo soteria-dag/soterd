@@ -41,7 +41,9 @@ func saveHTML(bytes []byte, fh *os.File) error {
 func runNet(minerCount int, blockTime int, 
 			timeSpan int, stepInterval int, 
 			runDuration int, 
-			output string, keepLogs bool) (string, error) {
+			output string, 
+			rankdir string, 
+			keepLogs bool) (string, error) {
 	
 	var miners []*rpctest.Harness
 	var err error
@@ -110,7 +112,7 @@ func runNet(minerCount int, blockTime int,
 		for {
 			fmt.Println("Generating Step", stepCount)
 			// Render the dag in graphviz DOT file format
-			dot, err := rpctest.RenderDagsDot(miners)
+			dot, err := rpctest.RenderDagsDot(miners, rankdir)
 			if err != nil {
 				return "", fmt.Errorf("failed to render dag in graphviz DOT format: %s", err)
 			}
@@ -140,7 +142,7 @@ func runNet(minerCount int, blockTime int,
 	fmt.Println("Finalizing")
 
 	// Take a snap shot of the final state
-	dot, err := rpctest.RenderDagsDot(miners)
+	dot, err := rpctest.RenderDagsDot(miners, rankdir)
 	if err != nil {
 		return "", fmt.Errorf("failed to render dag in graphviz DOT format: %s", err)
 	}
@@ -217,6 +219,7 @@ func main() {
 
 	var stepping bool
 	var output string
+	var rankdir string
 	var nodeCount int
 
 	var runDuration int
@@ -230,6 +233,7 @@ func main() {
 
 	// parsing the command line parameters
 	flag.StringVar(&output, "output", "", "Where to save the rendered dag")
+	flag.StringVar(&rankdir, "rankdir","TB", "Orientation of the graph: TB, BT, LR, RL")
 	flag.BoolVar(&stepping, "stepping", false, "Generating Stepping Results")
 
 	flag.IntVar(&nodeCount, "nodes", 4, "Number of Nodes")
@@ -255,9 +259,9 @@ func main() {
 
 	if (stepping) {
 		fmt.Printf("Taking snapshots for %d seconds with %d msec interval\n", runDuration, stepInterval)
-		htmlFile, err = runNet(nodeCount, blockTime, timeSpan, stepInterval, runDuration, output, keepLogs)
+		htmlFile, err = runNet(nodeCount, blockTime, timeSpan, stepInterval, runDuration, output, rankdir, keepLogs)
 	} else {
-		htmlFile, err = runNet(nodeCount, blockTime, timeSpan, 0, runDuration, output, keepLogs)
+		htmlFile, err = runNet(nodeCount, blockTime, timeSpan, 0, runDuration, output, rankdir, keepLogs)
 	}
 
 	if err != nil {

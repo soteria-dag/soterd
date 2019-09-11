@@ -23,6 +23,8 @@ Usage of dagviz:
     	Number of Nodes (default 4)
   -output string
     	Where to save the rendered dag
+  -rankdir string
+      Orientation of the graph: TB, BT, LR, RL (default TB) 
   -stepping
     	Generating Stepping Results
   -timespan int

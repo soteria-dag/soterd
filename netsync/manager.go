@@ -1748,7 +1748,7 @@ func (sm *SyncManager) reqBlocks(peer *peerpkg.Peer, inventory []*wire.InvVect) 
 	// Filter inventory to items we need from peer
 	needed := sm.filterNeededInv(peer, inventory)
 
-	if len(inventory) > 0 && len(needed) == 0 && !sm.hasPendingBlocks(peer) {
+	if len(inventory) > 0 && len(needed) == 0 && !sm.hasPendingBlocks(peer) && sm.syncPeer != nil {
 		// The peer has sent us inventory of blocks we already have, and there's no more pending blocks for this peer.
 		// This situation has likely occurred due to out-of-order processing of blocks.
 		//

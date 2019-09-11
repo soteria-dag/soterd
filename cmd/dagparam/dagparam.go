@@ -741,7 +741,7 @@ func runNet(profile runProfile) (runResult, error) {
 	}
 
 	// Render the dag in graphviz DOT file format
-	dot, err := rpctest.RenderDagsDot(miners)
+	dot, err := rpctest.RenderDagsDot(miners, "TB")
 	if err != nil {
 		return result, err
 	}
