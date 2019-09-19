@@ -832,7 +832,7 @@ func (m *wsNotificationManager) notifyForNewTx(clients map[chan struct{}]*wsClie
 		amount += txOut.Value
 	}
 
-	ntfn := soterjson.NewTxAcceptedNtfn(txHashStr, soterutil.Amount(amount).ToSOTO())
+	ntfn := soterjson.NewTxAcceptedNtfn(txHashStr, soterutil.Amount(amount).ToSOTER())
 	marshalledJSON, err := soterjson.MarshalCmd(nil, ntfn)
 	if err != nil {
 		rpcsLog.Errorf("Failed to marshal tx notification: %s", err.Error())

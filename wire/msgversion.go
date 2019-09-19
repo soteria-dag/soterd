@@ -22,7 +22,7 @@ const MaxUserAgentLen = 256
 // DefaultUserAgent for wire in the stack
 const DefaultUserAgent = "/soterwire:0.6.0/"
 
-// MsgVersion implements the Message interface and represents a soter token (SOTO) version
+// MsgVersion implements the Message interface and represents a soter token (SOTER) version
 // message.  It is used for a peer to advertise itself as soon as an outbound
 // connection is made.  The remote peer then uses this information along with
 // its own to negotiate.  The remote peer must then respond with a version

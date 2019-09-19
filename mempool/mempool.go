@@ -130,7 +130,7 @@ type Policy struct {
 	// fraction of the max signature operations for a block.
 	MaxSigOpCostPerTx int
 
-	// MinRelayTxFee defines the minimum transaction fee in SOTO/kB to be
+	// MinRelayTxFee defines the minimum transaction fee in SOTER/kB to be
 	// considered a non-zero fee.
 	MinRelayTxFee soterutil.Amount
 }
@@ -1196,7 +1196,7 @@ func (mp *TxPool) RawMempoolVerbose() map[string]*soterjson.GetRawMempoolVerbose
 		mpd := &soterjson.GetRawMempoolVerboseResult{
 			Size:             int32(tx.MsgTx().SerializeSize()),
 			Vsize:            int32(GetTxVirtualSize(tx)),
-			Fee:              soterutil.Amount(desc.Fee).ToSOTO(),
+			Fee:              soterutil.Amount(desc.Fee).ToSOTER(),
 			Time:             desc.Added.Unix(),
 			Height:           int64(desc.Height),
 			StartingPriority: desc.StartingPriority,

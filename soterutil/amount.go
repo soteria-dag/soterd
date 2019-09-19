@@ -19,33 +19,33 @@ type AmountUnit int
 
 // These constants define various units used when describing a soter token amount.
 const (
-	AmountMegaSOTO  AmountUnit = 6
-	AmountKiloSOTO  AmountUnit = 3
-	AmountSOTO      AmountUnit = 0
-	AmountMilliSOTO AmountUnit = -3
-	AmountMicroSOTO AmountUnit = -6
-	AmountNanoSoter AmountUnit = -9
+	AmountMegaSOTER  AmountUnit = 6
+	AmountKiloSOTER  AmountUnit = 3
+	AmountSOTER      AmountUnit = 0
+	AmountMilliSOTER AmountUnit = -3
+	AmountMicroSOTER AmountUnit = -6
+	AmountNanoSoter  AmountUnit = -9
 )
 
 // String returns the unit as a string.  For recognized units, the SI
 // prefix is used, or "nanoSoter" for the base unit.  For all unrecognized
-// units, "1eN SOTO" is returned, where N is the AmountUnit.
+// units, "1eN SOTER" is returned, where N is the AmountUnit.
 func (u AmountUnit) String() string {
 	switch u {
-	case AmountMegaSOTO:
-		return "MSOTO"
-	case AmountKiloSOTO:
-		return "kSOTO"
-	case AmountSOTO:
-		return "SOTO"
-	case AmountMilliSOTO:
-		return "mSOTO"
-	case AmountMicroSOTO:
-		return "μSOTO"
+	case AmountMegaSOTER:
+		return "MSOTER"
+	case AmountKiloSOTER:
+		return "kSOTER"
+	case AmountSOTER:
+		return "SOTER"
+	case AmountMilliSOTER:
+		return "mSOTER"
+	case AmountMicroSOTER:
+		return "μSOTER"
 	case AmountNanoSoter:
 		return "nSoter"
 	default:
-		return "1e" + strconv.FormatInt(int64(u), 10) + " SOTO"
+		return "1e" + strconv.FormatInt(int64(u), 10) + " SOTER"
 	}
 }
 
@@ -69,7 +69,7 @@ func round(f float64) Amount {
 // does not check that the amount is within the total amount of soter
 // producible as f may not refer to an amount at a single moment in time.
 //
-// NewAmount is for specifically for converting SOTO to nanoSoter.
+// NewAmount is for specifically for converting SOTER to nanoSoter.
 // For creating a new Amount with an int64 value which denotes a quantity of nanoSoter,
 // do a simple type conversion from type int64 to Amount.
 // See GoDoc for example: http://godoc.org/github.com/soteria-dag/soterd/soterutil#example-Amount
@@ -94,9 +94,9 @@ func (a Amount) ToUnit(u AmountUnit) float64 {
 	return float64(a) / math.Pow10(int(u+9))
 }
 
-// ToSOTO is the equivalent of calling ToUnit with AmountSOTO.
-func (a Amount) ToSOTO() float64 {
-	return a.ToUnit(AmountSOTO)
+// ToSOTER is the equivalent of calling ToUnit with AmountSOTER.
+func (a Amount) ToSOTER() float64 {
+	return a.ToUnit(AmountSOTER)
 }
 
 // Format formats a monetary amount counted in soter base units as a
@@ -108,9 +108,9 @@ func (a Amount) Format(u AmountUnit) string {
 	return strconv.FormatFloat(a.ToUnit(u), 'f', -int(u+9), 64) + units
 }
 
-// String is the equivalent of calling Format with AmountSOTO.
+// String is the equivalent of calling Format with AmountSOTER.
 func (a Amount) String() string {
-	return a.Format(AmountSOTO)
+	return a.Format(AmountSOTER)
 }
 
 // MulF64 multiplies an Amount by a floating point value.  While this is not

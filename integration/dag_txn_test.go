@@ -29,7 +29,7 @@ func spendCoinbase(r *rpctest.Harness, t *testing.T, amt soterutil.Amount) (*cha
 		t.Fatalf("unable to get new address: %v", err)
 	}
 
-	// Next, send amt SOTO to this address, spending from one of our mature
+	// Next, send amt SOTER to this address, spending from one of our mature
 	// coinbase outputs.
 	addrScript, err := txscript.PayToAddrScript(addr)
 	if err != nil {

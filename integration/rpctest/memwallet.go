@@ -374,6 +374,24 @@ func (m *memWallet) NewAddress() (soterutil.Address, error) {
 	return m.newAddress()
 }
 
+// Addresses returns a slice of addresses in the wallet.
+//
+// This function is safe for concurrent access.
+func (m *memWallet) Addresses() []soterutil.Address {
+	m.RLock()
+	defer m.RUnlock()
+
+	addresses := make([]soterutil.Address, 0)
+	for _, addr := range m.addrs {
+		if addr == nil {
+			continue
+		}
+		addresses = append(addresses, addr)
+	}
+
+	return addresses
+}
+
 // fundTx attempts to fund a transaction sending amt soter. The coins are
 // selected such that the final amount spent pays enough fees as dictated by the
 // passed fee rate. The passed fee rate should be expressed in

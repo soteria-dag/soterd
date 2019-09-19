@@ -429,6 +429,13 @@ func (h *Harness) NewAddress() (soterutil.Address, error) {
 	return h.wallet.NewAddress()
 }
 
+// Addresses returns a slice of addresses in the Harness' internal wallet.
+//
+// This function is safe for concurrent access.
+func (h *Harness) Addresses() []soterutil.Address {
+	return h.wallet.Addresses()
+}
+
 // ConfirmedBalance returns the confirmed balance of the Harness' internal
 // wallet.
 //

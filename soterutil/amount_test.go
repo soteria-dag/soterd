@@ -120,40 +120,40 @@ func TestAmountUnitConversions(t *testing.T) {
 		s         string
 	}{
 		{
-			name:      "MSOTO",
+			name:      "MSOTER",
 			amount:    MaxNanoSoter,
-			unit:      AmountMegaSOTO,
+			unit:      AmountMegaSOTER,
 			converted: 2.1,
-			s:         "2.1 MSOTO",
+			s:         "2.1 MSOTER",
 		},
 		{
-			name:      "kSOTO",
+			name:      "kSOTER",
 			amount:    44433322211100,
-			unit:      AmountKiloSOTO,
+			unit:      AmountKiloSOTER,
 			converted: 44.433322211100,
-			s:         "44.4333222111 kSOTO",
+			s:         "44.4333222111 kSOTER",
 		},
 		{
-			name:      "SOTO",
+			name:      "SOTER",
 			amount:    44433322211100,
-			unit:      AmountSOTO,
+			unit:      AmountSOTER,
 			converted: 44433.322211100,
-			s:         "44433.3222111 SOTO",
+			s:         "44433.3222111 SOTER",
 		},
 		{
-			name:      "mSOTO",
+			name:      "mSOTER",
 			amount:    44433322211100,
-			unit:      AmountMilliSOTO,
+			unit:      AmountMilliSOTER,
 			converted: 44433322.211100,
-			s:         "44433322.2111 mSOTO",
+			s:         "44433322.2111 mSOTER",
 		},
 		{
 
-			name:      "μSOTO",
+			name:      "μSOTER",
 			amount:    44433322211100,
-			unit:      AmountMicroSOTO,
+			unit:      AmountMicroSOTER,
 			converted: 44433322211.100,
-			s:         "44433322211.1 μSOTO",
+			s:         "44433322211.1 μSOTER",
 		},
 		{
 
@@ -169,7 +169,7 @@ func TestAmountUnitConversions(t *testing.T) {
 			amount:    44433322211100,
 			unit:      AmountUnit(-1),
 			converted: 444333.22211100,
-			s:         "444333.222111 1e-1 SOTO",
+			s:         "444333.222111 1e-1 SOTER",
 		},
 	}
 
@@ -186,15 +186,15 @@ func TestAmountUnitConversions(t *testing.T) {
 			continue
 		}
 
-		// Verify that Amount.ToSOTO works as advertised.
-		f1 := test.amount.ToUnit(AmountSOTO)
-		f2 := test.amount.ToSOTO()
+		// Verify that Amount.ToSOTER works as advertised.
+		f1 := test.amount.ToUnit(AmountSOTER)
+		f2 := test.amount.ToSOTER()
 		if f1 != f2 {
-			t.Errorf("%v: ToSOTO does not match ToUnit(AmountSOTO): %v != %v", test.name, f1, f2)
+			t.Errorf("%v: ToSOTER does not match ToUnit(AmountSOTER): %v != %v", test.name, f1, f2)
 		}
 
 		// Verify that Amount.String works as advertised.
-		s1 := test.amount.Format(AmountSOTO)
+		s1 := test.amount.Format(AmountSOTER)
 		s2 := test.amount.String()
 		if s1 != s2 {
 			t.Errorf("%v: String does not match Format(AmountBitcoin): %v != %v", test.name, s1, s2)
@@ -210,52 +210,52 @@ func TestAmountMulF64(t *testing.T) {
 		res  Amount
 	}{
 		{
-			name: "Multiply 0.1 SOTO by 2",
-			amt:  100e5, // 0.1 SOTO
+			name: "Multiply 0.1 SOTER by 2",
+			amt:  100e5, // 0.1 SOTER
 			mul:  2,
-			res:  200e5, // 0.2 SOTO
+			res:  200e5, // 0.2 SOTER
 		},
 		{
-			name: "Multiply 0.2 SOTO by 0.02",
-			amt:  200e5, // 0.2 SOTO
+			name: "Multiply 0.2 SOTER by 0.02",
+			amt:  200e5, // 0.2 SOTER
 			mul:  1.02,
-			res:  204e5, // 0.204 SOTO
+			res:  204e5, // 0.204 SOTER
 		},
 		{
-			name: "Multiply 0.1 SOTO by -2",
-			amt:  100e5, // 0.1 SOTO
+			name: "Multiply 0.1 SOTER by -2",
+			amt:  100e5, // 0.1 SOTER
 			mul:  -2,
-			res:  -200e5, // -0.2 SOTO
+			res:  -200e5, // -0.2 SOTER
 		},
 		{
-			name: "Multiply 0.2 SOTO by -0.02",
-			amt:  200e5, // 0.2 SOTO
+			name: "Multiply 0.2 SOTER by -0.02",
+			amt:  200e5, // 0.2 SOTER
 			mul:  -1.02,
-			res:  -204e5, // -0.204 SOTO
+			res:  -204e5, // -0.204 SOTER
 		},
 		{
-			name: "Multiply -0.1 SOTO by 2",
-			amt:  -100e5, // -0.1 SOTO
+			name: "Multiply -0.1 SOTER by 2",
+			amt:  -100e5, // -0.1 SOTER
 			mul:  2,
-			res:  -200e5, // -0.2 SOTO
+			res:  -200e5, // -0.2 SOTER
 		},
 		{
-			name: "Multiply -0.2 SOTO by 0.02",
-			amt:  -200e5, // -0.2 SOTO
+			name: "Multiply -0.2 SOTER by 0.02",
+			amt:  -200e5, // -0.2 SOTER
 			mul:  1.02,
-			res:  -204e5, // -0.204 SOTO
+			res:  -204e5, // -0.204 SOTER
 		},
 		{
-			name: "Multiply -0.1 SOTO by -2",
-			amt:  -100e5, // -0.1 SOTO
+			name: "Multiply -0.1 SOTER by -2",
+			amt:  -100e5, // -0.1 SOTER
 			mul:  -2,
-			res:  200e5, // 0.2 SOTO
+			res:  200e5, // 0.2 SOTER
 		},
 		{
-			name: "Multiply -0.2 SOTO by -0.02",
-			amt:  -200e5, // -0.2 SOTO
+			name: "Multiply -0.2 SOTER by -0.02",
+			amt:  -200e5, // -0.2 SOTER
 			mul:  -1.02,
-			res:  204e5, // 0.204 SOTO
+			res:  204e5, // 0.204 SOTER
 		},
 		{
 			name: "Round down",
@@ -271,9 +271,9 @@ func TestAmountMulF64(t *testing.T) {
 		},
 		{
 			name: "Multiply by 0.",
-			amt:  1e9, // 1 SOTO
+			amt:  1e9, // 1 SOTER
 			mul:  0,
-			res:  0, // 0 SOTO
+			res:  0, // 0 SOTER
 		},
 		{
 			name: "Multiply 1 by 0.5.",

@@ -734,7 +734,7 @@ func createVoutList(mtx *wire.MsgTx, chainParams *chaincfg.Params, filterAddrMap
 
 		var vout soterjson.Vout
 		vout.N = uint32(i)
-		vout.Value = soterutil.Amount(v.Value).ToSOTO()
+		vout.Value = soterutil.Amount(v.Value).ToSOTER()
 		vout.ScriptPubKey.Addresses = encodedAddrs
 		vout.ScriptPubKey.Asm = disbuf
 		vout.ScriptPubKey.Hex = hex.EncodeToString(v.PkScript)
@@ -2444,7 +2444,7 @@ func handleGetInfo(s *rpcServer, cmd interface{}, closeChan <-chan struct{}) (in
 		Proxy:           cfg.Proxy,
 		Difficulty:      getDifficultyRatio(best.Bits, s.cfg.ChainParams),
 		TestNet:         cfg.TestNet1,
-		RelayFee:        cfg.minRelayTxFee.ToSOTO(),
+		RelayFee:        cfg.minRelayTxFee.ToSOTER(),
 	}
 
 	return ret, nil
@@ -2895,7 +2895,7 @@ func handleGetTxOut(s *rpcServer, cmd interface{}, closeChan <-chan struct{}) (i
 	txOutReply := &soterjson.GetTxOutResult{
 		BestBlock:     bestBlockHash, // TODO(jenlouie): replace with tips?, what do they do with this value?
 		Confirmations: int64(confirmations),
-		Value:         soterutil.Amount(value).ToSOTO(),
+		Value:         soterutil.Amount(value).ToSOTER(),
 		ScriptPubKey: soterjson.ScriptPubKeyResult{
 			Asm:       disbuf,
 			Hex:       hex.EncodeToString(pkScript),
@@ -3168,7 +3168,7 @@ func createVinListPrevOut(s *rpcServer, mtx *wire.MsgTx, chainParams *chaincfg.P
 			vinListEntry := &vinList[len(vinList)-1]
 			vinListEntry.PrevOut = &soterjson.PrevOut{
 				Addresses: encodedAddrs,
-				Value:     soterutil.Amount(originTxOut.Value).ToSOTO(),
+				Value:     soterutil.Amount(originTxOut.Value).ToSOTER(),
 			}
 		}
 	}

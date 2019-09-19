@@ -915,7 +915,7 @@ func CheckTransactionInputs(tx *soterutil.Tx, txHeight int32, utxoView *UtxoView
 		// output values of the input transactions must not be negative
 		// or more than the max allowed per transaction.  All amounts in
 		// a transaction are in a unit value known as a nanoSoter.  One
-		// soter token (SOTO) is a quantity of nanoSoter as defined by the
+		// soter token (SOTER) is a quantity of nanoSoter as defined by the
 		// NanoSoterPerSoter constant.
 		originTxNanoSoter := utxo.Amount()
 		if originTxNanoSoter < 0 {
