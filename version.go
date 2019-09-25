@@ -12,5 +12,5 @@ import (
 var version = semver.Version{
 	Major: 3,
 	Minor: 1,
-	Patch: 2,
+	Patch: 3,
 }

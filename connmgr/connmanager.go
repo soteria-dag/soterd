@@ -256,7 +256,7 @@ func (cm *ConnManager) connHandler() {
 	)
 
 	// Define a function we can use to handle askIsConnected messages, which answers whether a connection
-	// in the message is in a pending or established connection state.
+	// in the message is already in a pending or established connection state.
 	// Responses are sent via the answer channel of the message.
 	var answerIsConnected = func(msg askIsConnected) {
 		var found bool
@@ -288,7 +288,8 @@ func (cm *ConnManager) connHandler() {
 			state := c.State()
 			addrMatch := connAddr.String() == addr.String()
 			stateMatch := (state == ConnPending || state == ConnEstablished)
-			if addrMatch && stateMatch {
+			isNewer := connReq.ID() > c.ID()
+			if addrMatch && stateMatch && isNewer {
 				found = true
 				return
 			}
