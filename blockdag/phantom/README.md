@@ -38,7 +38,7 @@ Greedy PHANTOM is the same concept as PHANTOM, with some modifications to make i
     
 Here is a gif demonstrating the coloring of a dag with greedy phantom:
 
-![greedy phantom coloring](../../docs/images/dag.gif|width = 250)
+![greedy phantom coloring](../../docs/images/dag.gif)
 
 In this image:
 
