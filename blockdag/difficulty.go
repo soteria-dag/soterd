@@ -435,7 +435,7 @@ func (b *BlockDAG) TargetDifficulty(blockHeight int32) (*big.Int, error) {
 	// It'll be decreased if the time between new generations of blocks is greater than our target block-generation rate.
 	if len(byHeight) == 1 {
 		// No reason to adjust target difficulty if there's only one generation of blocks.
-		return targetDifficulty, nil
+		return BigIntMax(targetDifficulty, bigOne), nil
 	}
 
 	// Define a function that can return a sorted slice of block timestamps.
@@ -492,7 +492,8 @@ func (b *BlockDAG) TargetDifficulty(blockHeight int32) (*big.Int, error) {
 		targetDifficulty = big.NewInt(0).Sub(targetDifficulty, changeAmount)
 	}
 
-	return targetDifficulty, nil
+	// Return a minimum target difficulty of 1
+	return BigIntMax(targetDifficulty, bigOne), nil
 }
 
 // Uint32ToBytes converts a slice of uint32 into a big.Int
@@ -502,4 +503,13 @@ func Uint32ToBytes(v []uint32) []byte {
 		binary.LittleEndian.PutUint32(buf[4*i:], x)
 	}
 	return buf
+}
+
+// BigIntMax returns the larger of the two big.Int types
+func BigIntMax(a, b *big.Int) *big.Int {
+	if a.Cmp(b) > 0 {
+		return a
+	}
+
+	return b
 }
