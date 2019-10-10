@@ -44,6 +44,7 @@ type TxLoc struct {
 type MsgBlock struct {
 	Header       BlockHeader
 	Parents      ParentSubHeader
+	Verification VerificationSubHeader
 	Transactions []*MsgTx
 }
 
@@ -70,6 +71,11 @@ func (msg *MsgBlock) SotoDecode(r io.Reader, pver uint32, enc MessageEncoding) e
 	}
 
 	err = readParentSubHeader(r, pver, &msg.Parents)
+	if err != nil {
+		return err
+	}
+
+	err = readVerificationSubHeader(r, pver, &msg.Verification)
 	if err != nil {
 		return err
 	}
@@ -149,6 +155,11 @@ func (msg *MsgBlock) DeserializeTxLoc(r *bytes.Buffer) ([]TxLoc, error) {
 		return nil, err
 	}
 
+	err = readVerificationSubHeader(r, 0, &msg.Verification)
+	if err != nil {
+		return nil, err
+	}
+
 	txCount, err := ReadVarInt(r, 0)
 	if err != nil {
 		return nil, err
@@ -192,6 +203,11 @@ func (msg *MsgBlock) SotoEncode(w io.Writer, pver uint32, enc MessageEncoding) e
 	}
 
 	err = writeParentSubHeader(w, pver, &msg.Parents)
+	if err != nil {
+		return err
+	}
+
+	err = writeVerificationSubHeader(w, pver, &msg.Verification)
 	if err != nil {
 		return err
 	}
@@ -245,11 +261,15 @@ func (msg *MsgBlock) SerializeNoWitness(w io.Writer) error {
 func (msg *MsgBlock) SerializeSize() int {
 	// Block header bytes +
 	// Parent sub-header bytes +
+	// Verification sub-header bytes +
 	// Serialized varint size for the number of transactions.
 	n := blockHeaderLen +
 		ParentVersionSize +
 		ParentCountSize +
 		(ParentSize * len(msg.Parents.Parents)) +
+		VerificationVersionSize +
+		CycleNoncesCountSize +
+		(CycleNonceSize * len(msg.Verification.CycleNonces)) +
 		VarIntSerializeSize(uint64(len(msg.Transactions)))
 
 	for _, tx := range msg.Transactions {
@@ -264,11 +284,15 @@ func (msg *MsgBlock) SerializeSize() int {
 func (msg *MsgBlock) SerializeSizeStripped() int {
 	// Block header bytes +
 	// Parent sub-header bytes +
+	// Verification sub-header bytes +
 	// Serialized varint size for the number of transactions.
 	n := blockHeaderLen +
 		ParentVersionSize +
 		ParentCountSize +
 		(ParentSize * len(msg.Parents.Parents)) +
+		VerificationVersionSize +
+		CycleNoncesCountSize +
+		(CycleNonceSize * len(msg.Verification.CycleNonces)) +
 		VarIntSerializeSize(uint64(len(msg.Transactions)))
 
 	for _, tx := range msg.Transactions {
@@ -313,6 +337,7 @@ func NewMsgBlock(blockHeader *BlockHeader) *MsgBlock {
 	return &MsgBlock{
 		Header:       *blockHeader,
 		Parents:      ParentSubHeader{},
+		Verification: VerificationSubHeader{},
 		Transactions: make([]*MsgTx, 0, defaultTransactionAlloc),
 	}
 }

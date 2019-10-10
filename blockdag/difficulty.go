@@ -6,10 +6,15 @@
 package blockdag
 
 import (
+	"encoding/binary"
+	"fmt"
 	"math/big"
+	"sort"
 	"time"
 
+	qithash "github.com/Qitmeer/qitmeer-lib/common/hash"
 	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/wire"
 )
 
 var (
@@ -17,9 +22,22 @@ var (
 	// the overhead of creating it multiple times.
 	bigOne = big.NewInt(1)
 
-	// oneLsh256 is 1 shifted left 256 bits.  It is defined here to avoid
-	// the overhead of creating it multiple times.
+	// oneLsh256 is 1 shifted left 256 bits.
+	// This is equivalent to 2^256, like:
+	// oneLsh256 := big.NewInt(0).Exp(big.NewInt(2), big.NewInt(256), nil)
+	//
+	// It is defined here to avoid the overhead of creating it multiple times.
 	oneLsh256 = new(big.Int).Lsh(bigOne, 256)
+
+	// How many generations of blocks we will look into the past of from a block,
+	// when calculating the target difficulty for a new block.
+	difficultyGenerations int32 = 23
+
+	// How frequently we want blocks to be generated on average
+	targetBlockGenRate = time.Minute
+
+	// How much to adjust the difficulty, to attempt to match the targetBlockGenRate in future blocks
+	difficultyChangePct float64 = 10
 )
 
 // HashToBig converts a chainhash.Hash into a big.Int that can be used to
@@ -326,4 +344,162 @@ func (b *BlockDAG) CalcNextRequiredDifficulty(timestamp time.Time) (uint32, erro
 	difficulty, err := b.calcNextRequiredDifficulty(recentTip, timestamp)
 	b.chainLock.Unlock()
 	return difficulty, err
+}
+
+// scaleDifficulty scales the difficulty value
+func scaleDifficulty(d *big.Int) *big.Int {
+	scaled := big.NewInt(0).Div(oneLsh256, d)
+	if scaled.Cmp(bigOne) < 0 {
+		// Scaled difficulty can't be less than 1
+		return bigOne
+	}
+	return scaled
+}
+
+// ProofDifficulty returns the difficulty value of the cuckoo cycle proof.
+// The proof difficulty is defined as the maximum difficulty of 2^256 divided by
+// the double-sha256 digest of the cycle nonces.
+func ProofDifficulty(cycleNonces []uint32) *big.Int {
+	var hashInt big.Int
+	cycleNoncesHash := qithash.DoubleHashB(Uint32ToBytes(cycleNonces))
+	hashInt.SetBytes(cycleNoncesHash[:])
+
+	return scaleDifficulty(&hashInt)
+}
+
+// TargetDifficulty returns
+// the target difficulty for the block's cuckoo cycle, and
+// if there was an error while determining target difficulty.
+//
+// A solution is valid if its proof difficulty is higher than the returned target difficulty.
+func (b *BlockDAG) TargetDifficulty(blockHeight int32) (*big.Int, error) {
+	if blockHeight == 0 {
+		// There are no other blocks before this, so provide an initial difficulty
+		return bigOne, nil
+	}
+
+	var lowHeight int32
+	if lowHeight - difficultyGenerations < 0 {
+		// Can't look before genesis block
+		lowHeight = 0
+	}
+
+	// Retrieve difficulty and timestamps from blocks at heights from blockHeight to blockHeight - difficultyGenerations.
+	// These values are used to determine target difficulty for a block at the given blockHeight.
+	var byHeight = make([][]*wire.MsgBlock, 0)
+	for i := blockHeight; i >= lowHeight; i-- {
+		hashes, err := b.BlockHashesByHeight(blockHeight)
+		if err != nil {
+			return nil, err
+		}
+
+		var blocks = make([]*wire.MsgBlock, 0)
+		for _, hash := range hashes {
+			block, err := b.BlockByHash(&hash)
+			if err != nil {
+				return nil, err
+			}
+
+			blocks = append(blocks, block.MsgBlock())
+		}
+
+		byHeight = append(byHeight, blocks)
+	}
+
+	if len(byHeight) == 0 {
+		err := fmt.Errorf("No blocks found between %d and %d", blockHeight, lowHeight)
+		return nil, err
+	}
+
+	// Define a function that converts the block's difficulty from compact form
+	var blockDifficulty = func(block *wire.MsgBlock) *big.Int {
+		return CompactToBig(block.Header.Bits)
+	}
+
+	// The initial target difficulty will be the median difficulty of the blocks at the median of the heights.
+	var targetDifficulty *big.Int
+	blocks := byHeight[len(byHeight) / 2]
+	var sorted = make([]*wire.MsgBlock, len(blocks))
+	for i, bd := range blocks {
+		sorted[i] = bd
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		iDiff := blockDifficulty(sorted[i])
+		jDiff := blockDifficulty(sorted[j])
+		return iDiff.Cmp(jDiff) < 0
+	})
+	targetDifficulty = blockDifficulty(sorted[len(sorted) / 2])
+
+	// The target difficulty will be increased if the time between new generations of blocks is lower than
+	// our target block-generation rate, for the majority of generations in our sample.
+	// It'll be decreased if the time between new generations of blocks is greater than our target block-generation rate.
+	if len(byHeight) == 1 {
+		// No reason to adjust target difficulty if there's only one generation of blocks.
+		return targetDifficulty, nil
+	}
+
+	// Define a function that can return a sorted slice of block timestamps.
+	var blockTimes = func(blocks []*wire.MsgBlock) []time.Time {
+		times := make([]time.Time, len(blocks))
+		for i, b := range blocks {
+			times[i] = b.Header.Timestamp
+		}
+		sort.Sort(ByTime(times))
+		return times
+	}
+
+	// Track how many generations of blocks were solved either too slow or too fast, for our target block-generation rate.
+	var tooFast, tooSlow int32
+	for heightOffset, blocks := range byHeight {
+		if heightOffset == len(byHeight) - 1 {
+			continue
+		}
+
+		times := blockTimes(blocks)
+		median := times[len(times) / 2]
+
+		nextTimes := blockTimes(byHeight[heightOffset + 1])
+		nextMedian := nextTimes[len(nextTimes) / 2]
+
+		delta := median.Sub(nextMedian)
+		if delta > targetBlockGenRate {
+			tooFast += 1
+		} else if delta < targetBlockGenRate {
+			tooSlow += 1
+		}
+	}
+
+	// Determine by how much we'd adjust the target difficulty
+	pct := big.NewFloat(0).Quo(
+		big.NewFloat(difficultyChangePct),
+		big.NewFloat(100))
+
+	var changeAmount = big.NewInt(0)
+	big.NewFloat(0).Mul(
+		big.NewFloat(0).SetInt(targetDifficulty),
+		pct).Int(changeAmount)
+	if changeAmount.Cmp(bigOne) < 0 {
+		// Minimum difficulty change of +/- 1
+		changeAmount = big.NewInt(0).Set(bigOne)
+	}
+
+	// Adjust target difficulty if necessary
+	if tooFast > difficultyGenerations / 2 {
+		// Majority of block generations were solved too quickly. We need to increase the target difficulty
+		targetDifficulty = big.NewInt(0).Add(targetDifficulty, changeAmount)
+	} else if tooSlow > difficultyGenerations / 2 {
+		// Majority of block generations solved too slowly. We need to decrease the target difficulty
+		targetDifficulty = big.NewInt(0).Sub(targetDifficulty, changeAmount)
+	}
+
+	return targetDifficulty, nil
+}
+
+// Uint32ToBytes converts a slice of uint32 into a big.Int
+func Uint32ToBytes(v []uint32) []byte {
+	var buf = make([]byte, 4*len(v))
+	for i, x := range v {
+		binary.LittleEndian.PutUint32(buf[4*i:], x)
+	}
+	return buf
 }

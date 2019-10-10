@@ -280,7 +280,7 @@ func newFakeChain(params *chaincfg.Params) *BlockDAG {
 	targetTimespan := int64(params.TargetTimespan / time.Millisecond)
 	targetTimePerBlock := int64(params.TargetTimePerBlock / time.Millisecond)
 	adjustmentFactor := params.RetargetAdjustmentFactor
-	return &BlockDAG{
+	dag := BlockDAG{
 		chainParams:         params,
 		timeSource:          NewMedianTime(),
 		minRetargetTimespan: targetTimespan / adjustmentFactor,
@@ -294,6 +294,11 @@ func newFakeChain(params *chaincfg.Params) *BlockDAG {
 		warningCaches:       newThresholdCaches(vbNumBits),
 		deploymentCaches:    newThresholdCaches(chaincfg.DefinedDeployments),
 	}
+
+	dag.graph.AddNodeById(params.GenesisBlock.Header.BlockHash().String())
+	dag.dagSnapshot = newDAGState([]*blockNode{node}, 1)
+
+	return &dag
 }
 
 // newFakeNode creates a block node connected to the passed parent with the

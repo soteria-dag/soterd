@@ -8,6 +8,7 @@ package blockdag
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/Qitmeer/qitmeer-lib/crypto/cuckoo"
 	"math"
 	"math/big"
 	"time"
@@ -307,7 +308,8 @@ func CheckTransactionSanity(tx *soterutil.Tx) error {
 // The flags modify the behavior of this function as follows:
 //  - BFNoPoWCheck: The check to ensure the block hash is less than the target
 //    difficulty is not performed.
-func checkProofOfWork(header *wire.BlockHeader, powLimit *big.Int, flags BehaviorFlags) error {
+func checkProofOfWork(block *wire.MsgBlock, powLimit *big.Int, flags BehaviorFlags) error {
+	var header = block.Header
 	// The target difficulty must be larger than zero.
 	target := CompactToBig(header.Bits)
 	if target.Sign() <= 0 {
@@ -323,16 +325,13 @@ func checkProofOfWork(header *wire.BlockHeader, powLimit *big.Int, flags Behavio
 		return ruleError(ErrUnexpectedDifficulty, str)
 	}
 
-	// The block hash must be less than the claimed target unless the flag
-	// to avoid proof of work checks is set.
+	// Cuckoo cycle verification must pass, unless the flag to avoid proof of work checks is set.
 	if flags&BFNoPoWCheck != BFNoPoWCheck {
-		// The block hash must be less than the claimed target.
 		hash := header.BlockHash()
-		hashNum := HashToBig(&hash)
-		if hashNum.Cmp(target) > 0 {
-			str := fmt.Sprintf("block hash of %064x is higher than "+
-				"expected max of %064x", hashNum, target)
-			return ruleError(ErrHighHash, str)
+		err := cuckoo.Verify(hash.CloneBytes(), block.Verification.CycleNonces)
+		if err != nil {
+			str := fmt.Sprintf("cuckoo cycle verification failed: %s", err)
+			return ruleError(ErrCuckooFail, str)
 		}
 	}
 
@@ -343,7 +342,7 @@ func checkProofOfWork(header *wire.BlockHeader, powLimit *big.Int, flags Behavio
 // difficulty is in min/max range and that the block hash is less than the
 // target difficulty as claimed.
 func CheckProofOfWork(block *soterutil.Block, powLimit *big.Int) error {
-	return checkProofOfWork(&block.MsgBlock().Header, powLimit, BFNone)
+	return checkProofOfWork(block.MsgBlock(), powLimit, BFNone)
 }
 
 // CountSigOps returns the number of signature operations for all transaction
@@ -430,11 +429,12 @@ func CountP2SHSigOps(tx *soterutil.Tx, isCoinBaseTx bool, utxoView *UtxoViewpoin
 //
 // The flags do not modify the behavior of this function directly, however they
 // are needed to pass along to checkProofOfWork.
-func checkBlockHeaderSanity(header *wire.BlockHeader, powLimit *big.Int, timeSource MedianTimeSource, flags BehaviorFlags) error {
+func checkBlockHeaderSanity(block *wire.MsgBlock, powLimit *big.Int, timeSource MedianTimeSource, flags BehaviorFlags) error {
+	var header = block.Header
 	// Ensure the proof of work bits in the block header is in min/max range
 	// and the block hash is less than the target value described by the
 	// bits.
-	err := checkProofOfWork(header, powLimit, flags)
+	err := checkProofOfWork(block, powLimit, flags)
 	if err != nil {
 		return err
 	}
@@ -470,7 +470,7 @@ func checkBlockHeaderSanity(header *wire.BlockHeader, powLimit *big.Int, timeSou
 func checkBlockSanity(block *soterutil.Block, powLimit *big.Int, timeSource MedianTimeSource, flags BehaviorFlags) error {
 	msgBlock := block.MsgBlock()
 	header := &msgBlock.Header
-	err := checkBlockHeaderSanity(header, powLimit, timeSource, flags)
+	err := checkBlockHeaderSanity(block.MsgBlock(), powLimit, timeSource, flags)
 	if err != nil {
 		return err
 	}
@@ -654,17 +654,23 @@ func (b *BlockDAG) checkBlockHeaderContext(header *wire.BlockHeader, prevNodes [
 		// find most recent parent
 		var recentTip *blockNode
 		var recentTipTime = time.Time{}.Unix() //TODO: what timestamp does this give?
+		var maxHeight int32
 		for _, prevNode := range prevNodes {
 			if prevNode.timestamp > recentTipTime {
 				recentTip = prevNode
 				recentTipTime = prevNode.timestamp
 			}
+
+			if prevNode.height > maxHeight {
+				maxHeight = prevNode.height
+			}
 		}
-		expectedDifficulty, err := b.calcNextRequiredDifficulty(recentTip,
-			header.Timestamp)
+
+		target, err := b.TargetDifficulty(maxHeight)
 		if err != nil {
 			return err
 		}
+		expectedDifficulty := BigToCompact(target)
 		blockDifficulty := header.Bits
 		if blockDifficulty != expectedDifficulty {
 			str := "block difficulty of %d is not the expected value of %d"

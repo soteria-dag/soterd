@@ -90,6 +90,11 @@ var genesisBlock = wire.MsgBlock{
 		Size: 0,
 		Parents: make([]*wire.Parent, 0),
 	},
+	Verification: wire.VerificationSubHeader{
+		Version: 1,
+		Size: 0,
+		CycleNonces: make([]uint32, 0),
+	},
 	Transactions: []*wire.MsgTx{&genesisCoinbaseTx},
 }
 
@@ -122,6 +127,11 @@ var regTestGenesisBlock = wire.MsgBlock{
 		Version: 1,
 		Size: 0,
 		Parents: make([]*wire.Parent, 0),
+	},
+	Verification: wire.VerificationSubHeader{
+		Version: 1,
+		Size: 0,
+		CycleNonces: make([]uint32, 0),
 	},
 	Transactions: []*wire.MsgTx{&genesisCoinbaseTx},
 }
@@ -156,6 +166,11 @@ var testNet1GenesisBlock = wire.MsgBlock{
 		Size: 0,
 		Parents: make([]*wire.Parent, 0),
 	},
+	Verification: wire.VerificationSubHeader{
+		Version: 1,
+		Size: 0,
+		CycleNonces: make([]uint32, 0),
+	},
 	Transactions: []*wire.MsgTx{&genesisCoinbaseTx},
 }
 
@@ -189,6 +204,11 @@ var simNetGenesisBlock = wire.MsgBlock{
 		Version: 1,
 		Size:    0,
 		Parents: make([]*wire.Parent, 0),
+	},
+	Verification: wire.VerificationSubHeader{
+		Version: 1,
+		Size: 0,
+		CycleNonces: make([]uint32, 0),
 	},
 	Transactions: []*wire.MsgTx{&genesisCoinbaseTx},
 }

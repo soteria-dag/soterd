@@ -146,10 +146,10 @@ func TestBlock(t *testing.T) {
 
 	// Transaction offsets and length for the transaction in Block100000.
 	wantTxLocs := []wire.TxLoc{
-		{TxStart: 153, TxLen: 135},
-		{TxStart: 288, TxLen: 259},
-		{TxStart: 547, TxLen: 257},
-		{TxStart: 804, TxLen: 225},
+		{TxStart: 161, TxLen: 135},
+		{TxStart: 296, TxLen: 259},
+		{TxStart: 555, TxLen: 257},
+		{TxStart: 812, TxLen: 225},
 	}
 
 	// Ensure the transaction location information is accurate.
@@ -334,6 +334,12 @@ var Block100000 = wire.MsgBlock{
 				}),
 			},
 		},
+	},
+	// TODO(cedric): Put the cuckoo cycle nonces for this block here
+	Verification: wire.VerificationSubHeader{
+		Version: 1,
+		Size: 0,
+		CycleNonces: []uint32{},
 	},
 	Transactions: []*wire.MsgTx{
 		{

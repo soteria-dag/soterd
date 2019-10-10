@@ -79,6 +79,9 @@ const (
 	// lower than the required target difficultly.
 	ErrHighHash
 
+	// ErrCuckooFail indicates that the block does not pass cuckoo cycle verification
+	ErrCuckooFail
+
 	// ErrBadMerkleRoot indicates the calculated merkle root does not match
 	// the expected value.
 	ErrBadMerkleRoot
@@ -235,6 +238,7 @@ var errorCodeStrings = map[ErrorCode]string{
 	ErrDifficultyTooLow:          "ErrDifficultyTooLow",
 	ErrUnexpectedDifficulty:      "ErrUnexpectedDifficulty",
 	ErrHighHash:                  "ErrHighHash",
+	ErrCuckooFail:                "ErrCuckooFail",
 	ErrBadMerkleRoot:             "ErrBadMerkleRoot",
 	ErrBadCheckpoint:             "ErrBadCheckpoint",
 	ErrForkTooOld:                "ErrForkTooOld",

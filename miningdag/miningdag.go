@@ -851,10 +851,11 @@ mempoolLoop:
 	// is potentially adjusted to ensure it comes after the median time of
 	// the last several blocks per the chain consensus rules.
 	ts := medianAdjustedTime(best, g.timeSource)
-	reqDifficulty, err := g.chain.CalcNextRequiredDifficulty(ts)
+	targetDifficulty, err := g.chain.TargetDifficulty(snapshot.MaxHeight)
 	if err != nil {
 		return nil, err
 	}
+	reqDifficulty := blockdag.BigToCompact(targetDifficulty)
 
 	// Calculate the next expected block version based on the state of the
 	// rule change deployments.
@@ -895,6 +896,8 @@ mempoolLoop:
 		Size: int32(len(snapshot.Tips)),
 		Parents: parents,
 	}
+
+	msgBlock.Verification = wire.VerificationSubHeader{}
 
 	for _, tx := range blockTxns {
 		if err := msgBlock.AddTransaction(tx.MsgTx()); err != nil {
@@ -941,11 +944,11 @@ func (g *BlkTmplGenerator) UpdateBlockTime(msgBlock *wire.MsgBlock) error {
 
 	// Recalculate the difficulty if running on a network that requires it.
 	if g.chainParams.ReduceMinDifficulty {
-		difficulty, err := g.chain.CalcNextRequiredDifficulty(newTime)
+		difficulty, err := g.chain.TargetDifficulty(g.chain.DAGSnapshot().MaxHeight)
 		if err != nil {
 			return err
 		}
-		msgBlock.Header.Bits = difficulty
+		msgBlock.Header.Bits = blockdag.BigToCompact(difficulty)
 	}
 
 	return nil
