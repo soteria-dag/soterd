@@ -5,6 +5,7 @@
 package phantom
 
 import (
+	"container/list"
 	"strings"
 	"sync"
 )
@@ -300,12 +301,73 @@ func (g *Graph) getPast(node2 *Node) *Graph {
 	return subgraph
 }
 
+func (g *Graph) getPastWithHorizon(node2 *Node, horizon int) *Graph {
+	if node2 == nil {
+		return nil
+	}
+
+	// The past is stored in the subGraph
+	var subGraph = NewGraph()
+
+	// Track which nodes past has already been traversed, to reduce duplicate work
+	var expanded = make(map[*Node]bool)
+
+	var parents = make([]nodeWithDistance, len(node2.parents))
+	index := 0
+	for p := range node2.parents {
+		parents[index] = nodeWithDistance{
+			node:     p,
+			distance: 1,
+		}
+		index += 1
+	}
+
+	// We add nodes to the subgraph in a deterministic way, because the execution flow is:
+	// Node.parents (as a map) -> getPast -> getAnticone -> calculateBlueSet -> OrderDAG
+	// * blueSet is calculated in order of tips, and
+	// * dag order is calculated based off of blueSet, so
+	// if the tips order here changes between calls, the result produced by OrderDAG can change between calls too.
+	// We want OrderDAG results to be consistent, so we make sure the parents are added in a consistent way here.
+	var todo = list.New()
+	for _, p := range sortNodeWithDistance(parents) {
+		todo.PushBack(p)
+		subGraph.tips.add(p.node)
+	}
+
+	for todo.Len() > 0 {
+		e := todo.Front()
+		nd := e.Value.(nodeWithDistance)
+		todo.Remove(e)
+
+		if len(nd.node.parents) > 0 && !expanded[nd.node] && nd.distance + 1 <= horizon {
+			for p := range nd.node.parents {
+				todo.PushBack(nodeWithDistance{
+					node:     p,
+					distance: nd.distance + 1,
+				})
+			}
+		}
+
+		expanded[nd.node] = true
+		subGraph.nodes[nd.node.id] = nd.node
+	}
+
+	return subGraph
+}
+
 // GetPast returns a sub graph with node's parents as tips
 func (g *Graph) GetPast(node2 *Node) *Graph {
 	g.RLock()
 	defer g.RUnlock()
 
 	return g.getPast(node2)
+}
+
+func (g *Graph) GetPastWithHorizon(node2 *Node, horizon int) *Graph {
+	g.RLock()
+	defer g.RUnlock()
+
+	return g.getPastWithHorizon(node2, horizon)
 }
 
 func (g *Graph) getFuture(node2 *Node) *nodeSet {
@@ -338,6 +400,45 @@ func (g *Graph) getFuture(node2 *Node) *nodeSet {
 	return futureNodes
 }
 
+func (g *Graph) getFutureWithHorizon(node2 *Node, horizon int) *nodeSet {
+	if node2 == nil {
+		return nil
+	}
+
+	var futureNodes = newNodeSet()
+
+	// Track which nodes past has already been traversed, to reduce duplicate work
+	var expanded = make(map[*Node]bool)
+
+	var todo = list.New()
+	for c := range node2.children {
+		todo.PushBack(nodeWithDistance{
+			node:     c,
+			distance: 1,
+		})
+	}
+
+	for todo.Len() > 0 {
+		e := todo.Front()
+		nd := e.Value.(nodeWithDistance)
+		todo.Remove(e)
+
+		if len(nd.node.children) > 0 && !expanded[nd.node] && nd.distance + 1 <= horizon {
+			for c := range nd.node.children {
+				todo.PushBack(nodeWithDistance{
+					node:     c,
+					distance: nd.distance + 1,
+				})
+			}
+		}
+
+		expanded[nd.node] = true
+		futureNodes.add(nd.node)
+	}
+
+	return futureNodes
+}
+
 // anticone of node on g: set of all nodes of g - past(node) - future(node) - node
 func (g *Graph) getAnticone(node *Node) *nodeSet {
 	if node == nil {
@@ -363,12 +464,51 @@ func (g *Graph) getAnticone(node *Node) *nodeSet {
 	return anticone
 }
 
+// getAnticoneWithHorizon returns the anticone of node on the graph, limited in the past to the depth of
+// ancestor nodes given by horizon.
+//
+// anticone of node on g: set of all nodes of g - past(node) - future(node) - node
+func (g *Graph) getAnticoneWithHorizon(node *Node, horizon int) *nodeSet {
+	if node == nil {
+		return nil
+	}
+
+	anticone := newNodeSet()
+
+	var pastOfNode  = g.getPastWithHorizon(node, horizon)
+
+	futureNodes := g.getFutureWithHorizon(node, horizon)
+	for k := range g.nodes {
+		candidate := g.getNodeById(k)
+		_, past := pastOfNode.nodes[k];
+		future := futureNodes.contains(candidate)
+		if !past && !future {
+			anticone.add(candidate)
+		}
+	}
+
+	anticone.remove(node)
+
+	return anticone
+}
+
 // GetAnticone returns anticone of node on g: set of all nodes of g - past(node) - future(node) - node
 func (g *Graph) GetAnticone(node *Node) *nodeSet {
 	g.RLock()
 	defer g.RUnlock()
 
 	return g.getAnticone(node)
+}
+
+// GetAnticoneWithHorizon returns the anticone of node on the graph, limited in the past to the depth of
+// ancestor nodes given by horizon.
+//
+// anticone of node on g: set of all nodes of g - past(node) - future(node) - node
+func (g *Graph) GetAnticoneWithHorizon(node *Node, horizon int) *nodeSet {
+	g.RLock()
+	defer g.RUnlock()
+
+	return g.getAnticoneWithHorizon(node, horizon)
 }
 
 func (g *Graph) GetMissingNodes(subtips []string) []string {

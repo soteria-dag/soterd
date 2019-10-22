@@ -5,6 +5,7 @@
 package phantom
 
 import (
+	"fmt"
 	"reflect"
 	"sort"
 	"testing"
@@ -103,6 +104,29 @@ func TestGraphGetPast(t *testing.T) {
 	}
 }
 
+func TestGraphGetPastWithHorizon(t *testing.T) {
+	var g = NewGraph()
+	prevNode := "GENESIS"
+	g.AddNodeById(prevNode)
+	for i := 0; i < edgeHorizon* 3; i++ {
+		node := fmt.Sprintf("A%d", i)
+		g.AddNodeById(node)
+		g.AddEdgeById(node, prevNode)
+		prevNode = node
+	}
+
+	extra := 5
+	pastNode := fmt.Sprintf("A%d", edgeHorizon+ extra)
+	var past = g.getPastWithHorizon(g.getNodeById(pastNode), edgeHorizon)
+
+	beyondHorizonNode := fmt.Sprintf("A%d", extra - 1)
+	beyond := past.getNodeById(beyondHorizonNode)
+	if beyond != nil {
+		t.Errorf("Incorrect horizon for graph past of %s; got %v, want %v",
+			pastNode, beyond, nil)
+	}
+}
+
 func TestGraphGetFuture(t *testing.T) {
 	var g = NewGraph()
 	g.AddNodeById("GENESIS")
@@ -133,6 +157,29 @@ func TestGraphGetFuture(t *testing.T) {
 	if !reflect.DeepEqual(expected, futureGenesis.elements()) {
 		t.Errorf("Incorrect graph future for Genesis, expecting %v, got %v",
 			GetIds(expected), GetIds(futureGenesis.elements()))
+	}
+}
+
+func TestGraphGetFutureWithHorizon(t *testing.T) {
+	var g = NewGraph()
+	prevNode := "GENESIS"
+	g.AddNodeById(prevNode)
+	for i := 0; i < edgeHorizon* 3; i++ {
+		node := fmt.Sprintf("A%d", i)
+		g.AddNodeById(node)
+		g.AddEdgeById(node, prevNode)
+		prevNode = node
+	}
+
+	extra := 5
+	futureNode := fmt.Sprintf("A%d", edgeHorizon+ extra)
+	var future = g.getFutureWithHorizon(g.getNodeById(futureNode), edgeHorizon)
+
+	beyondHorizonNode := fmt.Sprintf("A%d", (edgeHorizon* 2) + extra + 1)
+	beyond := g.getNodeById(beyondHorizonNode)
+	if future.contains(beyond) {
+		t.Errorf("Incorrect horizon for graph future of %s; got true for %v, want false",
+			futureNode, beyondHorizonNode)
 	}
 }
 

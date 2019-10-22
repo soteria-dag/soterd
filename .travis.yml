@@ -1,7 +1,7 @@
 #just to test if it starts.
 language: go
 go:
-  - "1.11.1"
+  - "1.13"
 sudo: false
 install:
   - GLIDE_TAG=v0.12.3

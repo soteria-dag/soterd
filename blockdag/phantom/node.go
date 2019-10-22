@@ -16,6 +16,12 @@ type Node struct {
 	children map[*Node]struct{}
 }
 
+// nodeWithDistance represents a node and its distance from a reference node
+type nodeWithDistance struct {
+	node *Node
+	distance int
+}
+
 func newNode(id string) *Node {
 	return &Node{
 		id: id,
@@ -55,6 +61,24 @@ func SortNodes(nodes []*Node) []*Node {
 
 	less := func(i, j int) bool {
 		if nodes[i].GetId() < nodes[j].GetId() {
+			return true
+		} else {
+			return false
+		}
+	}
+
+	sort.Slice(sorted, less)
+
+	return sorted
+}
+
+// sortNodeWithDistance returns a slice of alphabetically-sorted nodeWithDistance elements
+func sortNodeWithDistance (nodes []nodeWithDistance) []nodeWithDistance {
+	sorted := make([]nodeWithDistance, len(nodes))
+	copy(sorted, nodes)
+
+	less := func(i, j int) bool {
+		if sorted[i].node.GetId() < sorted[j].node.GetId() {
 			return true
 		} else {
 			return false
