@@ -736,7 +736,6 @@ func TestDAGStateSerialization(t *testing.T) {
 }
 
 func TestBlockNodeStorage(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
 	t.Parallel()
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()

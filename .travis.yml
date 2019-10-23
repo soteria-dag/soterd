@@ -14,5 +14,5 @@ install:
   - gometalinter.v2 --install
 script:
   - export PATH=$PATH:$HOME/gopath/bin
-  - go test -v ./...
+  - go test -v -short -parallel 4 ./...
 #  - ./goclean.sh

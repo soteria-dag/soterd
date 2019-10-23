@@ -15,6 +15,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/Qitmeer/qitmeer-lib/crypto/cuckoo"
 	"github.com/soteria-dag/soterd/blockdag"
 	"math"
 	"runtime"
@@ -332,56 +333,38 @@ func calcMerkleRoot(txns []*wire.MsgTx) chainhash.Hash {
 // NOTE: This function will never solve blocks with a nonce of 0.  This is done
 // so the 'nextBlock' function can properly detect when a nonce was modified by
 // a munge function.
-func solveBlock(header *wire.BlockHeader) bool {
-	// sbResult is used by the solver goroutines to send results.
-	type sbResult struct {
-		found bool
-		nonce uint32
+func solveBlock(block *wire.MsgBlock) bool {
+	var targetDifficulty = blockdag.CompactToBig(block.Header.Bits)
+
+	c := cuckoo.NewCuckoo()
+
+	var startNonce uint32
+	if block.Header.Nonce == 0 {
+		startNonce = 1
+	} else {
+		startNonce = block.Header.Nonce
 	}
 
-	// solver accepts a block header and a nonce range to test. It is
-	// intended to be run as a goroutine.
-	targetDifficulty := blockdag.CompactToBig(header.Bits)
-	quit := make(chan bool)
-	results := make(chan sbResult)
-	solver := func(hdr wire.BlockHeader, startNonce, stopNonce uint32) {
-		// We need to modify the nonce field of the header, so make sure
-		// we work with a copy of the original header.
-		for i := startNonce; i >= startNonce && i <= stopNonce; i++ {
-			select {
-			case <-quit:
-				return
-			default:
-				hdr.Nonce = i
-				hash := hdr.BlockHash()
-				if blockdag.HashToBig(&hash).Cmp(
-					targetDifficulty) <= 0 {
+	for i := startNonce; i <= uint32(math.MaxUint32); i++ {
+		block.Header.Nonce = i
+		hash := block.Header.BlockHash()
 
-					results <- sbResult{true, i}
-					return
-				}
-			}
+		cycleNonces, isFound := c.PoW(hash.CloneBytes())
+		if !isFound {
+			continue
 		}
-		results <- sbResult{false, 0}
-	}
 
-	startNonce := uint32(1)
-	stopNonce := uint32(math.MaxUint32)
-	numCores := uint32(runtime.NumCPU())
-	noncesPerCore := (stopNonce - startNonce) / numCores
-	for i := uint32(0); i < numCores; i++ {
-		rangeStart := startNonce + (noncesPerCore * i)
-		rangeStop := startNonce + (noncesPerCore * (i + 1)) - 1
-		if i == numCores-1 {
-			rangeStop = stopNonce
+		if err := cuckoo.Verify(hash.CloneBytes(), cycleNonces); err != nil {
+			continue
 		}
-		go solver(*header, rangeStart, rangeStop)
-	}
-	for i := uint32(0); i < numCores; i++ {
-		result := <-results
-		if result.found {
-			close(quit)
-			header.Nonce = result.nonce
+
+		// The block is solved when:
+		// a) The cuckoo cycle is valid
+		// b) The cuckoo cycle proof difficulty is greater than or equal to the target difficulty
+		proofDifficulty := blockdag.ProofDifficulty(cycleNonces)
+		if proofDifficulty.Cmp(targetDifficulty) >= 0 {
+			block.Verification.CycleNonces = cycleNonces
+			block.Verification.Size = int32(len(cycleNonces))
 			return true
 		}
 	}
@@ -584,7 +567,7 @@ func (g *testGenerator) nextBlock(blockName string, spend *spendableOut, parentN
 
 	// Only solve the block if the nonce wasn't manually changed by a munge
 	// function.
-	if block.Header.Nonce == curNonce && !solveBlock(&block.Header) {
+	if block.Header.Nonce == curNonce && !solveBlock(&block) {
 		panic(fmt.Sprintf("Unable to solve block at height %d",
 			nextHeight))
 	}

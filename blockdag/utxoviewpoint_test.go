@@ -13,7 +13,10 @@ import (
 
 // same txIn used by different txs, one in block A, one in block B with two different txOuts
 func TestUTXOViewpointSimpleDoubleSpend(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping due to -test.short flag")
+	}
 	dag, teardownFunc, err := chainSetup("utxoviewpoint_simpledoublespend",
 		&chaincfg.SimNetParams)
 	if err != nil {
@@ -151,7 +154,10 @@ func TestUTXOViewpointSimpleDoubleSpend(t *testing.T) {
 
 // add same tx to 2 blocks of same height
 func TestUTXOViewpointDuplicateTx(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping due to -test.short flag")
+	}
 	dag, teardownFunc, err := chainSetup("utxoviewpoint_duplicatetx",
 		&chaincfg.SimNetParams)
 	if err != nil {
@@ -249,7 +255,10 @@ func TestUTXOViewpointDuplicateTx(t *testing.T) {
 
 // txs that dependent on rejects double spend tx should also be rejected
 func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping due to -test.short flag")
+	}
 	dag, teardownFunc, err := chainSetup("utxoviewpoint_childofdoublespend",
 		&chaincfg.SimNetParams)
 	if err != nil {
@@ -387,7 +396,10 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 // txIns that are inputs along with a double spend input should
 // remain valid and spendable when double spend input is rejected
 func TestUtxoViewpointCoInputOfDoubleSpend(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping due to -test.short flag")
+	}
 	dag, teardownFunc, err := chainSetup("utxoviewpoint_coinputofdoublespend",
 		&chaincfg.SimNetParams)
 	if err != nil {

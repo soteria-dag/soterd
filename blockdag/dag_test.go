@@ -13,6 +13,7 @@ import (
 	"github.com/soteria-dag/soterd/soterutil"
 	"github.com/soteria-dag/soterd/txscript"
 	"github.com/soteria-dag/soterd/wire"
+	"math"
 	"reflect"
 	"testing"
 	"time"
@@ -86,7 +87,7 @@ func solveMsgBlockForTest(block *wire.MsgBlock) {
 
 	c := cuckoo.NewCuckoo()
 
-	for i := block.Header.Nonce;; i++ {
+	for i := block.Header.Nonce; i <= uint32(math.MaxUint32); i++ {
 		block.Header.Nonce = i
 		hash := block.Header.BlockHash()
 
@@ -300,7 +301,7 @@ var BlockOrphan = wire.MsgBlock{
 
 // TestHaveBlock tests the HaveBlock API to ensure proper functionality.
 func TestHaveBlock(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
+	t.Parallel()
 	// Create a new database and dag instance to run tests against.
 	dag, teardownFunc, err := chainSetup("haveblock",
 		&chaincfg.SimNetParams)
@@ -380,7 +381,10 @@ func TestHaveBlock(t *testing.T) {
 
 // test block connected correctly, tip set updated accordingly
 func TestDAGSnapshot(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping due to -test.short flag")
+	}
 	// Create a new database and dag instance to run tests against.
 	dag, teardownFunc, err := chainSetup("dagsnapshot",
 		&chaincfg.SimNetParams)
@@ -470,7 +474,10 @@ func TestDAGSnapshot(t *testing.T) {
 }
 
 func TestGetOrphanRoot(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping due to -test.short flag")
+	}
 	dag, teardownFunc, err := chainSetup("getorphanroot",
 		&chaincfg.SimNetParams)
 	if err != nil {
@@ -568,7 +575,7 @@ func TestGetOrphanRoot(t *testing.T) {
 }
 
 func TestHeaderByHash(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
+	t.Parallel()
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()
 	msgblock := createMsgBlockForTest(1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
@@ -586,7 +593,7 @@ func TestHeaderByHash(t *testing.T) {
 }
 
 func TestMainChainHasBlock(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
+	t.Parallel()
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()
 	msgblock := createMsgBlockForTest(1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
@@ -608,7 +615,7 @@ func TestMainChainHasBlock(t *testing.T) {
 }
 
 func TestBlockHeightByHash(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
+	t.Parallel()
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()
 	msgblock := createMsgBlockForTest(1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
@@ -630,7 +637,7 @@ func TestBlockHeightByHash(t *testing.T) {
 }
 
 func TestBlockHashesByHeight(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
+	t.Parallel()
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()
 
@@ -660,7 +667,7 @@ func TestBlockHashesByHeight(t *testing.T) {
 }
 
 func TestHeightRange(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
+	t.Parallel()
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()
 
@@ -745,7 +752,7 @@ func TestHeightRange(t *testing.T) {
 }
 
 func TestHeightToHashRange(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
+	t.Parallel()
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()
 
@@ -875,7 +882,10 @@ func TestDAGParentHeightLimit(t *testing.T) {
 */
 
 func TestGraphUpdate(t *testing.T) {
-	t.Skip("Disabled temporarily during cuckoo cycle work")
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping due to -test.short flag")
+	}
 	dag, teardownFunc, err := chainSetup("graphupdate",
 		&chaincfg.SimNetParams)
 	if err != nil {
