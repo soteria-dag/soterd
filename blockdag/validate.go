@@ -8,13 +8,13 @@ package blockdag
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/Qitmeer/qitmeer-lib/crypto/cuckoo"
 	"math"
 	"math/big"
 	"time"
 
 	"github.com/soteria-dag/soterd/chaincfg"
 	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"github.com/soteria-dag/soterd/soterutil"
 	"github.com/soteria-dag/soterd/txscript"
 	"github.com/soteria-dag/soterd/wire"
@@ -308,7 +308,7 @@ func CheckTransactionSanity(tx *soterutil.Tx) error {
 // The flags modify the behavior of this function as follows:
 //  - BFNoPoWCheck: The check to ensure the block hash is less than the target
 //    difficulty is not performed.
-func checkProofOfWork(block *wire.MsgBlock, powLimit *big.Int, flags BehaviorFlags) error {
+func checkProofOfWork(solver cuckoo.Solver, block *wire.MsgBlock, powLimit *big.Int, flags BehaviorFlags) error {
 	var header = block.Header
 	// The target difficulty must be larger than zero.
 	target := CompactToBig(header.Bits)
@@ -327,8 +327,13 @@ func checkProofOfWork(block *wire.MsgBlock, powLimit *big.Int, flags BehaviorFla
 
 	// Cuckoo cycle verification must pass, unless the flag to avoid proof of work checks is set.
 	if flags&BFNoPoWCheck != BFNoPoWCheck {
-		hash := header.BlockHash()
-		err := cuckoo.Verify(hash.CloneBytes(), block.Verification.CycleNonces)
+		headerBytes, err := header.Bytes()
+		if err != nil {
+			str := fmt.Sprintf("cuckoo cycle verification failed: %s", err)
+			return ruleError(ErrCuckooFail, str)
+		}
+
+		err = solver.Verify(headerBytes, block.Header.Nonce, block.Verification.CycleNonces)
 		if err != nil {
 			str := fmt.Sprintf("cuckoo cycle verification failed: %s", err)
 			return ruleError(ErrCuckooFail, str)
@@ -341,8 +346,8 @@ func checkProofOfWork(block *wire.MsgBlock, powLimit *big.Int, flags BehaviorFla
 // CheckProofOfWork ensures the block header bits which indicate the target
 // difficulty is in min/max range and that the block hash is less than the
 // target difficulty as claimed.
-func CheckProofOfWork(block *soterutil.Block, powLimit *big.Int) error {
-	return checkProofOfWork(block.MsgBlock(), powLimit, BFNone)
+func CheckProofOfWork(solver cuckoo.Solver, block *soterutil.Block, powLimit *big.Int) error {
+	return checkProofOfWork(solver, block.MsgBlock(), powLimit, BFNone)
 }
 
 // CountSigOps returns the number of signature operations for all transaction
@@ -429,12 +434,12 @@ func CountP2SHSigOps(tx *soterutil.Tx, isCoinBaseTx bool, utxoView *UtxoViewpoin
 //
 // The flags do not modify the behavior of this function directly, however they
 // are needed to pass along to checkProofOfWork.
-func checkBlockHeaderSanity(block *wire.MsgBlock, powLimit *big.Int, timeSource MedianTimeSource, flags BehaviorFlags) error {
+func checkBlockHeaderSanity(solver cuckoo.Solver, block *wire.MsgBlock, powLimit *big.Int, timeSource MedianTimeSource, flags BehaviorFlags) error {
 	var header = block.Header
 	// Ensure the proof of work bits in the block header is in min/max range
 	// and the block hash is less than the target value described by the
 	// bits.
-	err := checkProofOfWork(block, powLimit, flags)
+	err := checkProofOfWork(solver, block, powLimit, flags)
 	if err != nil {
 		return err
 	}
@@ -467,10 +472,10 @@ func checkBlockHeaderSanity(block *wire.MsgBlock, powLimit *big.Int, timeSource 
 //
 // The flags do not modify the behavior of this function directly, however they
 // are needed to pass along to checkBlockHeaderSanity.
-func checkBlockSanity(block *soterutil.Block, powLimit *big.Int, timeSource MedianTimeSource, flags BehaviorFlags) error {
+func checkBlockSanity(solver cuckoo.Solver, block *soterutil.Block, powLimit *big.Int, timeSource MedianTimeSource, flags BehaviorFlags) error {
 	msgBlock := block.MsgBlock()
 	header := &msgBlock.Header
-	err := checkBlockHeaderSanity(block.MsgBlock(), powLimit, timeSource, flags)
+	err := checkBlockHeaderSanity(solver, block.MsgBlock(), powLimit, timeSource, flags)
 	if err != nil {
 		return err
 	}
@@ -574,8 +579,8 @@ func checkBlockSanity(block *soterutil.Block, powLimit *big.Int, timeSource Medi
 
 // CheckBlockSanity performs some preliminary checks on a block to ensure it is
 // sane before continuing with block processing.  These checks are context free.
-func CheckBlockSanity(block *soterutil.Block, powLimit *big.Int, timeSource MedianTimeSource) error {
-	return checkBlockSanity(block, powLimit, timeSource, BFNone)
+func CheckBlockSanity(solver cuckoo.Solver, block *soterutil.Block, powLimit *big.Int, timeSource MedianTimeSource) error {
+	return checkBlockSanity(solver, block, powLimit, timeSource, BFNone)
 }
 
 // ExtractCoinbaseHeight attempts to extract the height of the block from the
@@ -1295,7 +1300,7 @@ func (b *BlockDAG) CheckConnectBlockTemplate(block *soterutil.Block) error {
 		return ruleError(ErrPrevBlockNotBest, str)
 	}
 
-	err := checkBlockSanity(block, b.chainParams.PowLimit, b.timeSource, flags)
+	err := checkBlockSanity(b.Solver, block, b.chainParams.PowLimit, b.timeSource, flags)
 	if err != nil {
 		return err
 	}

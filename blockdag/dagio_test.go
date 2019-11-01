@@ -740,7 +740,7 @@ func TestBlockNodeStorage(t *testing.T) {
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()
 
-	msgblock1 := createMsgBlockForTest(1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	msgblock1 := createMsgBlockForTest(dag.Solver, 1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
 	node1 := newBlockNode(&msgblock1.Header, &msgblock1.Parents, []*blockNode{dag.dView.Genesis()})
 	blockData, err := serializeBlockNode(node1)
 	if err != nil {

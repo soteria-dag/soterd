@@ -7,6 +7,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -145,9 +146,40 @@ func soterdMain(serverChan chan<- *server) error {
 		return nil
 	}
 
+	// Determine which PoW solver to use
+	var solver cuckoo.Solver
+	if cfg.LeanSolver {
+		lean := cuckoo.NewCuckooSolver(cuckoo.DefaultEdgeBits, cuckoo.DefaultSipHash)
+		err := lean.CheckRequirements()
+		if err != nil {
+			msg := fmt.Sprintf("Not all requirements for lean Cuckoo solver met: %s", err)
+			soterdLog.Errorf(msg)
+			return fmt.Errorf(msg)
+		}
+		solver = lean
+	} else if cfg.GPUSolver {
+		gpu := cuckoo.NewGPUCuckooSolver()
+		err := gpu.CheckRequirements()
+		if err != nil {
+			msg := fmt.Sprintf("Not all requirements for gpu Cuckoo solver met: %s", err)
+			soterdLog.Errorf(msg)
+			return fmt.Errorf(msg)
+		}
+		solver = gpu
+	} else {
+		c := cuckoo.NewCuckarooSolver()
+		err := c.CheckRequirements()
+		if err != nil {
+			msg := fmt.Sprintf("Not all requirements for Qitmeer Cuckaroo solver met: %s", err)
+			soterdLog.Errorf(msg)
+			return fmt.Errorf(msg)
+		}
+		solver = c
+	}
+
 	// Create server and start it.
 	server, err := newServer(cfg.Listeners, db, activeNetParams.Params,
-		interrupt)
+		interrupt, solver)
 	if err != nil {
 		// TODO: this logging could do with some beautifying.
 		soterdLog.Errorf("Unable to start server on %v: %v",

@@ -7,9 +7,9 @@ package blockdag
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/Qitmeer/qitmeer-lib/crypto/cuckoo"
 	"github.com/soteria-dag/soterd/chaincfg"
 	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"github.com/soteria-dag/soterd/soterutil"
 	"github.com/soteria-dag/soterd/txscript"
 	"github.com/soteria-dag/soterd/wire"
@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 )
+
 func calcMerkleRoot(txns []*wire.MsgTx) chainhash.Hash {
 	if len(txns) == 0 {
 		return chainhash.Hash{}
@@ -31,7 +32,7 @@ func calcMerkleRoot(txns []*wire.MsgTx) chainhash.Hash {
 	return *merkles[len(merkles)-1]
 }
 
-func createMsgBlockForTest(height uint32, ts int64, parents []*wire.MsgBlock, transactions []*wire.MsgTx) *wire.MsgBlock {
+func createMsgBlockForTest(solver cuckoo.Solver, height uint32, ts int64, parents []*wire.MsgBlock, transactions []*wire.MsgTx) *wire.MsgBlock {
 	var coinbaseTx = createCoinbaseTxForTest(height)
 
 	parentHashes := make([]*chainhash.Hash, len(parents))
@@ -76,38 +77,46 @@ func createMsgBlockForTest(height uint32, ts int64, parents []*wire.MsgBlock, tr
 	}
 
 	// solve for cuckoo cycle nonces
-	solveMsgBlockForTest(&Block)
+	solveMsgBlockForTest(solver, &Block)
 
 	return &Block
 }
 
 // solveMsgBlockForTest solves a block with cuckoo cycle
-func solveMsgBlockForTest(block *wire.MsgBlock) {
+func solveMsgBlockForTest(solver cuckoo.Solver, block *wire.MsgBlock) {
 	var targetDifficulty = CompactToBig(block.Header.Bits)
-
-	c := cuckoo.NewCuckoo()
 
 	for i := block.Header.Nonce; i <= uint32(math.MaxUint32); i++ {
 		block.Header.Nonce = i
-		hash := block.Header.BlockHash()
-
-		cycleNonces, isFound := c.PoW(hash.CloneBytes())
-		if !isFound {
+		encoded, err := block.Header.Bytes()
+		if err != nil {
 			continue
 		}
 
-		if err := cuckoo.Verify(hash.CloneBytes(), cycleNonces); err != nil {
+		solutions, err := solver.Solve(encoded, block.Header.Nonce)
+		if err != nil {
 			continue
 		}
 
-		// The block is solved when:
-		// a) The cuckoo cycle is valid
-		// b) The cuckoo cycle proof difficulty is greater than or equal to the target difficulty
-		proofDifficulty := ProofDifficulty(cycleNonces)
-		if proofDifficulty.Cmp(targetDifficulty) >= 0 {
-			block.Verification.CycleNonces = cycleNonces
-			block.Verification.Size = int32(len(cycleNonces))
-			break
+		if len(solutions) == 0 {
+			continue
+		}
+
+		for _, cycleNonces := range solutions {
+			err := solver.Verify(encoded, block.Header.Nonce, cycleNonces)
+			if err != nil {
+				continue
+			}
+
+			// The block is solved when:
+			// a) The cuckoo cycle is valid
+			// b) The cuckoo cycle proof difficulty is greater than or equal to the target difficulty
+			proofDifficulty := ProofDifficulty(cycleNonces)
+			if proofDifficulty.Cmp(targetDifficulty) >= 0 {
+				block.Verification.CycleNonces = cycleNonces
+				block.Verification.Size = int32(len(cycleNonces))
+				return
+			}
 		}
 	}
 }
@@ -316,7 +325,7 @@ func TestHaveBlock(t *testing.T) {
 	dag.TstSetCoinbaseMaturity(1)
 
 	// create blocks
-	msgblock1 := createMsgBlockForTest(1,
+	msgblock1 := createMsgBlockForTest(dag.Solver, 1,
 		time.Now().Unix(),
 		[]*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock},
 		nil)
@@ -331,7 +340,7 @@ func TestHaveBlock(t *testing.T) {
 	}
 
 	// The orphan block needs to be solved, before we'll be able to add it to the dag
-	solveMsgBlockForTest(&BlockOrphan)
+	solveMsgBlockForTest(dag.Solver, &BlockOrphan)
 
 	isOrphan, err = addBlockForTest(dag, &BlockOrphan)
 	if err != nil {
@@ -412,9 +421,9 @@ func TestDAGSnapshot(t *testing.T) {
 	//create blocks
 	now := time.Now().Unix()
 	var blocks = make([]*wire.MsgBlock, 3)
-	blocks[0] = createMsgBlockForTest(1, now - 1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
-	blocks[1] = createMsgBlockForTest(1, now - 800, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
-	blocks[2] = createMsgBlockForTest(2, now - 600, []*wire.MsgBlock{blocks[0], blocks[1]}, nil)
+	blocks[0] = createMsgBlockForTest(dag.Solver, 1, now - 1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	blocks[1] = createMsgBlockForTest(dag.Solver, 1, now - 800, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	blocks[2] = createMsgBlockForTest(dag.Solver, 2, now - 600, []*wire.MsgBlock{blocks[0], blocks[1]}, nil)
 
 	// block1 w/ parent block0
 	block1Hash := blocks[0].BlockHash()
@@ -493,12 +502,12 @@ func TestGetOrphanRoot(t *testing.T) {
 	//create blocks
 	now := time.Now().Unix()
 	var blocks= make([]*wire.MsgBlock, 6)
-	blocks[0] = createMsgBlockForTest(1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
-	blocks[1] = createMsgBlockForTest(1, now-900, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
-	blocks[2] = createMsgBlockForTest(2, now-800, []*wire.MsgBlock{blocks[0], blocks[1]}, nil)
-	blocks[3] = createMsgBlockForTest(3, now-700, []*wire.MsgBlock{blocks[2]}, nil)
-	blocks[4] = createMsgBlockForTest(3, now-600, []*wire.MsgBlock{blocks[2]}, nil)
-	blocks[5] = createMsgBlockForTest(4, now-500, []*wire.MsgBlock{blocks[3], blocks[4]}, nil)
+	blocks[0] = createMsgBlockForTest(dag.Solver, 1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	blocks[1] = createMsgBlockForTest(dag.Solver, 1, now-900, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	blocks[2] = createMsgBlockForTest(dag.Solver, 2, now-800, []*wire.MsgBlock{blocks[0], blocks[1]}, nil)
+	blocks[3] = createMsgBlockForTest(dag.Solver, 3, now-700, []*wire.MsgBlock{blocks[2]}, nil)
+	blocks[4] = createMsgBlockForTest(dag.Solver, 3, now-600, []*wire.MsgBlock{blocks[2]}, nil)
+	blocks[5] = createMsgBlockForTest(dag.Solver, 4, now-500, []*wire.MsgBlock{blocks[3], blocks[4]}, nil)
 
 	isOrphan, _ := addBlockForTest(dag, blocks[5])
 	block6Hash := blocks[5].BlockHash()
@@ -578,7 +587,7 @@ func TestHeaderByHash(t *testing.T) {
 	t.Parallel()
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()
-	msgblock := createMsgBlockForTest(1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	msgblock := createMsgBlockForTest(dag.Solver, 1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
 	node := newBlockNode(&msgblock.Header, &msgblock.Parents, []*blockNode{dag.dView.Genesis()})
 	dag.index.AddNode(node)
 
@@ -596,7 +605,7 @@ func TestMainChainHasBlock(t *testing.T) {
 	t.Parallel()
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()
-	msgblock := createMsgBlockForTest(1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	msgblock := createMsgBlockForTest(dag.Solver, 1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
 	node := newBlockNode(&msgblock.Header, &msgblock.Parents, []*blockNode{dag.dView.Genesis()})
 
 	hasBlock := dag.MainChainHasBlock(&node.hash)
@@ -618,7 +627,7 @@ func TestBlockHeightByHash(t *testing.T) {
 	t.Parallel()
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()
-	msgblock := createMsgBlockForTest(1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	msgblock := createMsgBlockForTest(dag.Solver, 1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
 	node := newBlockNode(&msgblock.Header, &msgblock.Parents, []*blockNode{dag.dView.Genesis()})
 
 	dag.index.AddNode(node)
@@ -641,11 +650,11 @@ func TestBlockHashesByHeight(t *testing.T) {
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()
 
-	msgblock1 := createMsgBlockForTest(1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	msgblock1 := createMsgBlockForTest(dag.Solver, 1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
 	node1 := newBlockNode(&msgblock1.Header, &msgblock1.Parents, []*blockNode{dag.dView.Genesis()})
-	msgblock2 := createMsgBlockForTest(1, now-800, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	msgblock2 := createMsgBlockForTest(dag.Solver, 1, now-800, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
 	node2 := newBlockNode(&msgblock2.Header, &msgblock2.Parents, []*blockNode{dag.dView.Genesis()})
-	msgblock3 := createMsgBlockForTest(2, now-600, []*wire.MsgBlock{ msgblock1 }, nil)
+	msgblock3 := createMsgBlockForTest(dag.Solver, 2, now-600, []*wire.MsgBlock{msgblock1 }, nil)
 	node3 := newBlockNode(&msgblock3.Header, &msgblock3.Parents, []*blockNode{ node1 })
 
 	dag.index.AddNode(node1)
@@ -671,11 +680,11 @@ func TestHeightRange(t *testing.T) {
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()
 
-	msgblock1 := createMsgBlockForTest(1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	msgblock1 := createMsgBlockForTest(dag.Solver, 1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
 	node1 := newBlockNode(&msgblock1.Header, &msgblock1.Parents, []*blockNode{dag.dView.Genesis()})
-	msgblock2 := createMsgBlockForTest(1, now-800, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	msgblock2 := createMsgBlockForTest(dag.Solver, 1, now-800, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
 	node2 := newBlockNode(&msgblock2.Header, &msgblock2.Parents, []*blockNode{dag.dView.Genesis()})
-	msgblock3 := createMsgBlockForTest(2, now-600, []*wire.MsgBlock{ msgblock1 }, nil)
+	msgblock3 := createMsgBlockForTest(dag.Solver, 2, now-600, []*wire.MsgBlock{msgblock1 }, nil)
 	node3 := newBlockNode(&msgblock3.Header, &msgblock3.Parents, []*blockNode{ node1 })
 
 	dag.index.AddNode(node1)
@@ -756,13 +765,13 @@ func TestHeightToHashRange(t *testing.T) {
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()
 
-	msgblock1 := createMsgBlockForTest(1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	msgblock1 := createMsgBlockForTest(dag.Solver, 1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
 	node1 := newBlockNode(&msgblock1.Header, &msgblock1.Parents, []*blockNode{dag.dView.Genesis()})
-	msgblock2 := createMsgBlockForTest(1, now-800, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	msgblock2 := createMsgBlockForTest(dag.Solver, 1, now-800, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
 	node2 := newBlockNode(&msgblock2.Header, &msgblock2.Parents, []*blockNode{dag.dView.Genesis()})
-	msgblock3 := createMsgBlockForTest(2, now-600, []*wire.MsgBlock{msgblock1}, nil)
+	msgblock3 := createMsgBlockForTest(dag.Solver, 2, now-600, []*wire.MsgBlock{msgblock1}, nil)
 	node3 := newBlockNode(&msgblock3.Header, &msgblock3.Parents, []*blockNode{node1})
-	msgblock4 := createMsgBlockForTest(3, now-400, []*wire.MsgBlock{msgblock2, msgblock3}, nil)
+	msgblock4 := createMsgBlockForTest(dag.Solver, 3, now-400, []*wire.MsgBlock{msgblock2, msgblock3}, nil)
 	node4 := newBlockNode(&msgblock4.Header, &msgblock4.Parents, []*blockNode{node2, node3})
 
 	dag.index.AddNode(node1)
@@ -904,7 +913,7 @@ func TestGraphUpdate(t *testing.T) {
 	numBlocks := len(blocks)
 	blocks[0] = chaincfg.SimNetParams.GenesisBlock
 	for i := 1; i <= numBlocks - 1; i++ {
-		blocks[i] = createMsgBlockForTest(uint32(i), now-int64((numBlocks-i)*10), []*wire.MsgBlock{blocks[i-1]}, nil)
+		blocks[i] = createMsgBlockForTest(dag.Solver, uint32(i), now-int64((numBlocks-i)*10), []*wire.MsgBlock{blocks[i-1]}, nil)
 		_, err := addBlockForTest(dag, blocks[i])
 		if err != nil {
 			t.Fatalf("failed to add block to dag: %s", err)

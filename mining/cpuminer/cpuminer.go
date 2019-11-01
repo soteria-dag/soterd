@@ -6,7 +6,6 @@
 package cpuminer
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -14,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Qitmeer/qitmeer-lib/crypto/cuckoo"
 	"github.com/soteria-dag/soterd/blockdag"
 	"github.com/soteria-dag/soterd/chaincfg"
 	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"github.com/soteria-dag/soterd/miningdag"
 	"github.com/soteria-dag/soterd/soterutil"
 	"github.com/soteria-dag/soterd/wire"
@@ -59,6 +58,8 @@ type Config struct {
 	// BlockTemplateGenerator identifies the instance to use in order to
 	// generate block templates that the miner will attempt to solve.
 	BlockTemplateGenerator *miningdag.BlkTmplGenerator
+
+	Solver cuckoo.Solver
 
 	// MiningAddrs is a list of payment addresses to use for the generated
 	// blocks.  Each generated block will randomly choose one of them.
@@ -232,7 +233,6 @@ func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, blockHeight int32,
 	var lastGenerated = time.Now()
 	var lastTxUpdate = m.g.TxSource().LastUpdated()
 	var hashesCompleted = uint64(0)
-	var c = cuckoo.NewCuckoo()
 
 	// Note that the entire extra nonce range is iterated and the offset is
 	// added relying on the fact that overflow will wrap around 0 as
@@ -276,38 +276,46 @@ func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, blockHeight int32,
 				// Non-blocking select to fall through
 			}
 
-			// Update the nonce and hash the block header.  Each
-			// hash is actually a double sha256 (two hashes), so
-			// increment the number of hashes completed for each
-			// attempt accordingly.
+			// Update the nonce and solve the block header.
 			header.Nonce = i
-			hash := header.BlockHash()
+			// TODO(cedric): hashesComplete is no longer an accurate metric, since
+			// the solver does more work than just generating a hash of the header.
+			// It should be replaced with something more like "amount of time spent solving"
 			hashesCompleted += 2
 
 			// Run cuckoo cycle against the header. The block is solved when a cycle >= length cuckoo.ProofSize is found.
-			hashBytes := hash.CloneBytes()
-			cycleNonces, isFound := c.PoW(hashBytes)
-
-			if !isFound {
+			encoded, err := header.Bytes()
+			if err != nil {
+				continue
+			}
+			solutions, err := m.cfg.Solver.Solve(encoded, header.Nonce)
+			if err != nil {
 				continue
 			}
 
-			if err := cuckoo.Verify(hashBytes, cycleNonces); err != nil {
+			if len(solutions) == 0 {
 				continue
 			}
 
-			// The block is solved when:
-			// a) The cuckoo cycle is valid
-			// b) The cuckoo cycle proof difficulty is greater than or equal to the target difficulty
-			proofDifficulty := blockdag.ProofDifficulty(cycleNonces)
-			if proofDifficulty.Cmp(targetDifficulty) >= 0 {
-				log.Debugf("Current Nonce:%d", i)
-				log.Debugf("Found %d Cycles Nonces:", cuckoo.ProofSize, cycleNonces)
+			for _, cycleNonces := range solutions {
+				err := m.cfg.Solver.Verify(encoded, header.Nonce, cycleNonces)
+				if err != nil {
+					continue
+				}
 
-				m.updateHashes <- hashesCompleted
+				// The block is solved when:
+				// a) The cuckoo cycle is valid
+				// b) The cuckoo cycle proof difficulty is greater than or equal to the target difficulty
+				proofDifficulty := blockdag.ProofDifficulty(cycleNonces)
+				if proofDifficulty.Cmp(targetDifficulty) >= 0 {
+					log.Debugf("Current nonce: %d", header.Nonce)
+					log.Debugf("Found %d cycle nonces: %s", len(cycleNonces), cycleNonces)
 
-				// Return with cycleNonces, so that Verify could be called again against this block's header
-				return true, cycleNonces
+					m.updateHashes <- hashesCompleted
+
+					// Return with cycleNonces, so that Verify could be called again against this block's header
+					return true, cycleNonces
+				}
 			}
 		}
 	}
@@ -708,12 +716,3 @@ func New(cfg *Config) *CPUMiner {
 	}
 }
 
-// HashToBig converts a hash.Hash into a big.Int that can be used to
-// perform math comparisons.
-func Uint32ToBytes(v []uint32) []byte {
-	var buf = make([]byte, 4*len(v))
-	for i, x := range v {
-		binary.LittleEndian.PutUint32(buf[4*i:], x)
-	}
-	return buf
-}

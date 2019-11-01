@@ -9,6 +9,7 @@ package blockdag
 import (
 	"container/list"
 	"fmt"
+	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"math"
 	"sort"
 	"sync"
@@ -138,6 +139,8 @@ type BlockDAG struct {
 	sigCache     *txscript.SigCache
 	indexManager IndexManager
 	hashCache    *txscript.HashCache
+	// Solver is used to verify blocks being added to DAG
+	Solver cuckoo.Solver
 
 	// The following fields are calculated based upon the provided chain
 	// parameters.  They are also set when the instance is created and
@@ -2216,6 +2219,9 @@ type Config struct {
 	// This field can be nil if the caller is not interested in using a
 	// signature cache.
 	HashCache *txscript.HashCache
+
+	// Solver defines a solver that can be used to perform proof-of-work and validate blocks.
+	Solver cuckoo.Solver
 }
 
 // New returns a BlockChain instance using the provided configuration details.
@@ -2229,6 +2235,15 @@ func New(config *Config) (*BlockDAG, error) {
 	}
 	if config.TimeSource == nil {
 		return nil, AssertError("blockchain.New timesource is nil")
+	}
+	if config.Solver == nil {
+		return nil, AssertError("blockchain.New Solver is nil")
+	}
+
+	err := config.Solver.CheckRequirements()
+	if err != nil {
+		msg := fmt.Sprintf("blockchain.New Solver requirements issue: %s", err)
+		return nil, AssertError(msg)
 	}
 
 	// Generate a checkpoint by height map from the provided checkpoints
@@ -2266,6 +2281,7 @@ func New(config *Config) (*BlockDAG, error) {
 		blocksPerRetarget:   int64(targetTimespan / targetTimePerBlock),
 		index:               newBlockIndex(config.DB, params),
 		hashCache:           config.HashCache,
+		Solver:              config.Solver,
 		dView:               newDAGView(nil),
 		graph:               phantom.NewGraph(),
 		nodeOrder:           make([]*chainhash.Hash, 0),

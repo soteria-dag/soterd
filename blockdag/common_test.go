@@ -9,6 +9,7 @@ import (
 	"compress/bzip2"
 	"encoding/binary"
 	"fmt"
+	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"io"
 	"os"
 	"path/filepath"
@@ -182,6 +183,7 @@ func chainSetup(dbName string, params *chaincfg.Params) (*BlockDAG, func(), erro
 		//Checkpoints: nil,
 		TimeSource: NewMedianTime(),
 		SigCache:   txscript.NewSigCache(1000),
+		Solver:     cuckoo.DefaultSolver(),
 	})
 	if err != nil {
 		teardown()
@@ -283,6 +285,7 @@ func newFakeChain(params *chaincfg.Params) *BlockDAG {
 	dag := BlockDAG{
 		chainParams:         params,
 		timeSource:          NewMedianTime(),
+		Solver:              cuckoo.DefaultSolver(),
 		minRetargetTimespan: targetTimespan / adjustmentFactor,
 		maxRetargetTimespan: targetTimespan * adjustmentFactor,
 		blocksPerRetarget:   int64(targetTimespan / targetTimePerBlock),

@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/soteria-dag/soterd/blockdag/fullblocktests"
+	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"os"
 	"path/filepath"
 	"testing"
@@ -124,6 +125,7 @@ func chainSetup(dbName string, params *chaincfg.Params) (*blockdag.BlockDAG, fun
 		// Checkpoints: nil,
 		TimeSource: blockdag.NewMedianTime(),
 		SigCache:   txscript.NewSigCache(1000),
+		Solver:     cuckoo.DefaultSolver(),
 	})
 	if err != nil {
 		teardown()

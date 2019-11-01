@@ -3661,7 +3661,7 @@ func verifyChain(s *rpcServer, level, depth int32) error {
 		// Level 1 does basic chain sanity checks.
 		if level > 0 {
 			for _, block := range blocks {
-				err := blockdag.CheckBlockSanity(block,
+				err := blockdag.CheckBlockSanity(s.cfg.Chain.Solver, block,
 					s.cfg.ChainParams.PowLimit, s.cfg.TimeSource)
 				if err != nil {
 					rpcsLog.Errorf("Verify is unable to validate "+

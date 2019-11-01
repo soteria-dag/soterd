@@ -15,18 +15,18 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/Qitmeer/qitmeer-lib/crypto/cuckoo"
 	"github.com/soteria-dag/soterd/blockdag"
 	"math"
 	"runtime"
 	"time"
 
-	"github.com/soteria-dag/soterd/soterec"
 	"github.com/soteria-dag/soterd/chaincfg"
 	"github.com/soteria-dag/soterd/chaincfg/chainhash"
+	"github.com/soteria-dag/soterd/mining/cuckoo"
+	"github.com/soteria-dag/soterd/soterec"
+	"github.com/soteria-dag/soterd/soterutil"
 	"github.com/soteria-dag/soterd/txscript"
 	"github.com/soteria-dag/soterd/wire"
-	"github.com/soteria-dag/soterd/soterutil"
 )
 
 const (
@@ -186,6 +186,7 @@ func makeSpendableOut(block *wire.MsgBlock, txIndex, txOutIndex uint32) spendabl
 // available spendable outputs used throughout the tests.
 type testGenerator struct {
 	params       *chaincfg.Params
+	solver       cuckoo.Solver
 	last         *wire.MsgBlock
 	lastName     string
 	lastHeight   int32
@@ -211,8 +212,14 @@ func makeTestGenerator(params *chaincfg.Params) (testGenerator, error) {
 	privKey, _ := soterec.PrivKeyFromBytes(soterec.S256(), []byte{0x01})
 	genesis := params.GenesisBlock
 	genesisHash := genesis.BlockHash()
+
+	var solver cuckoo.Solver
+	orig := cuckoo.NewCuckooSolver(cuckoo.DefaultEdgeBits, cuckoo.DefaultSipHash)
+	solver = orig
+
 	return testGenerator{
 		params:       params,
+		solver:       solver,
 		blocks:       map[chainhash.Hash]*wire.MsgBlock{genesisHash: genesis},
 		blocksByName: map[string]*wire.MsgBlock{"genesis": genesis},
 		blockHeights: map[string]int32{"genesis": 0},
@@ -333,10 +340,8 @@ func calcMerkleRoot(txns []*wire.MsgTx) chainhash.Hash {
 // NOTE: This function will never solve blocks with a nonce of 0.  This is done
 // so the 'nextBlock' function can properly detect when a nonce was modified by
 // a munge function.
-func solveBlock(block *wire.MsgBlock) bool {
+func solveBlock(solver cuckoo.Solver, block *wire.MsgBlock) bool {
 	var targetDifficulty = blockdag.CompactToBig(block.Header.Bits)
-
-	c := cuckoo.NewCuckoo()
 
 	var startNonce uint32
 	if block.Header.Nonce == 0 {
@@ -347,25 +352,35 @@ func solveBlock(block *wire.MsgBlock) bool {
 
 	for i := startNonce; i <= uint32(math.MaxUint32); i++ {
 		block.Header.Nonce = i
-		hash := block.Header.BlockHash()
-
-		cycleNonces, isFound := c.PoW(hash.CloneBytes())
-		if !isFound {
+		encoded, err := block.Header.Bytes()
+		if err != nil {
 			continue
 		}
 
-		if err := cuckoo.Verify(hash.CloneBytes(), cycleNonces); err != nil {
+		solutions, err := solver.Solve(encoded, block.Header.Nonce)
+		if err != nil {
 			continue
 		}
 
-		// The block is solved when:
-		// a) The cuckoo cycle is valid
-		// b) The cuckoo cycle proof difficulty is greater than or equal to the target difficulty
-		proofDifficulty := blockdag.ProofDifficulty(cycleNonces)
-		if proofDifficulty.Cmp(targetDifficulty) >= 0 {
-			block.Verification.CycleNonces = cycleNonces
-			block.Verification.Size = int32(len(cycleNonces))
-			return true
+		if len(solutions) == 0 {
+			continue
+		}
+
+		for _, cycleNonces := range solutions {
+			err := solver.Verify(encoded, block.Header.Nonce, cycleNonces)
+			if err != nil {
+				continue
+			}
+
+			// The block is solved when:
+			// a) The cuckoo cycle is valid
+			// b) The cuckoo cycle proof difficulty is greater than or equal to the target difficulty
+			proofDifficulty := blockdag.ProofDifficulty(cycleNonces)
+			if proofDifficulty.Cmp(targetDifficulty) >= 0 {
+				block.Verification.CycleNonces = cycleNonces
+				block.Verification.Size = int32(len(cycleNonces))
+				return true
+			}
 		}
 	}
 
@@ -567,7 +582,7 @@ func (g *testGenerator) nextBlock(blockName string, spend *spendableOut, parentN
 
 	// Only solve the block if the nonce wasn't manually changed by a munge
 	// function.
-	if block.Header.Nonce == curNonce && !solveBlock(&block) {
+	if block.Header.Nonce == curNonce && !solveBlock(g.solver, &block) {
 		panic(fmt.Sprintf("Unable to solve block at height %d",
 			nextHeight))
 	}

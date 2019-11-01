@@ -14,13 +14,14 @@ Refer to the [Getting started with Docker](getting_started_docker.md) document f
 
 #### Requirements
 
-[Go](http://golang.org) 1.13 or newer. (It may compile on earlier versions, but is tested on Go 1.13 and later)
-
-[Git](https://git-scm.com/)
+* [Go](http://golang.org) 1.13 or newer. (It may compile on earlier versions, but is tested on Go 1.13 and later)
+* [Git](https://git-scm.com/)
 
 ##### Optional
 
-[graphviz](https://graphviz.org/), for DAG rendering functionality
+* [graphviz](https://graphviz.org/), for DAG rendering functionality
+
+If you'd like to use an external cuckoo solver (the `--lean` or `--gpu` cli flags), the build requirements are listed in the [External cuckoo solver document](external_cuckoo_solver.md).
 
 #### Build and install steps
 
@@ -90,6 +91,10 @@ The following command will run a soterd node on testnet
 ```bash
 $ ./soterd --testnet
 ```
+
+### External cuckoo solvers
+
+If you'd like to use an external cuckoo solver (the `--lean` or `--gpu` cli flags), the build requirements are listed in the [External cuckoo solver document](external_cuckoo_solver.md).
 
 ### Configuring soterd
 

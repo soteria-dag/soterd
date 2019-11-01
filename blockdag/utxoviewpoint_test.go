@@ -29,13 +29,15 @@ func TestUTXOViewpointSimpleDoubleSpend(t *testing.T) {
 	// maturity to 1.
 	dag.TstSetCoinbaseMaturity(1)
 
-	block1 := createMsgBlockForTest(1,
+	block1 := createMsgBlockForTest(dag.Solver,
+		1,
 		time.Now().Unix() - 1000,
 		[]*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock},
 		nil)
 	addBlockForTest(dag, block1)
 
-	block2 := createMsgBlockForTest(2,
+	block2 := createMsgBlockForTest(dag.Solver,
+		2,
 		time.Now().Unix() - 900,
 		[]*wire.MsgBlock{block1},
 		nil)
@@ -49,7 +51,8 @@ func TestUTXOViewpointSimpleDoubleSpend(t *testing.T) {
 	tx := createSpendTxForTest(outpoints, soterutil.Amount(1000), soterutil.Amount(10))
 
 	// block A using cb tx
-	blockA := createMsgBlockForTest(3,
+	blockA := createMsgBlockForTest(dag.Solver,
+		3,
 		time.Now().Unix(),
 		[]*wire.MsgBlock{block2},
 		[]*wire.MsgTx{tx})
@@ -58,7 +61,8 @@ func TestUTXOViewpointSimpleDoubleSpend(t *testing.T) {
 	tx2 := createSpendTxForTest(outpoints, soterutil.Amount(5000), soterutil.Amount(10))
 
 	// block B using cb tx
-	blockB := createMsgBlockForTest(3,
+	blockB := createMsgBlockForTest(dag.Solver,
+		3,
 		time.Now().Unix(),
 		[]*wire.MsgBlock{block2},
 		[]*wire.MsgTx{tx2})
@@ -170,7 +174,8 @@ func TestUTXOViewpointDuplicateTx(t *testing.T) {
 	// maturity to 1.
 	dag.TstSetCoinbaseMaturity(1)
 
-	block1 := createMsgBlockForTest(1,
+	block1 := createMsgBlockForTest(dag.Solver,
+		1,
 		time.Now().Unix() - 1000,
 		[]*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock},
 		nil)
@@ -180,7 +185,8 @@ func TestUTXOViewpointDuplicateTx(t *testing.T) {
 		return
 	}
 
-	block2 := createMsgBlockForTest(2,
+	block2 := createMsgBlockForTest(dag.Solver,
+		2,
 		time.Now().Unix() - 900,
 		[]*wire.MsgBlock{block1},
 		nil)
@@ -198,7 +204,8 @@ func TestUTXOViewpointDuplicateTx(t *testing.T) {
 	tx := createSpendTxForTest(outpoints, soterutil.Amount(1000), soterutil.Amount(10))
 
 	// block A using cb tx
-	blockA := createMsgBlockForTest(3,
+	blockA := createMsgBlockForTest(dag.Solver,
+		3,
 		time.Now().Unix() - 10,
 		[]*wire.MsgBlock{block2},
 		[]*wire.MsgTx{tx})
@@ -209,7 +216,8 @@ func TestUTXOViewpointDuplicateTx(t *testing.T) {
 	}
 
 	// block B using cb tx
-	blockB := createMsgBlockForTest(3,
+	blockB := createMsgBlockForTest(dag.Solver,
+		3,
 		time.Now().Unix(),
 		[]*wire.MsgBlock{block2},
 		[]*wire.MsgTx{tx})
@@ -271,13 +279,15 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 	// maturity to 1.
 	dag.TstSetCoinbaseMaturity(1)
 
-	block1 := createMsgBlockForTest(1,
+	block1 := createMsgBlockForTest(dag.Solver,
+		1,
 		time.Now().Unix() - 1000,
 		[]*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock},
 		nil)
 	addBlockForTest(dag, block1)
 
-	block2 := createMsgBlockForTest(2,
+	block2 := createMsgBlockForTest(dag.Solver,
+		2,
 		time.Now().Unix() - 900,
 		[]*wire.MsgBlock{block1},
 		nil)
@@ -292,7 +302,8 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 	txHash := tx.TxHash()
 
 	// block A using cb tx
-	blockA := createMsgBlockForTest(3,
+	blockA := createMsgBlockForTest(dag.Solver,
+		3,
 		time.Now().Unix() - 800,
 		[]*wire.MsgBlock{block2},
 		[]*wire.MsgTx{tx})
@@ -301,7 +312,8 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 	tx2 := createSpendTxForTest(outpoints, soterutil.Amount(5000), soterutil.Amount(10))
 	tx2Hash := tx2.TxHash()
 	// block B using cb tx
-	blockB := createMsgBlockForTest(3,
+	blockB := createMsgBlockForTest(dag.Solver,
+		3,
 		time.Now().Unix() - 700,
 		[]*wire.MsgBlock{block2},
 		[]*wire.MsgTx{tx2})
@@ -323,7 +335,8 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 	// block C using double spend from B
 	blockBOutpoint := wire.NewOutPoint(&tx2Hash, uint32(0))
 	tx3 := createSpendTxForTest([]*wire.OutPoint{blockBOutpoint}, soterutil.Amount(1000), soterutil.Amount(10))
-	blockC := createMsgBlockForTest(4,
+	blockC := createMsgBlockForTest(dag.Solver,
+		4,
 		time.Now().Unix() - 600,
 		[]*wire.MsgBlock{blockB},
 		[]*wire.MsgTx{tx3})
@@ -341,7 +354,8 @@ func TestUTXOViewpointChildOfDoubleSpend(t *testing.T) {
 	// b/c block D is using double spend from A
 	blockAOutpoint := wire.NewOutPoint(&txHash, uint32(0))
 	tx4 := createSpendTxForTest([]*wire.OutPoint{blockAOutpoint}, soterutil.Amount(1000), soterutil.Amount(10))
-	blockD := createMsgBlockForTest(4,
+	blockD := createMsgBlockForTest(dag.Solver,
+		4,
 		time.Now().Unix() - 500,
 		[]*wire.MsgBlock{blockA},
 		[]*wire.MsgTx{tx4})
@@ -412,19 +426,22 @@ func TestUtxoViewpointCoInputOfDoubleSpend(t *testing.T) {
 	// maturity to 1.
 	dag.TstSetCoinbaseMaturity(1)
 
-	block1 := createMsgBlockForTest(1,
+	block1 := createMsgBlockForTest(dag.Solver,
+		1,
 		time.Now().Unix() - 1000,
 		[]*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock},
 		nil)
 	addBlockForTest(dag, block1)
 
-	block2 := createMsgBlockForTest(2,
+	block2 := createMsgBlockForTest(dag.Solver,
+		2,
 		time.Now().Unix() - 900,
 		[]*wire.MsgBlock{block1},
 		nil)
 	addBlockForTest(dag, block2)
 
-	block3 := createMsgBlockForTest(3,
+	block3 := createMsgBlockForTest(dag.Solver,
+		3,
 		time.Now().Unix() - 800,
 		[]*wire.MsgBlock{block2},
 		nil)
@@ -442,7 +459,8 @@ func TestUtxoViewpointCoInputOfDoubleSpend(t *testing.T) {
 	tx := createSpendTxForTest([]*wire.OutPoint{cbOutpoint}, soterutil.Amount(1000), soterutil.Amount(10))
 
 	// block A using cb tx
-	blockA := createMsgBlockForTest(4,
+	blockA := createMsgBlockForTest(dag.Solver,
+		4,
 		time.Now().Unix() - 700,
 		[]*wire.MsgBlock{block3},
 		[]*wire.MsgTx{tx})
@@ -451,7 +469,8 @@ func TestUtxoViewpointCoInputOfDoubleSpend(t *testing.T) {
 	tx2 := createSpendTxForTest([]*wire.OutPoint{cbOutpoint, cbOutpoint2}, soterutil.Amount(5000), soterutil.Amount(10))
 	//tx2Hash := tx2.TxHash()
 	// block B using cb tx
-	blockB := createMsgBlockForTest(4,
+	blockB := createMsgBlockForTest(dag.Solver,
+		4,
 		time.Now().Unix() - 600,
 		[]*wire.MsgBlock{block3},
 		[]*wire.MsgTx{tx2})
