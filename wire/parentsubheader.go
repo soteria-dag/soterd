@@ -64,14 +64,14 @@ func (h *ParentSubHeader) IsParent(hash *chainhash.Hash) bool {
 	return false
 }
 
-// Deserialize decodes a parent sub-header from r into the receiver h using a format
+// Deserialize decodes a parent sub-header from r into the receiver using a format
 // that is suitable for long-term storage (such as a database)
 func (h *ParentSubHeader) Deserialize(r io.Reader) error {
 	// At time of writing the encoding for protocol version 0 is the same between wire and long-term storage.
 	return readParentSubHeader(r, 0, h)
 }
 
-// Serialize encodes a block header from h into the receiver w using a format
+// Serialize encodes a block header from r into the receiver using a format
 // that is suitable for long-term storage (such as a database)
 func (h *ParentSubHeader) Serialize(w io.Writer) error {
 	// At time of writing the encoding for protocol version 0 is the same between wire and long-term storage.

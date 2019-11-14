@@ -130,7 +130,7 @@ type Policy struct {
 	// fraction of the max signature operations for a block.
 	MaxSigOpCostPerTx int
 
-	// MinRelayTxFee defines the minimum transaction fee in SOTER/kB to be
+	// MinRelayTxFee defines the minimum transaction fee in SOTO/kB to be
 	// considered a non-zero fee.
 	MinRelayTxFee soterutil.Amount
 }
@@ -678,7 +678,8 @@ func (mp *TxPool) maybeAcceptTransaction(tx *soterutil.Tx, isNew, rateLimit, rej
 	}
 
 	// A standalone transaction must not be a coinbase transaction.
-	if blockdag.IsCoinBase(tx) {
+	// TODO: REWARD: standalone tx can't be fee tx either
+	if blockdag.IsCoinBase(tx) || blockdag.IsFeeTx(tx) {
 		str := fmt.Sprintf("transaction %v is an individual coinbase",
 			txHash)
 		return nil, nil, txRuleError(wire.RejectInvalid, str)
@@ -1196,7 +1197,7 @@ func (mp *TxPool) RawMempoolVerbose() map[string]*soterjson.GetRawMempoolVerbose
 		mpd := &soterjson.GetRawMempoolVerboseResult{
 			Size:             int32(tx.MsgTx().SerializeSize()),
 			Vsize:            int32(GetTxVirtualSize(tx)),
-			Fee:              soterutil.Amount(desc.Fee).ToSOTER(),
+			Fee:              soterutil.Amount(desc.Fee).ToSOTO(),
 			Time:             desc.Added.Unix(),
 			Height:           int64(desc.Height),
 			StartingPriority: desc.StartingPriority,

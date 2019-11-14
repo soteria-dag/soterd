@@ -433,7 +433,7 @@ func (r FutureSetTxFeeResult) Receive() error {
 //
 // See SetTxFee for the blocking version and more details.
 func (c *Client) SetTxFeeAsync(fee soterutil.Amount) FutureSetTxFeeResult {
-	cmd := soterjson.NewSetTxFeeCmd(fee.ToSOTER())
+	cmd := soterjson.NewSetTxFeeCmd(fee.ToSOTO())
 	return c.sendCmd(cmd)
 }
 
@@ -472,7 +472,7 @@ func (r FutureSendToAddressResult) Receive() (*chainhash.Hash, error) {
 // See SendToAddress for the blocking version and more details.
 func (c *Client) SendToAddressAsync(address soterutil.Address, amount soterutil.Amount) FutureSendToAddressResult {
 	addr := address.EncodeAddress()
-	cmd := soterjson.NewSendToAddressCmd(addr, amount.ToSOTER(), nil, nil)
+	cmd := soterjson.NewSendToAddressCmd(addr, amount.ToSOTO(), nil, nil)
 	return c.sendCmd(cmd)
 }
 
@@ -498,7 +498,7 @@ func (c *Client) SendToAddressCommentAsync(address soterutil.Address,
 	commentTo string) FutureSendToAddressResult {
 
 	addr := address.EncodeAddress()
-	cmd := soterjson.NewSendToAddressCmd(addr, amount.ToSOTER(), &comment,
+	cmd := soterjson.NewSendToAddressCmd(addr, amount.ToSOTO(), &comment,
 		&commentTo)
 	return c.sendCmd(cmd)
 }
@@ -551,7 +551,7 @@ func (r FutureSendFromResult) Receive() (*chainhash.Hash, error) {
 // See SendFrom for the blocking version and more details.
 func (c *Client) SendFromAsync(fromAccount string, toAddress soterutil.Address, amount soterutil.Amount) FutureSendFromResult {
 	addr := toAddress.EncodeAddress()
-	cmd := soterjson.NewSendFromCmd(fromAccount, addr, amount.ToSOTER(), nil,
+	cmd := soterjson.NewSendFromCmd(fromAccount, addr, amount.ToSOTO(), nil,
 		nil, nil)
 	return c.sendCmd(cmd)
 }
@@ -575,7 +575,7 @@ func (c *Client) SendFrom(fromAccount string, toAddress soterutil.Address, amoun
 // See SendFromMinConf for the blocking version and more details.
 func (c *Client) SendFromMinConfAsync(fromAccount string, toAddress soterutil.Address, amount soterutil.Amount, minConfirms int) FutureSendFromResult {
 	addr := toAddress.EncodeAddress()
-	cmd := soterjson.NewSendFromCmd(fromAccount, addr, amount.ToSOTER(),
+	cmd := soterjson.NewSendFromCmd(fromAccount, addr, amount.ToSOTO(),
 		&minConfirms, nil, nil)
 	return c.sendCmd(cmd)
 }
@@ -604,7 +604,7 @@ func (c *Client) SendFromCommentAsync(fromAccount string,
 	comment, commentTo string) FutureSendFromResult {
 
 	addr := toAddress.EncodeAddress()
-	cmd := soterjson.NewSendFromCmd(fromAccount, addr, amount.ToSOTER(),
+	cmd := soterjson.NewSendFromCmd(fromAccount, addr, amount.ToSOTO(),
 		&minConfirms, &comment, &commentTo)
 	return c.sendCmd(cmd)
 }
@@ -660,7 +660,7 @@ func (r FutureSendManyResult) Receive() (*chainhash.Hash, error) {
 func (c *Client) SendManyAsync(fromAccount string, amounts map[soterutil.Address]soterutil.Amount) FutureSendManyResult {
 	convertedAmounts := make(map[string]float64, len(amounts))
 	for addr, amount := range amounts {
-		convertedAmounts[addr.EncodeAddress()] = amount.ToSOTER()
+		convertedAmounts[addr.EncodeAddress()] = amount.ToSOTO()
 	}
 	cmd := soterjson.NewSendManyCmd(fromAccount, convertedAmounts, nil, nil)
 	return c.sendCmd(cmd)
@@ -689,7 +689,7 @@ func (c *Client) SendManyMinConfAsync(fromAccount string,
 
 	convertedAmounts := make(map[string]float64, len(amounts))
 	for addr, amount := range amounts {
-		convertedAmounts[addr.EncodeAddress()] = amount.ToSOTER()
+		convertedAmounts[addr.EncodeAddress()] = amount.ToSOTO()
 	}
 	cmd := soterjson.NewSendManyCmd(fromAccount, convertedAmounts,
 		&minConfirms, nil)
@@ -723,7 +723,7 @@ func (c *Client) SendManyCommentAsync(fromAccount string,
 
 	convertedAmounts := make(map[string]float64, len(amounts))
 	for addr, amount := range amounts {
-		convertedAmounts[addr.EncodeAddress()] = amount.ToSOTER()
+		convertedAmounts[addr.EncodeAddress()] = amount.ToSOTO()
 	}
 	cmd := soterjson.NewSendManyCmd(fromAccount, convertedAmounts,
 		&minConfirms, &comment)
@@ -1162,7 +1162,7 @@ func (r FutureMoveResult) Receive() (bool, error) {
 //
 // See Move for the blocking version and more details.
 func (c *Client) MoveAsync(fromAccount, toAccount string, amount soterutil.Amount) FutureMoveResult {
-	cmd := soterjson.NewMoveCmd(fromAccount, toAccount, amount.ToSOTER(), nil,
+	cmd := soterjson.NewMoveCmd(fromAccount, toAccount, amount.ToSOTO(), nil,
 		nil)
 	return c.sendCmd(cmd)
 }
@@ -1183,7 +1183,7 @@ func (c *Client) Move(fromAccount, toAccount string, amount soterutil.Amount) (b
 func (c *Client) MoveMinConfAsync(fromAccount, toAccount string,
 	amount soterutil.Amount, minConfirms int) FutureMoveResult {
 
-	cmd := soterjson.NewMoveCmd(fromAccount, toAccount, amount.ToSOTER(),
+	cmd := soterjson.NewMoveCmd(fromAccount, toAccount, amount.ToSOTO(),
 		&minConfirms, nil)
 	return c.sendCmd(cmd)
 }
@@ -1206,7 +1206,7 @@ func (c *Client) MoveMinConf(fromAccount, toAccount string, amount soterutil.Amo
 func (c *Client) MoveCommentAsync(fromAccount, toAccount string,
 	amount soterutil.Amount, minConfirms int, comment string) FutureMoveResult {
 
-	cmd := soterjson.NewMoveCmd(fromAccount, toAccount, amount.ToSOTER(),
+	cmd := soterjson.NewMoveCmd(fromAccount, toAccount, amount.ToSOTO(),
 		&minConfirms, &comment)
 	return c.sendCmd(cmd)
 }

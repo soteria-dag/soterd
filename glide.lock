@@ -1,5 +1,5 @@
-hash: 38e9436fc158f88e5fe7b224cbd499235d76aad464f4f761c454a863ea7c4f52
-updated: 2019-10-03T03:15:08.655501149Z
+hash: 27f5557ed3d8d5613926f8224229785d6b0d1accc3516eebdcd4780d45c7ea45
+updated: 2019-05-02T23:33:24.470145569-06:00
 imports:
 - name: github.com/aead/siphash
   version: 83563a290f60225eb120d724600b9690c3fb536f
@@ -53,15 +53,6 @@ imports:
   - rotator
 - name: github.com/kkdai/bstream
   version: f391b8402d23024e7c0f624b31267a89998fca95
-- name: github.com/pkg/errors
-  version: 27936f6d90f9c8e1145f11ed52ffffbfdb9e0af7
-- name: github.com/Qitmeer/qitmeer-lib
-  version: b10740b316a8cc8f798231af5c119717953253af
-  subpackages:
-  - common/hash
-  - core/json
-  - crypto/cuckoo
-  - crypto/cuckoo/siphash
 - name: github.com/wcharczuk/go-chart
   version: 9852fce5a172598e72d16f4306f0f17a53d94eb4
   subpackages:
@@ -71,11 +62,9 @@ imports:
   - seq
   - util
 - name: golang.org/x/crypto
-  version: 56440b844dfe139a8ac053f4ecac0b20b79058f4
+  version: 9419663f5a44be8b34ca85f08abc5fe1be11f8a3
   subpackages:
-  - blake2b
   - ripemd160
-  - sha3
 - name: golang.org/x/image
   version: 3fc05d484e9f77dd51816890e05f2602e4ca4d65
   subpackages:
@@ -83,8 +72,4 @@ imports:
   - font
   - math/f64
   - math/fixed
-- name: golang.org/x/sys
-  version: b397fe3ad8ed895c98fa54584f61835a88e65ff5
-  subpackages:
-  - cpu
 testImports: []

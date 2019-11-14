@@ -36,6 +36,10 @@ const (
 	// BlockVersion is the default block version used when generating
 	// blocks.
 	BlockVersion = 4
+
+	// keep in sync with dag package
+	rewardWindowLength = 70
+
 )
 
 var (
@@ -269,8 +273,8 @@ func (h *Harness) SetUp(createTestChain bool, numMatureOutputs uint32) error {
 	// Create a test chain with the desired number of mature coinbase
 	// outputs.
 	if createTestChain && numMatureOutputs != 0 {
-		numToGenerate := (uint32(h.ActiveNet.CoinbaseMaturity) +
-			numMatureOutputs)
+		numToGenerate := uint32(h.ActiveNet.CoinbaseMaturity) +
+			numMatureOutputs
 		_, err := h.Node.Generate(numToGenerate)
 		if err != nil {
 			return err
@@ -429,13 +433,6 @@ func (h *Harness) NewAddress() (soterutil.Address, error) {
 	return h.wallet.NewAddress()
 }
 
-// Addresses returns a slice of addresses in the Harness' internal wallet.
-//
-// This function is safe for concurrent access.
-func (h *Harness) Addresses() []soterutil.Address {
-	return h.wallet.Addresses()
-}
-
 // ConfirmedBalance returns the confirmed balance of the Harness' internal
 // wallet.
 //
@@ -566,6 +563,24 @@ func (h *Harness) GenerateAndSubmitBlockWithCustomCoinbaseOutputs(
 	}
 	prevBlock := soterutil.NewBlock(mBlock)
 	prevBlock.SetHeight(bestBlockHeight)
+
+	// create fee txs, add to front of txns
+	ancestorHashes, err := h.Node.GetBlockFeeAncestors(bestBlockHeight + 1, []*chainhash.Hash{bestBlockHash})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, ancestorHash := range ancestorHashes {
+		fee, err := h.Node.GetBlockFee(ancestorHash)
+		if err != nil {
+			return nil, err
+		}
+		script, err := standardFeeTxScript(ancestorHash)
+
+		feeTx, err := createFeeTx(fee, script, nil)
+		fmt.Printf("adding fee tx to block height %d\n", bestBlockHeight + 1)
+		txns = append(txns, feeTx)
+	}
 
 	// Create a new block including the specified transactions
 	newBlock, err := CreateBlock(prevBlock, tipsHash, txns, blockVersion,

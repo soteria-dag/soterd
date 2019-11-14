@@ -240,8 +240,22 @@ func mergeUtxoView(viewA *blockdag.UtxoViewpoint, viewB *blockdag.UtxoViewpoint)
 // it starts with the block height that is required by version 2 blocks and adds
 // the extra nonce as well as additional coinbase flags.
 func standardCoinbaseScript(nextBlockHeight int32, extraNonce uint64) ([]byte, error) {
-	return txscript.NewScriptBuilder().AddInt64(int64(nextBlockHeight)).
+	/*return txscript.NewScriptBuilder().AddInt64(int64(nextBlockHeight)).
 		AddInt64(int64(extraNonce)).AddData([]byte(CoinbaseFlags)).
+		Script()
+
+	*/
+	//TODO: REWARD add tx type
+	return txscript.NewScriptBuilder().AddInt64(int64(blockdag.CoinbaseTxType)).
+		AddInt64(int64(nextBlockHeight)).
+		AddInt64(int64(extraNonce)).AddData([]byte(CoinbaseFlags)).
+		Script()
+
+}
+
+func standardFeeTxScript(ancestorBlockHash *chainhash.Hash) ([]byte, error) {
+	return txscript.NewScriptBuilder().AddInt64(int64(blockdag.FeeTxType)).
+		AddData([]byte(ancestorBlockHash[:])).
 		Script()
 }
 
@@ -282,6 +296,84 @@ func createCoinbaseTx(params *chaincfg.Params, coinbaseScript []byte, nextBlockH
 	})
 	tx.AddTxOut(&wire.TxOut{
 		Value:    blockdag.CalcBlockSubsidy(nextBlockHeight, params),
+		PkScript: pkScript,
+	})
+	return soterutil.NewTx(tx), nil
+}
+
+//TODO: REWARD
+func createFeeTxs(dag *blockdag.BlockDAG, nextBlockHeight int32, parentHashes []chainhash.Hash) ([]*soterutil.Tx, error) {
+	// get ancestor blocks for block at height nextBlockHeight
+	hashes, err := dag.GetFeeAncestors(nextBlockHeight, parentHashes)
+	if err != nil {
+		return nil, err
+	}
+
+	feeTxs := make([]*soterutil.Tx, len(hashes))
+	// for each ancestor, create fee tx
+	for i, hash := range hashes {
+		feeTx, err := createFeeTxFromBlock(dag, hash)
+		if err != nil {
+			return nil, err
+		}
+		feeTxs[i] = feeTx
+	}
+
+	return feeTxs, nil
+}
+
+func createFeeTxFromBlock(dag *blockdag.BlockDAG, blockHash *chainhash.Hash)(*soterutil.Tx, error) {
+	block, err := dag.BlockByHash(blockHash)
+	if err != nil {
+		return nil, err
+	}
+
+	fee, err := dag.CalculateFee(block)
+	if err != nil {
+		return nil, err
+	}
+
+	feeScript, err := standardFeeTxScript(blockHash)
+	if err != nil {
+		return nil, err
+	}
+
+	address, err := dag.GetMinerPubKey(blockHash)
+
+	return createFeeTx(fee, feeScript, address)
+}
+
+func createFeeTx(fee int64, feeTxScript []byte, addr soterutil.Address) (*soterutil.Tx, error) {
+	// Create the script to pay to the provided payment address if one was
+	// specified.  Otherwise create a script that allows the coinbase to be
+	// redeemable by anyone.
+	var pkScript []byte
+	if addr != nil {
+		var err error
+		pkScript, err = txscript.PayToAddrScript(addr)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		scriptBuilder := txscript.NewScriptBuilder()
+		pkScript, err = scriptBuilder.AddOp(txscript.OP_TRUE).Script()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	tx := wire.NewMsgTx(wire.TxVersion)
+	tx.AddTxIn(&wire.TxIn{
+		// Coinbase transactions have no inputs, so previous outpoint is
+		// zero hash and max index.
+		PreviousOutPoint: *wire.NewOutPoint(&chainhash.Hash{},
+			wire.MaxPrevOutIndex),
+		SignatureScript: feeTxScript,
+		Sequence:        wire.MaxTxInSequenceNum,
+	})
+	tx.AddTxOut(&wire.TxOut{
+		Value:   fee ,
 		PkScript: pkScript,
 	})
 	return soterutil.NewTx(tx), nil
@@ -468,6 +560,9 @@ func (g *BlkTmplGenerator) NewBlockTemplate(payToAddress soterutil.Address) (*Bl
 	}
 	coinbaseSigOpCost := int64(blockdag.CountSigOps(coinbaseTx)) * blockdag.WitnessScaleFactor
 
+	//TODO: REWARD: create fee transactions
+	feeTxs, err := createFeeTxs(g.chain, nextBlockHeight, snapshot.Tips)
+
 	// Get the current source transactions and create a priority queue to
 	// hold the transactions which are ready for inclusion into a block
 	// along with some priority related and fee metadata.  Reserve the same
@@ -484,6 +579,10 @@ func (g *BlkTmplGenerator) NewBlockTemplate(payToAddress soterutil.Address) (*Bl
 	// avoided.
 	blockTxns := make([]*soterutil.Tx, 0, len(sourceTxns))
 	blockTxns = append(blockTxns, coinbaseTx)
+	//TODO: REWARD: add fee txs
+	for _, feeTx := range feeTxs {
+		blockTxns = append(blockTxns, feeTx)
+	}
 	blockUtxos := blockdag.NewUtxoViewpoint()
 
 	// dependers is used to track transactions which depend on another
@@ -503,6 +602,9 @@ func (g *BlkTmplGenerator) NewBlockTemplate(payToAddress soterutil.Address) (*Bl
 	txSigOpCosts := make([]int64, 0, len(sourceTxns))
 	txFees = append(txFees, -1) // Updated once known
 	txSigOpCosts = append(txSigOpCosts, coinbaseSigOpCost)
+	for _, feeTx := range feeTxs {
+		txSigOpCosts = append(txSigOpCosts, int64(blockdag.CountSigOps(feeTx)) * blockdag.WitnessScaleFactor)
+	}
 
 	log.Debugf("Considering %d transactions for inclusion to new block",
 		len(sourceTxns))
@@ -514,6 +616,10 @@ mempoolLoop:
 		tx := txDesc.Tx
 		if blockdag.IsCoinBase(tx) {
 			log.Tracef("Skipping coinbase tx %s", tx.Hash())
+			continue
+		}
+		if blockdag.IsFeeTx(tx) {
+			log.Tracef("Skipping fee tx %s", tx.Hash())
 			continue
 		}
 		if !blockdag.IsFinalizedTransaction(tx, nextBlockHeight,
@@ -600,10 +706,16 @@ mempoolLoop:
 	// The starting block size is the size of the block header plus the max
 	// possible transaction count size, plus the size of the coinbase
 	// transaction.
+
+	// TODO: REWARD:: update weights and sigopcost
 	blockWeight := uint32((blockHeaderOverhead * blockdag.WitnessScaleFactor) +
 		blockdag.GetTransactionWeight(coinbaseTx))
 	blockSigOpCost := coinbaseSigOpCost
 	totalFees := int64(0)
+	for _, feeTx := range feeTxs {
+		blockWeight += uint32(blockdag.GetTransactionWeight(feeTx))
+		blockSigOpCost += int64(blockdag.CountSigOps(feeTx)) * blockdag.WitnessScaleFactor
+	}
 
 	// Query the version bits state to see if segwit has been activated, if
 	// so then this means that we'll include any transactions with witness
@@ -803,8 +915,8 @@ mempoolLoop:
 	blockWeight -= wire.MaxVarIntPayload -
 		(uint32(wire.VarIntSerializeSize(uint64(len(blockTxns)))) *
 			blockdag.WitnessScaleFactor)
-	coinbaseTx.MsgTx().TxOut[0].Value += totalFees
-	txFees[0] = -totalFees
+	//coinbaseTx.MsgTx().TxOut[0].Value += totalFees
+	txFees[0] = -totalFees // jenlouie: what is this used for?
 
 	// If segwit is active and we included transactions with witness data,
 	// then we'll need to include a commitment to the witness data in an
@@ -851,11 +963,10 @@ mempoolLoop:
 	// is potentially adjusted to ensure it comes after the median time of
 	// the last several blocks per the chain consensus rules.
 	ts := medianAdjustedTime(best, g.timeSource)
-	targetDifficulty, err := g.chain.TargetDifficulty(snapshot.MaxHeight)
+	reqDifficulty, err := g.chain.CalcNextRequiredDifficulty(ts)
 	if err != nil {
 		return nil, err
 	}
-	reqDifficulty := blockdag.BigToCompact(targetDifficulty)
 
 	// Calculate the next expected block version based on the state of the
 	// rule change deployments.
@@ -896,8 +1007,6 @@ mempoolLoop:
 		Size: int32(len(snapshot.Tips)),
 		Parents: parents,
 	}
-
-	msgBlock.Verification = wire.VerificationSubHeader{}
 
 	for _, tx := range blockTxns {
 		if err := msgBlock.AddTransaction(tx.MsgTx()); err != nil {
@@ -944,11 +1053,11 @@ func (g *BlkTmplGenerator) UpdateBlockTime(msgBlock *wire.MsgBlock) error {
 
 	// Recalculate the difficulty if running on a network that requires it.
 	if g.chainParams.ReduceMinDifficulty {
-		difficulty, err := g.chain.TargetDifficulty(g.chain.DAGSnapshot().MaxHeight)
+		difficulty, err := g.chain.CalcNextRequiredDifficulty(newTime)
 		if err != nil {
 			return err
 		}
-		msgBlock.Header.Bits = blockdag.BigToCompact(difficulty)
+		msgBlock.Header.Bits = difficulty
 	}
 
 	return nil

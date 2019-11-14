@@ -50,6 +50,10 @@ var (
 	// not used
 	// heightIndexBucketName = []byte("heightidx")
 
+	// txIndexBucketName is the name of the db bucket used to house
+	// the transaction hash -> block hashes index
+	txIndexBucketName = []byte("txidx")
+
 	// chainStateKeyName is the name of the db key used to store the best
 	// chain state.
 	chainStateKeyName = []byte("chainstate")
@@ -209,7 +213,7 @@ func dbFetchOrCreateVersion(dbTx database.Tx, key []byte, defaultVersion uint32)
 //  - header code: 0x13 (coinbase, height 9)
 //  - reserved: 0x00
 //  - compressed txout 0:
-//    - 0x32: VLQ-encoded compressed amount for 5000000000 (50 SOTER)
+//    - 0x32: VLQ-encoded compressed amount for 5000000000 (50 SOTO)
 //    - 0x05: special script type pay-to-pubkey
 //    - 0x11...5c: x-coordinate of the pubkey
 //
@@ -226,14 +230,14 @@ func dbFetchOrCreateVersion(dbTx database.Tx, key []byte, defaultVersion uint32)
 //    - header code: 0x8b9970 (not coinbase, height 100024)
 //    - reserved: 0x00
 //    - compressed txout:
-//      - 0x91f20f: VLQ-encoded compressed amount for 34405000000 (344.05 SOTER)
+//      - 0x91f20f: VLQ-encoded compressed amount for 34405000000 (344.05 SOTO)
 //      - 0x00: special script type pay-to-pubkey-hash
 //      - 0x6e...86: pubkey hash
 //  - Second to last spent output:
 //    - header code: 0x8b9970 (not coinbase, height 100024)
 //    - reserved: 0x00
 //    - compressed txout:
-//      - 0x86c647: VLQ-encoded compressed amount for 13761000000 (137.61 SOTER)
+//      - 0x86c647: VLQ-encoded compressed amount for 13761000000 (137.61 SOTO)
 //      - 0x00: special script type pay-to-pubkey-hash
 //      - 0xb2...ec: pubkey hash
 // -----------------------------------------------------------------------------
@@ -543,7 +547,7 @@ func dbRemoveSpendJournalEntry(dbTx database.Tx, blockHash *chainhash.Hash) erro
 //
 //  - header code: 0x03 (coinbase, height 1)
 //  - compressed txout:
-//    - 0x32: VLQ-encoded compressed amount for 5000000000 (50 SOTER)
+//    - 0x32: VLQ-encoded compressed amount for 5000000000 (50 SOTO)
 //    - 0x04: special script type pay-to-pubkey
 //    - 0x96...52: x-coordinate of the pubkey
 //
@@ -558,7 +562,7 @@ func dbRemoveSpendJournalEntry(dbTx database.Tx, blockHash *chainhash.Hash) erro
 //
 //  - header code: 0x8cf316 (not coinbase, height 113931)
 //  - compressed txout:
-//    - 0x8009: VLQ-encoded compressed amount for 15000000 (0.15 SOTER)
+//    - 0x8009: VLQ-encoded compressed amount for 15000000 (0.15 SOTO)
 //    - 0x00: special script type pay-to-pubkey-hash
 //    - 0xb8...58: pubkey hash
 //
@@ -573,7 +577,7 @@ func dbRemoveSpendJournalEntry(dbTx database.Tx, blockHash *chainhash.Hash) erro
 //
 //  - header code: 0xa8a258 (not coinbase, height 338156)
 //  - compressed txout:
-//    - 0x8ba5b9e763: VLQ-encoded compressed amount for 366875659 (3.66875659 SOTER)
+//    - 0x8ba5b9e763: VLQ-encoded compressed amount for 366875659 (3.66875659 SOTO)
 //    - 0x01: special script type pay-to-script-hash
 //    - 0x1d...e6: script hash
 // -----------------------------------------------------------------------------
@@ -915,6 +919,44 @@ func dbFetchHashByHeight(dbTx database.Tx, height int32) (*chainhash.Hash, error
 }
 */
 
+// TODO: REWARD
+func dbPutTransactionIndex(dbTx database.Tx, txHash *chainhash.Hash, blockHash *chainhash.Hash) error {
+	meta := dbTx.Metadata()
+	txIdx := meta.Bucket(txIndexBucketName)
+	numBlocks := txIdx.Get(txHash[:])
+
+	if numBlocks == nil {
+		numBlocks = []byte{1}
+	} else {
+		num := uint8(numBlocks[0])
+		numBlocks = []byte{num + 1}
+	}
+
+	return txIdx.Put(txHash[:], numBlocks)
+}
+
+func dbFetchTransactionIndexCount(dbTx database.Tx, hash *chainhash.Hash) uint8 {
+	meta := dbTx.Metadata()
+	txIdx := meta.Bucket(txIndexBucketName)
+	numBlocks := txIdx.Get(hash[:])
+	if numBlocks == nil {
+		return 0
+	} else {
+		return uint8(numBlocks[0])
+	}
+}
+
+func dbUpdateTransactionIndex(dbTx database.Tx, block *soterutil.Block) error {
+	for _, tx:= range block.Transactions() {
+		err := dbPutTransactionIndex(dbTx, tx.Hash(), block.Hash())
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // -----------------------------------------------------------------------------
 // The best chain state consists of the best block hash and height, the total
 // number of transactions up to and including those in the best block, and the
@@ -1137,6 +1179,13 @@ func (b *BlockDAG) createChainState() error {
 		//if err != nil {
 		//	return err
 		//}
+
+		// Create the bucket that houses the tx hash to block count
+		// index.
+		_, err = meta.CreateBucket(txIndexBucketName)
+		if err != nil {
+			return err
+		}
 
 		// Create the bucket that houses the spend journal data and
 		// store its version.

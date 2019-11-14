@@ -22,7 +22,6 @@ import (
 
 	"github.com/soteria-dag/soterd/chaincfg"
 	"github.com/soteria-dag/soterd/chaincfg/chainhash"
-	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"github.com/soteria-dag/soterd/soterec"
 	"github.com/soteria-dag/soterd/soterutil"
 	"github.com/soteria-dag/soterd/txscript"
@@ -33,7 +32,7 @@ const (
 	// Intentionally defined here rather than using constants from codebase
 	// to ensure consensus changes are detected.
 	maxBlockSigOps       = 20000
-	maxBlockSize         = 1000520
+	maxBlockSize         = 1000521
 	minCoinbaseScriptLen = 2
 	maxCoinbaseScriptLen = 100
 	medianTimeBlocks     = 11
@@ -186,7 +185,6 @@ func makeSpendableOut(block *wire.MsgBlock, txIndex, txOutIndex uint32) spendabl
 // available spendable outputs used throughout the tests.
 type testGenerator struct {
 	params       *chaincfg.Params
-	solver       cuckoo.Solver
 	last         *wire.MsgBlock
 	lastName     string
 	lastHeight   int32
@@ -197,6 +195,7 @@ type testGenerator struct {
 	blocks       map[chainhash.Hash]*wire.MsgBlock
 	blocksByName map[string]*wire.MsgBlock
 	blockHeights map[string]int32
+	blockHashToName map[chainhash.Hash]string
 
 	// Used for tracking spendable coinbase outputs.
 	spendableOuts     []spendableOut
@@ -212,17 +211,12 @@ func makeTestGenerator(params *chaincfg.Params) (testGenerator, error) {
 	privKey, _ := soterec.PrivKeyFromBytes(soterec.S256(), []byte{0x01})
 	genesis := params.GenesisBlock
 	genesisHash := genesis.BlockHash()
-
-	var solver cuckoo.Solver
-	orig := cuckoo.NewCuckooSolver(cuckoo.DefaultEdgeBits, cuckoo.DefaultSipHash)
-	solver = orig
-
 	return testGenerator{
 		params:       params,
-		solver:       solver,
 		blocks:       map[chainhash.Hash]*wire.MsgBlock{genesisHash: genesis},
 		blocksByName: map[string]*wire.MsgBlock{"genesis": genesis},
 		blockHeights: map[string]int32{"genesis": 0},
+		blockHashToName: map[chainhash.Hash]string{genesisHash: "genesis"},
 		last:         genesis,
 		lastName:     "genesis",
 		lastHeight:   0,
@@ -263,8 +257,15 @@ func pushDataScript(items ...[]byte) []byte {
 // signature script of the coinbase transaction of a new block.  In particular,
 // it starts with the block height that is required by version 2 blocks.
 func standardCoinbaseScript(blockHeight int32, extraNonce uint64) ([]byte, error) {
-	return txscript.NewScriptBuilder().AddInt64(int64(blockHeight)).
+	return txscript.NewScriptBuilder().AddInt64(int64(blockdag.CoinbaseTxType)).
+		AddInt64(int64(blockHeight)).
 		AddInt64(int64(extraNonce)).Script()
+}
+
+func standardFeeTxScript(ancestorBlockHash *chainhash.Hash) ([]byte, error) {
+	return txscript.NewScriptBuilder().AddInt64(int64(blockdag.FeeTxType)).
+		AddData([]byte(ancestorBlockHash[:])). //puts an opcode before the data
+		Script()
 }
 
 // opReturnScript returns a provably-pruneable OP_RETURN script with the
@@ -317,6 +318,138 @@ func (g *testGenerator) createCoinbaseTx(blockHeight int32) *wire.MsgTx {
 	return tx
 }
 
+func (g *testGenerator) getFeeAncestors(height int32, parents []string) ([]*chainhash.Hash, error) {
+	fixedWindowLength := int32(70)
+	if height <= fixedWindowLength {
+		return nil, nil
+	}
+
+	relHeight := height - fixedWindowLength
+
+	ancestors := make([]*wire.MsgBlock, len(parents))
+	for i, parent := range parents {
+		ancestors[i] = g.blocksByName[parent]
+	}
+	checked := make(map[chainhash.Hash]struct{})
+	for _, ancestor := range ancestors {
+		checked[ancestor.BlockHash()] = struct{}{}
+	}
+
+	// find ancestors
+	var parentsHeight int32
+	for _, parent := range parents {
+		parentHeight := g.blockHeights[parent]
+		if parentHeight > parentsHeight {
+			parentsHeight = parentHeight
+		}
+	}
+
+	for {
+		if ancestors == nil || len(ancestors) == 0 || parentsHeight <= relHeight { //TODO: recheck for off by one error
+			break
+		}
+
+		var grandParentMaxHeight int32
+		var grandParents []*wire.MsgBlock
+		for _, parent := range ancestors {
+			var grandparentsHeight int32
+			for _, grandparentHash := range parent.Parents.ParentHashes() {
+				gpHeight := g.blockHeights[g.blockHashToName[grandparentHash]]
+				if gpHeight > grandparentsHeight {
+					grandparentsHeight = gpHeight
+				}
+			}
+			if grandparentsHeight > grandParentMaxHeight {
+				grandParentMaxHeight = grandparentsHeight
+			}
+
+			for _, grandParent := range parent.Parents.ParentHashes() {
+				_, exists := checked[grandParent]
+				if !exists {
+					grandParents = append(grandParents, g.blocks[grandParent])
+					checked[grandParent] = struct{}{}
+				}
+			}
+		}
+
+		ancestors = grandParents
+		parentsHeight = grandParentMaxHeight
+	}
+
+	ancestorHashes := make([]*chainhash.Hash, 0)
+	for _, ancestor := range ancestors {
+		//		if ancestor.height == node.height - fixedWindowLength {
+		hash := ancestor.BlockHash()
+		ancestorHashes = append(ancestorHashes, &hash)
+		//	}
+	}
+
+	return ancestorHashes, nil
+}
+
+func (g *testGenerator) createFeeTxs(nextBlockHeight int32, parents []string) ([]*soterutil.Tx, error) {
+	// get ancestor blocks for block at height nextBlockHeight
+	hashes, err := g.getFeeAncestors(nextBlockHeight, parents)
+	if err != nil {
+		return nil, err
+	}
+
+	feeTxs := make([]*soterutil.Tx, len(hashes))
+	// for each ancestor, create fee tx
+	for i, hash := range hashes {
+		feeTx, err := g.createFeeTxFromBlock(g.blocks[*hash])
+		if err != nil {
+			return nil, err
+		}
+		feeTxs[i] = feeTx
+	}
+
+	return feeTxs, nil
+}
+
+func (g *testGenerator) createFeeTxFromBlock(block *wire.MsgBlock)(*soterutil.Tx, error) {
+	fee := int64(0)
+
+	blockHash := block.BlockHash()
+	feeScript, err := standardFeeTxScript(&blockHash)
+	if err != nil {
+		return nil, err
+	}
+
+	return createFeeTx(fee, feeScript, nil)
+}
+
+func createFeeTx(fee int64, feeTxScript []byte, addr soterutil.Address) (*soterutil.Tx, error) {
+	// Create the script to pay to the provided payment address if one was
+	// specified.  Otherwise create a script that allows the coinbase to be
+	// redeemable by anyone.
+	var pkScript []byte
+	if addr != nil {
+		var err error
+		pkScript, err = txscript.PayToAddrScript(addr)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// throw error
+	}
+
+	tx := wire.NewMsgTx(wire.TxVersion)
+	tx.AddTxIn(&wire.TxIn{
+		// Coinbase transactions have no inputs, so previous outpoint is
+		// zero hash and max index.
+		PreviousOutPoint: *wire.NewOutPoint(&chainhash.Hash{},
+			wire.MaxPrevOutIndex),
+		SignatureScript: feeTxScript,
+		Sequence:        wire.MaxTxInSequenceNum,
+	})
+	tx.AddTxOut(&wire.TxOut{
+		Value:   fee ,
+		PkScript: pkScript,
+	})
+	return soterutil.NewTx(tx), nil
+}
+
 // calcMerkleRoot creates a merkle tree from the slice of transactions and
 // returns the root of the tree.
 func calcMerkleRoot(txns []*wire.MsgTx) chainhash.Hash {
@@ -340,47 +473,57 @@ func calcMerkleRoot(txns []*wire.MsgTx) chainhash.Hash {
 // NOTE: This function will never solve blocks with a nonce of 0.  This is done
 // so the 'nextBlock' function can properly detect when a nonce was modified by
 // a munge function.
-func solveBlock(solver cuckoo.Solver, block *wire.MsgBlock) bool {
-	var targetDifficulty = blockdag.CompactToBig(block.Header.Bits)
-
-	var startNonce uint32
-	if block.Header.Nonce == 0 {
-		startNonce = 1
-	} else {
-		startNonce = block.Header.Nonce
+func solveBlock(header *wire.BlockHeader) bool {
+	// sbResult is used by the solver goroutines to send results.
+	type sbResult struct {
+		found bool
+		nonce uint32
 	}
 
-	for i := startNonce; i <= uint32(math.MaxUint32); i++ {
-		block.Header.Nonce = i
-		encoded, err := block.Header.Bytes()
-		if err != nil {
-			continue
-		}
+	// solver accepts a block header and a nonce range to test. It is
+	// intended to be run as a goroutine.
+	targetDifficulty := blockdag.CompactToBig(header.Bits)
+	quit := make(chan bool)
+	results := make(chan sbResult)
+	solver := func(hdr wire.BlockHeader, startNonce, stopNonce uint32) {
+		// We need to modify the nonce field of the header, so make sure
+		// we work with a copy of the original header.
+		for i := startNonce; i >= startNonce && i <= stopNonce; i++ {
+			select {
+			case <-quit:
+				return
+			default:
+				hdr.Nonce = i
+				hash := hdr.BlockHash()
+				if blockdag.HashToBig(&hash).Cmp(
+					targetDifficulty) <= 0 {
 
-		solutions, err := solver.Solve(encoded, block.Header.Nonce)
-		if err != nil {
-			continue
-		}
-
-		if len(solutions) == 0 {
-			continue
-		}
-
-		for _, cycleNonces := range solutions {
-			err := solver.Verify(encoded, block.Header.Nonce, cycleNonces)
-			if err != nil {
-				continue
+					results <- sbResult{true, i}
+					return
+				}
 			}
+		}
+		results <- sbResult{false, 0}
+	}
 
-			// The block is solved when:
-			// a) The cuckoo cycle is valid
-			// b) The cuckoo cycle proof difficulty is greater than or equal to the target difficulty
-			proofDifficulty := blockdag.ProofDifficulty(cycleNonces)
-			if proofDifficulty.Cmp(targetDifficulty) >= 0 {
-				block.Verification.CycleNonces = cycleNonces
-				block.Verification.Size = int32(len(cycleNonces))
-				return true
-			}
+	startNonce := uint32(1)
+	stopNonce := uint32(math.MaxUint32)
+	numCores := uint32(runtime.NumCPU())
+	noncesPerCore := (stopNonce - startNonce) / numCores
+	for i := uint32(0); i < numCores; i++ {
+		rangeStart := startNonce + (noncesPerCore * i)
+		rangeStop := startNonce + (noncesPerCore * (i + 1)) - 1
+		if i == numCores-1 {
+			rangeStop = stopNonce
+		}
+		go solver(*header, rangeStart, rangeStop)
+	}
+	for i := uint32(0); i < numCores; i++ {
+		result := <-results
+		if result.found {
+			close(quit)
+			header.Nonce = result.nonce
+			return true
 		}
 	}
 
@@ -505,12 +648,24 @@ func (g *testGenerator) nextBlock(blockName string, spend *spendableOut, parentN
 
 	nextHeight := maxHeight + 1
 	coinbaseTx := g.createCoinbaseTx(nextHeight)
+
 	txns := []*wire.MsgTx{coinbaseTx}
+
+	// create fee transactions
+	feeTxs, err := g.createFeeTxs(nextHeight, parentNames)
+	if err != nil {
+		panic(err)
+	}
+	for _, feeTx := range feeTxs {
+		txns = append(txns, feeTx.MsgTx())
+	}
+
 	if spend != nil {
 		// Create the transaction with a fee of 1 atom for the
 		// miner and increase the coinbase subsidy accordingly.
 		fee := soterutil.Amount(1)
-		coinbaseTx.TxOut[0].Value += int64(fee)
+		// with fee txs, no longer putting fees in the coinbase
+		//coinbaseTx.TxOut[0].Value += int64(fee)
 
 		// Create a transaction that spends from the provided spendable
 		// output and includes an additional unique OP_RETURN output to
@@ -582,7 +737,7 @@ func (g *testGenerator) nextBlock(blockName string, spend *spendableOut, parentN
 
 	// Only solve the block if the nonce wasn't manually changed by a munge
 	// function.
-	if block.Header.Nonce == curNonce && !solveBlock(g.solver, &block) {
+	if block.Header.Nonce == curNonce && !solveBlock(&block.Header) {
 		panic(fmt.Sprintf("Unable to solve block at height %d",
 			nextHeight))
 	}
@@ -592,6 +747,7 @@ func (g *testGenerator) nextBlock(blockName string, spend *spendableOut, parentN
 	g.blocks[blockHash] = &block
 	g.blocksByName[blockName] = &block
 	g.blockHeights[blockName] = nextHeight
+	g.blockHashToName[blockHash] = blockName
 	g.last = &block
 	g.lastName = blockName
 	g.lastHeight = nextHeight
@@ -634,12 +790,14 @@ func (g *testGenerator) updateBlockState(oldBlockName string, oldBlockHash chain
 	delete(g.blocks, oldBlockHash)
 	delete(g.blocksByName, oldBlockName)
 	delete(g.blockHeights, oldBlockName)
+	delete(g.blockHashToName, oldBlockHash)
 
 	// Add new entries.
 	newBlockHash := newBlock.BlockHash()
 	g.blocks[newBlockHash] = newBlock
 	g.blocksByName[newBlockName] = newBlock
 	g.blockHeights[newBlockName] = blockHeight
+	g.blockHashToName[newBlockHash] = newBlockName
 }
 
 // setTip changes the tip of the instance to the block with the provided name.
@@ -950,10 +1108,10 @@ func Generate(includeLargeReorg bool) (tests [][]TestInstance, err error) {
 	//	encoded := encodeNonCanonicalBlock(block)
 	//	return RejectedNonCanonicalBlock{blockName, encoded, blockHeight}
 	//}
-	orphanOrRejectBlock := func(blockName string, block *wire.MsgBlock) TestInstance {
-		blockHeight := g.blockHeights[blockName]
-		return OrphanOrRejectedBlock{blockName, block, blockHeight}
-	}
+	//orphanOrRejectBlock := func(blockName string, block *wire.MsgBlock) TestInstance {
+	//	blockHeight := g.blockHeights[blockName]
+	//	return OrphanOrRejectedBlock{blockName, block, blockHeight}
+	//}
 	//expectTipBlocks := func(tipNames []string) TestInstance {
 	//	ets := make([]*ExpectedTip, len(tipNames))
 	//	for i, tipName := range tipNames {
@@ -1009,11 +1167,11 @@ func Generate(includeLargeReorg bool) (tests [][]TestInstance, err error) {
 	//		rejectNonCanonicalBlock(g.lastName, g.last),
 	//	})
 	//}
-	orphanedOrRejected := func() {
-		tests = append(tests, []TestInstance{
-			orphanOrRejectBlock(g.lastName, g.last),
-		})
-	}
+	//orphanedOrRejected := func() {
+	//	tests = append(tests, []TestInstance{
+	//		orphanOrRejectBlock(g.lastName, g.last),
+	//	})
+	//}
 
 	// ---------------------------------------------------------------------
 	// Generate enough blocks to have mature coinbase outputs to work with.
@@ -1124,7 +1282,7 @@ func Generate(includeLargeReorg bool) (tests [][]TestInstance, err error) {
 	g.nextBlock("b6", outs[10], nil)
 	rejected(blockdag.ErrImmatureSpend)
 
-
+	/*
 	// ---------------------------------------------------------------------
 	// Max block size tests.
 	// ---------------------------------------------------------------------
@@ -1148,7 +1306,7 @@ func Generate(includeLargeReorg bool) (tests [][]TestInstance, err error) {
 	//   ... -> b15(5) -> b23(6)
 	//                \-> b24(6) -> b25(7)
 	g.nextBlock("b8", outs[4], nil, func(b *wire.MsgBlock) {
-		bytesToMaxSize := maxBlockSize - b.SerializeSize() - 3
+		bytesToMaxSize := maxBlockSize - b.SerializeSize() - 4
 		sizePadScript := repeatOpcode(0x00, bytesToMaxSize+1)
 		replaceSpendScript(sizePadScript)(b)
 	})
@@ -1159,7 +1317,7 @@ func Generate(includeLargeReorg bool) (tests [][]TestInstance, err error) {
 	// outright rejected due to an invalid parent.
 	g.nextBlock("b9", outs[5], []string{"b8"})
 	orphanedOrRejected()
-/*
+
 	// ---------------------------------------------------------------------
 	// Coinbase script length limits tests.
 	// ---------------------------------------------------------------------

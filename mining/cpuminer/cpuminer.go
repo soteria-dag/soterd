@@ -16,7 +16,6 @@ import (
 	"github.com/soteria-dag/soterd/blockdag"
 	"github.com/soteria-dag/soterd/chaincfg"
 	"github.com/soteria-dag/soterd/chaincfg/chainhash"
-	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"github.com/soteria-dag/soterd/miningdag"
 	"github.com/soteria-dag/soterd/soterutil"
 	"github.com/soteria-dag/soterd/wire"
@@ -58,8 +57,6 @@ type Config struct {
 	// BlockTemplateGenerator identifies the instance to use in order to
 	// generate block templates that the miner will attempt to solve.
 	BlockTemplateGenerator *miningdag.BlkTmplGenerator
-
-	Solver cuckoo.Solver
 
 	// MiningAddrs is a list of payment addresses to use for the generated
 	// blocks.  Each generated block will randomly choose one of them.
@@ -213,7 +210,7 @@ func (m *CPUMiner) submitBlock(block *soterutil.Block) bool {
 // stale block such as a new block showing up or periodically when there are
 // new transactions and enough time has elapsed without finding a solution.
 func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, blockHeight int32,
-	ticker *time.Ticker, quit chan struct{}) (bool, []uint32) {
+	ticker *time.Ticker, quit chan struct{}) bool {
 
 	// Choose a random extra nonce offset for this block template and
 	// worker.
@@ -225,14 +222,13 @@ func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, blockHeight int32,
 	}
 
 	// Create some convenience variables.
-	var header = &msgBlock.Header
-	// Target difficulty is defined for the block, in NewBlockTemplate()
-	var targetDifficulty = blockdag.CompactToBig(header.Bits)
+	header := &msgBlock.Header
+	targetDifficulty := blockdag.CompactToBig(header.Bits)
 
 	// Initial state.
-	var lastGenerated = time.Now()
-	var lastTxUpdate = m.g.TxSource().LastUpdated()
-	var hashesCompleted = uint64(0)
+	lastGenerated := time.Now()
+	lastTxUpdate := m.g.TxSource().LastUpdated()
+	hashesCompleted := uint64(0)
 
 	// Note that the entire extra nonce range is iterated and the offset is
 	// added relying on the fact that overflow will wrap around 0 as
@@ -249,7 +245,7 @@ func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, blockHeight int32,
 		for i := uint32(0); i <= maxNonce; i++ {
 			select {
 			case <-quit:
-				return false, []uint32{}
+				return false
 
 			case <-ticker.C:
 				m.updateHashes <- hashesCompleted
@@ -257,7 +253,7 @@ func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, blockHeight int32,
 
 				// The current block is stale if tips have changed.
 				if !header.PrevBlock.IsEqual(&m.g.DAGSnapshot().Hash) {
-					return false, []uint32{}
+					return false
 				}
 
 				// The current block is stale if the memory pool
@@ -267,7 +263,7 @@ func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, blockHeight int32,
 				if lastTxUpdate != m.g.TxSource().LastUpdated() &&
 					time.Now().After(lastGenerated.Add(time.Minute)) {
 
-					return false, []uint32{}
+					return false
 				}
 
 				m.g.UpdateBlockTime(msgBlock)
@@ -276,51 +272,24 @@ func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, blockHeight int32,
 				// Non-blocking select to fall through
 			}
 
-			// Update the nonce and solve the block header.
+			// Update the nonce and hash the block header.  Each
+			// hash is actually a double sha256 (two hashes), so
+			// increment the number of hashes completed for each
+			// attempt accordingly.
 			header.Nonce = i
-			// TODO(cedric): hashesComplete is no longer an accurate metric, since
-			// the solver does more work than just generating a hash of the header.
-			// It should be replaced with something more like "amount of time spent solving"
+			hash := header.BlockHash()
 			hashesCompleted += 2
 
-			// Run cuckoo cycle against the header. The block is solved when a cycle >= length cuckoo.ProofSize is found.
-			encoded, err := header.Bytes()
-			if err != nil {
-				continue
-			}
-			solutions, err := m.cfg.Solver.Solve(encoded, header.Nonce)
-			if err != nil {
-				continue
-			}
-
-			if len(solutions) == 0 {
-				continue
-			}
-
-			for _, cycleNonces := range solutions {
-				err := m.cfg.Solver.Verify(encoded, header.Nonce, cycleNonces)
-				if err != nil {
-					continue
-				}
-
-				// The block is solved when:
-				// a) The cuckoo cycle is valid
-				// b) The cuckoo cycle proof difficulty is greater than or equal to the target difficulty
-				proofDifficulty := blockdag.ProofDifficulty(cycleNonces)
-				if proofDifficulty.Cmp(targetDifficulty) >= 0 {
-					log.Debugf("Current nonce: %d", header.Nonce)
-					log.Debugf("Found %d cycle nonces: %s", len(cycleNonces), cycleNonces)
-
-					m.updateHashes <- hashesCompleted
-
-					// Return with cycleNonces, so that Verify could be called again against this block's header
-					return true, cycleNonces
-				}
+			// The block is solved when the new block hash is less
+			// than the target difficulty.  Yay!
+			if blockdag.HashToBig(&hash).Cmp(targetDifficulty) <= 0 {
+				m.updateHashes <- hashesCompleted
+				return true
 			}
 		}
 	}
 
-	return false, []uint32{}
+	return false
 }
 
 // generateBlocks is a worker that is controlled by the miningWorkerController.
@@ -392,12 +361,8 @@ out:
 		// with false when conditions that trigger a stale block, so
 		// a new block template can be generated.  When the return is
 		// true a solution was found, so submit the solved block.
-		ok, cycleNonces := m.solveBlock(template.Block, curHeight+1, ticker, quit)
-		if ok {
+		if m.solveBlock(template.Block, curHeight+1, ticker, quit) {
 			block := soterutil.NewBlock(template.Block)
-			block.MsgBlock().Verification.CycleNonces = cycleNonces
-			block.MsgBlock().Verification.Size = int32(len(cycleNonces))
-
 			accepted := m.submitBlock(block)
 			if accepted {
 				m.SolveTimes <- time.Since(startMine)
@@ -664,12 +629,8 @@ func (m *CPUMiner) GenerateNBlocks(n uint32) ([]*chainhash.Hash, error) {
 		// with false when conditions that trigger a stale block, so
 		// a new block template can be generated.  When the return is
 		// true a solution was found, so submit the solved block.
-		ok, cycleNonces := m.solveBlock(template.Block, curHeight+1, ticker, nil)
-		if ok {
+		if m.solveBlock(template.Block, curHeight+1, ticker, nil) {
 			block := soterutil.NewBlock(template.Block)
-			block.MsgBlock().Verification.CycleNonces = cycleNonces
-			block.MsgBlock().Verification.Size = int32(len(cycleNonces))
-
 			accepted := m.submitBlock(block)
 			if accepted {
 				m.SolveTimes <- time.Since(startMine)
@@ -715,4 +676,3 @@ func New(cfg *Config) *CPUMiner {
 		SolveHashes:       make(chan string),
 	}
 }
-

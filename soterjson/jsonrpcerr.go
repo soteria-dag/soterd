@@ -68,6 +68,8 @@ const (
 const (
 	ErrRPCBlockNotFound     RPCErrorCode = -5
 	ErrRPCBlockCount        RPCErrorCode = -5
+	ErrRPCBlockFee          RPCErrorCode = -5
+	ErrRPCBlockFeeAncestors RPCErrorCode = -5
 	ErrRPCBestBlockHash     RPCErrorCode = -5
 	ErrRPCDifficulty        RPCErrorCode = -5
 	ErrRPCOutOfRange        RPCErrorCode = -1

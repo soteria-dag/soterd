@@ -18,12 +18,12 @@ func ExampleAmount() {
 	a = soterutil.Amount(1e6)
 	fmt.Println("1,000,000 nSoter:", a)
 	// Output:
-	// Zero nSoter: 0 SOTER
-	// 1,000,000,000 nSoter: 1 SOTER
-	// 1,000,000 nSoter: 0.001 SOTER
+	// Zero nSoter: 0 SOTO
+	// 1,000,000,000 nSoter: 1 SOTO
+	// 1,000,000 nSoter: 0.001 SOTO
 }
 
-// ExampleNewAmount tests converting a SOTER amount to nanoSoter
+// ExampleNewAmount tests converting a SOTO amount to nanoSoter
 func ExampleNewAmount() {
 	amountOne, err := soterutil.NewAmount(1)
 	if err != nil {
@@ -53,25 +53,25 @@ func ExampleNewAmount() {
 	}
 	fmt.Println(amountNaN) //Output 4
 
-	// Output: 1 SOTER
-	// 0.01234567 SOTER
-	// 0 SOTER
+	// Output: 1 SOTO
+	// 0.01234567 SOTO
+	// 0 SOTO
 	// invalid soter amount
 }
 
 func ExampleAmount_unitConversions() {
 	amount := soterutil.Amount(44433322211100)
 
-	fmt.Println("nSoter to kSOTER:", amount.Format(soterutil.AmountKiloSOTER))
-	fmt.Println("nSoter to SOTER:", amount)
-	fmt.Println("nSoter to MilliSOTER:", amount.Format(soterutil.AmountMilliSOTER))
-	fmt.Println("nSoter to MicroSOTER:", amount.Format(soterutil.AmountMicroSOTER))
+	fmt.Println("nSoter to kSOTO:", amount.Format(soterutil.AmountKiloSOTO))
+	fmt.Println("nSoter to SOTO:", amount)
+	fmt.Println("nSoter to MilliSOTO:", amount.Format(soterutil.AmountMilliSOTO))
+	fmt.Println("nSoter to MicroSOTO:", amount.Format(soterutil.AmountMicroSOTO))
 	fmt.Println("nSoter to nSoter:", amount.Format(soterutil.AmountNanoSoter))
 
 	// Output:
-	// nSoter to kSOTER: 44.4333222111 kSOTER
-	// nSoter to SOTER: 44433.3222111 SOTER
-	// nSoter to MilliSOTER: 44433322.2111 mSOTER
-	// nSoter to MicroSOTER: 44433322211.1 μSOTER
+	// nSoter to kSOTO: 44.4333222111 kSOTO
+	// nSoter to SOTO: 44433.3222111 SOTO
+	// nSoter to MilliSOTO: 44433322.2111 mSOTO
+	// nSoter to MicroSOTO: 44433322211.1 μSOTO
 	// nSoter to nSoter: 44433322211100 nSoter
 }

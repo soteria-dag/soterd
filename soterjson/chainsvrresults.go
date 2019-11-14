@@ -556,3 +556,4 @@ type DAGParent struct {
 	Data     [32]byte `json:"parentdata"`
 	Hash     string   `json:"hash"`
 }
+

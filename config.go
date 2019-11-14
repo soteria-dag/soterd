@@ -150,7 +150,7 @@ type config struct {
 	CPUProfile         string        `long:"cpuprofile" description:"Write CPU profile to the specified file"`
 	DebugLevel         string        `short:"d" long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
 	Upnp               bool          `long:"upnp" description:"Use UPnP to map our listening port outside of NAT"`
-	MinRelayTxFee      float64       `long:"minrelaytxfee" description:"The minimum transaction fee in SOTER/kB to be considered a non-zero fee."`
+	MinRelayTxFee      float64       `long:"minrelaytxfee" description:"The minimum transaction fee in SOTO/kB to be considered a non-zero fee."`
 	FreeTxRelayLimit   float64       `long:"limitfreerelay" description:"Limit relay of transactions with no transaction fee to the given amount in thousands of bytes per minute"`
 	NoRelayPriority    bool          `long:"norelaypriority" description:"Do not require free or low-fee transactions to have high priority for relaying"`
 	TrickleInterval    time.Duration `long:"trickleinterval" description:"Minimum time between attempts to send new inventory to a connected peer"`
@@ -174,8 +174,6 @@ type config struct {
 	DropAddrIndex      bool          `long:"dropaddrindex" description:"Deletes the address-based transaction index from the database on start up and then exits."`
 	RelayNonStd        bool          `long:"relaynonstd" description:"Relay non-standard transactions regardless of the default settings for the active network."`
 	RejectNonStd       bool          `long:"rejectnonstd" description:"Reject non-standard transactions regardless of the default settings for the active network."`
-	LeanSolver         bool          `long:"lean" description:"Use the original lean Cuckoo solver for block PoW and verification"`
-	GPUSolver          bool          `long:"gpu" description:"Use the original GPU (Cuda) Cuckoo solver for block PoW and verification"`
 	lookup             func(string) ([]net.IP, error)
 	oniondial          func(string, string, time.Duration) (net.Conn, error)
 	dial               func(string, string, time.Duration) (net.Conn, error)
@@ -435,7 +433,7 @@ func loadConfig() (*config, []string, error) {
 		DbType:               defaultDbType,
 		RPCKey:               defaultRPCKeyFile,
 		RPCCert:              defaultRPCCertFile,
-		MinRelayTxFee:        mempool.DefaultMinRelayTxFee.ToSOTER(),
+		MinRelayTxFee:        mempool.DefaultMinRelayTxFee.ToSOTO(),
 		FreeTxRelayLimit:     defaultFreeTxRelayLimit,
 		TrickleInterval:      defaultTrickleInterval,
 		BlockMinSize:         defaultBlockMinSize,

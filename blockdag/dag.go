@@ -9,7 +9,6 @@ package blockdag
 import (
 	"container/list"
 	"fmt"
-	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"math"
 	"sort"
 	"sync"
@@ -34,6 +33,9 @@ const (
 
 	// coloring and sorting k form phantom paper
 	coloringK = 3
+
+	//REWARD
+	rewardWindowLength = 70
 )
 
 // BlockLocator is used to help locate specific blocks. The locator
@@ -139,8 +141,6 @@ type BlockDAG struct {
 	sigCache     *txscript.SigCache
 	indexManager IndexManager
 	hashCache    *txscript.HashCache
-	// Solver is used to verify blocks being added to DAG
-	Solver cuckoo.Solver
 
 	// The following fields are calculated based upon the provided chain
 	// parameters.  They are also set when the instance is created and
@@ -433,7 +433,6 @@ func (b *BlockDAG) GetOrphanRoot(hash *chainhash.Hash) []chainhash.Hash {
 	for prevHashes.Len() > 0 {
 		prevHash := prevHashes.Front().Value.(chainhash.Hash)
 		prevHashes.Remove(prevHashes.Front())
-		//fmt.Printf("removed from queue: %v\n", prevHash)
 		orphan, exists := b.orphans[prevHash]
 		if !exists {
 			continue
@@ -441,13 +440,11 @@ func (b *BlockDAG) GetOrphanRoot(hash *chainhash.Hash) []chainhash.Hash {
 
 		// add to set of orphan roots
 		orphanRootMap[prevHash] = struct{}{}
-		//fmt.Printf("Added to root map: %v\n", prevHash)
 		childNodes, childExists := children[prevHash]
 		// remove children from set of orphan roots
 		if childExists {
 			for _, child := range childNodes {
 				delete(orphanRootMap, child)
-				//fmt.Printf("Removed from root map: %v\n", child)
 			}
 		}
 
@@ -466,7 +463,6 @@ func (b *BlockDAG) GetOrphanRoot(hash *chainhash.Hash) []chainhash.Hash {
 	// return set of orphan blocks
 	orphanRoot := make([]chainhash.Hash, 0)
 	for k := range orphanRootMap {
-		//fmt.Printf("Adding to list of roots: %v\n", k)
 		orphanRoot = append(orphanRoot, k)
 	}
 
@@ -650,7 +646,7 @@ func (b *BlockDAG) calcSequenceLock(nodes []*blockNode, tx *soterutil.Tx, utxoVi
 	// can be included within a block at any given height or time.
 	mTx := tx.MsgTx()
 	sequenceLockActive := mTx.Version >= 2 && csvSoftforkActive
-	if !sequenceLockActive || IsCoinBase(tx) {
+	if !sequenceLockActive || isSpecialTx(tx.MsgTx()) {
 		return sequenceLock, nil
 	}
 
@@ -828,13 +824,156 @@ func LockTimeToSequence(isSeconds bool, locktime uint32) uint32 {
 }
 */
 
+// TODO: REWARD
+// Calculates the tx fee reward for the block
+func (b *BlockDAG) calculateFee(block *soterutil.Block) (int64, error) {
+	// get block count: how many blocks transactions are in
+	blockCounts, err := b.fetchTransactionBlockCounts(block)
+	if err != nil {
+		return 0, err
+	}
+
+
+	view := NewUtxoViewpoint()
+	neededSet := make(map[wire.OutPoint]struct{})
+	for _, tx := range block.Transactions() {
+		for _, txIn := range tx.MsgTx().TxIn {
+			neededSet[txIn.PreviousOutPoint] = struct{}{}
+		}
+	}
+
+	err = view.fetchUtxosMain(b.db, neededSet)
+	if err != nil {
+		return 0, err
+	}
+
+	totalFees := int64(0)
+	for _, transaction := range block.Transactions() {
+		if isSpecialTx(transaction.MsgTx()) {
+			continue
+		}
+		// get totalIn, totalOut
+		totalIn := int64(0)
+		totalOut := int64(0)
+		for _, txin := range transaction.MsgTx().TxIn {
+			inputTx := view.LookupEntry(txin.PreviousOutPoint)
+			if inputTx != nil {
+				totalIn += inputTx.amount
+			}
+		}
+		for _, txout := range transaction.MsgTx().TxOut {
+			totalOut += txout.Value
+		}
+		fee := totalIn - totalOut
+		txHash := transaction.Hash()
+		blockCount := blockCounts[*txHash]
+		totalFees += int64(math.Floor(float64(fee) / float64(blockCount)))
+	}
+
+	return totalFees, nil
+}
+
+func (b *BlockDAG) fetchTransactionBlockCounts(block *soterutil.Block) (map[chainhash.Hash]uint8, error) {
+	txToCount := make(map[chainhash.Hash]uint8)
+	err := b.db.View(func(dbTx database.Tx) error {
+		for _, transaction := range block.Transactions() {
+			hash := transaction.Hash()
+			blockCount := dbFetchTransactionIndexCount(dbTx, hash)
+			if blockCount > 0 {
+				txToCount[*hash] = blockCount
+			}
+		}
+		return nil
+	})
+
+	return txToCount, err
+}
+
+func (b *BlockDAG) CalculateFee(block *soterutil.Block) (int64, error) {
+	b.chainLock.Lock()
+	defer b.chainLock.Unlock()
+
+	return b.calculateFee(block)
+}
+
+// TODO: REWARD
+// Get ancestor blocks to calculate fees for
+func (b *BlockDAG) getFeeAncestors(height int32, parents []chainhash.Hash) ([]*chainhash.Hash, error) {
+
+	fixedWindowLength := int32(rewardWindowLength)
+	if height <= fixedWindowLength {
+		return nil, nil
+	}
+
+	relHeight := height - fixedWindowLength
+
+	ancestors := make([]*blockNode, len(parents))
+	for i, parent := range parents {
+		ancestors[i] = b.index.index[parent]
+	}
+	checked := make(map[chainhash.Hash]struct{})
+	for _, ancestor := range ancestors {
+		checked[ancestor.hash] = struct{}{}
+	}
+
+	// find ancestors
+	var parentsHeight int32
+	for _, parent := range ancestors {
+		if parent.height > parentsHeight {
+			parentsHeight = parent.height
+		}
+	}
+
+	for {
+		if ancestors == nil || len(ancestors) == 0 || parentsHeight <= relHeight { //TODO: recheck for off by one error
+			break
+		}
+
+		var grandParentMaxHeight int32
+		var grandParents []*blockNode
+		for _, parent := range ancestors {
+			grandParentsHeight := parent.parentsMaxHeight()
+			if grandParentsHeight > grandParentMaxHeight {
+				grandParentMaxHeight = grandParentsHeight
+			}
+
+			for _, grandParent := range parent.parents {
+				_, exists := checked[grandParent.hash]
+				if !exists {
+					grandParents = append(grandParents, grandParent)
+					checked[grandParent.hash] = struct{}{}
+				}
+			}
+		}
+
+		ancestors = grandParents
+		parentsHeight = grandParentMaxHeight
+	}
+
+	ancestorHashes := make([]*chainhash.Hash, 0)
+	for _, ancestor := range ancestors {
+	//		if ancestor.height == node.height - fixedWindowLength {
+		ancestorHashes = append(ancestorHashes, &ancestor.hash)
+	//	}
+	}
+
+	return ancestorHashes, nil
+}
+
+func (b *BlockDAG) GetFeeAncestors(height int32, parents []chainhash.Hash) ([]*chainhash.Hash, error) {
+	b.chainLock.Lock()
+	defer b.chainLock.Unlock()
+
+	return b.getFeeAncestors(height, parents)
+}
+
 // Returns all input txns, even ones not spend b/c they have already been spent or are invalid.
 // Needed for indexes.
 func (b *BlockDAG) getAllInputTxos(block *soterutil.Block, view *UtxoViewpoint) ([]SpentTxOut, error) {
 	stxos := make([]SpentTxOut, countSpentOutputs(block))
 	index := 0
 	for _, tx:= range block.Transactions() {
-		if IsCoinBase(tx) {
+		if isSpecialTx(tx.MsgTx()) {
 			continue
 		}
 		for _, txIn := range tx.MsgTx().TxIn {
@@ -1022,6 +1161,16 @@ func (b *BlockDAG) connectBlock(node *blockNode, block *soterutil.Block,
 		if err != nil {
 			return err
 		}
+
+		// TODO(jenlouie): REWARD: update tx hash -> block count bucket
+		err = dbUpdateTransactionIndex(dbTx, block)
+		if err != nil {
+			return err
+		}
+		// create new function that
+		// loops over all transactions in block
+		// add transaction to map if it does not exist with count 1
+		// otherwise increment count and update
 
 		blockStxos, err := b.getAllInputTxos(block, newView)
 		if err != nil {
@@ -1912,7 +2061,6 @@ func (b *BlockDAG) HeightToHashRange(startHeight int32,
 	hashes := make([]chainhash.Hash, resultsLength)
 	for i := endHeight; i >= startHeight; i-- {
 		nodes := b.dView.NodesByHeight(i)
-		//fmt.Printf("number of nodes at height %d: %d\n", i, len(nodes))
 		for k := len(nodes) - 1; k >= 0; k-- {
 			hashes[j] = nodes[k].hash
 			j--
@@ -2219,9 +2367,6 @@ type Config struct {
 	// This field can be nil if the caller is not interested in using a
 	// signature cache.
 	HashCache *txscript.HashCache
-
-	// Solver defines a solver that can be used to perform proof-of-work and validate blocks.
-	Solver cuckoo.Solver
 }
 
 // New returns a BlockChain instance using the provided configuration details.
@@ -2235,15 +2380,6 @@ func New(config *Config) (*BlockDAG, error) {
 	}
 	if config.TimeSource == nil {
 		return nil, AssertError("blockchain.New timesource is nil")
-	}
-	if config.Solver == nil {
-		return nil, AssertError("blockchain.New Solver is nil")
-	}
-
-	err := config.Solver.CheckRequirements()
-	if err != nil {
-		msg := fmt.Sprintf("blockchain.New Solver requirements issue: %s", err)
-		return nil, AssertError(msg)
 	}
 
 	// Generate a checkpoint by height map from the provided checkpoints
@@ -2281,7 +2417,6 @@ func New(config *Config) (*BlockDAG, error) {
 		blocksPerRetarget:   int64(targetTimespan / targetTimePerBlock),
 		index:               newBlockIndex(config.DB, params),
 		hashCache:           config.HashCache,
-		Solver:              config.Solver,
 		dView:               newDAGView(nil),
 		graph:               phantom.NewGraph(),
 		nodeOrder:           make([]*chainhash.Hash, 0),

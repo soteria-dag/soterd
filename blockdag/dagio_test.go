@@ -740,7 +740,7 @@ func TestBlockNodeStorage(t *testing.T) {
 	dag := newFakeChain(&chaincfg.SimNetParams)
 	now := time.Now().Unix()
 
-	msgblock1 := createMsgBlockForTest(dag.Solver, 1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
+	msgblock1 := createMsgBlockForTest(1, now-1000, []*wire.MsgBlock{chaincfg.SimNetParams.GenesisBlock}, nil)
 	node1 := newBlockNode(&msgblock1.Header, &msgblock1.Parents, []*blockNode{dag.dView.Genesis()})
 	blockData, err := serializeBlockNode(node1)
 	if err != nil {
@@ -777,5 +777,69 @@ func TestBlockNodeStorage(t *testing.T) {
 	if status != node1.status {
 		t.Errorf("Error deserializing status, expected %v, got %v",
 			node1.status, status)
+	}
+}
+
+func TestTransactionBlockCount(t *testing.T) {
+
+	// Create a new database and dag instance to run tests against.
+	dag, teardownFunc, err := chainSetup("TXBlockCountBucket",
+		&chaincfg.SimNetParams)
+	if err != nil {
+		t.Errorf("Failed to setup dag instance: %v", err)
+		return
+	}
+	defer teardownFunc()
+	db := dag.db
+
+	hash, err := chainhash.NewHashFromStr("1234")
+	if err != nil {
+		t.Errorf("Error creating test hash: %v", err)
+	}
+
+	var blockCount uint8
+	db.View(func(tx database.Tx) error {
+		blockCount = dbFetchTransactionIndexCount(tx, hash)
+
+		return nil
+	})
+
+	if blockCount > 0 {
+		t.Errorf("Error getting tx block count, expected %v, got %v",
+			0, blockCount)
+	}
+
+	db.Update(func(tx database.Tx) error {
+		err = dbPutTransactionIndex(tx, hash, nil)
+
+		return err
+	})
+
+	db.View(func(tx database.Tx) error {
+		blockCount = dbFetchTransactionIndexCount(tx, hash)
+
+		return nil
+	})
+
+	if blockCount != 1 {
+		t.Errorf("Error getting tx block count, expected %v, got %v",
+			1, blockCount)
+	}
+
+	db.Update(func(tx database.Tx) error {
+		err = dbPutTransactionIndex(tx, hash, nil)
+
+		return err
+	})
+
+	db.View(func(tx database.Tx) error {
+		blockCount = dbFetchTransactionIndexCount(tx, hash)
+
+		return nil
+	})
+
+	if blockCount != 2 {
+		t.Errorf("Error getting tx block count, expected %v, got %v",
+			2, blockCount)
 	}
 }

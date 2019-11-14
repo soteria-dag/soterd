@@ -430,7 +430,7 @@ func decompressScript(compressedPkScript []byte) []byte {
 // While this is simply exchanging one uint64 for another, the resulting value
 // for typical amounts has a much smaller magnitude which results in fewer bytes
 // when encoded as variable length quantity.  For example, consider the amount
-// of 0.1 SOTER which is 100000000 nanoSoter.  Encoding 100000000 as a VLQ would take
+// of 0.1 SOTO which is 100000000 nanoSoter.  Encoding 100000000 as a VLQ would take
 // 4 bytes while encoding the compressed value of 8 as a VLQ only takes 1 byte.
 //
 // Essentially the compression is achieved by splitting the value into an
@@ -449,14 +449,14 @@ func decompressScript(compressedPkScript []byte) []byte {
 //
 // Example encodings:
 // (The numbers in parenthesis are the number of bytes when serialized as a VLQ)
-//            0 (1) -> 0        (1)           *  0.00000000 SOTER
-//         1000 (2) -> 4        (1)           *  0.00000100 SOTER
-//        10000 (2) -> 5        (1)           *  0.00001000 SOTER
-//     12345678 (4) -> 111111101(4)           *  0.01234567 SOTER
-//     50000000 (4) -> 47       (1)           *  0.05000000 SOTER
-//    100000000 (4) -> 9        (1)           *  0.10000000 SOTER
-//    500000000 (5) -> 49       (1)           *  0.50000000 SOTER
-//   1000000000 (5) -> 10       (1)           *  1.00000000 SOTER
+//            0 (1) -> 0        (1)           *  0.00000000 SOTO
+//         1000 (2) -> 4        (1)           *  0.00000100 SOTO
+//        10000 (2) -> 5        (1)           *  0.00001000 SOTO
+//     12345678 (4) -> 111111101(4)           *  0.01234567 SOTO
+//     50000000 (4) -> 47       (1)           *  0.05000000 SOTO
+//    100000000 (4) -> 9        (1)           *  0.10000000 SOTO
+//    500000000 (5) -> 49       (1)           *  0.50000000 SOTO
+//   1000000000 (5) -> 10       (1)           *  1.00000000 SOTO
 // -----------------------------------------------------------------------------
 
 // compressTxOutAmount compresses the passed amount according to the domain

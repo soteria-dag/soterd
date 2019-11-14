@@ -89,9 +89,16 @@ func solveBlock(header *wire.BlockHeader, targetDifficulty *big.Int) bool {
 // standardCoinbaseScript returns a standard script suitable for use as the
 // signature script of the coinbase transaction of a new block. In particular,
 // it starts with the block height that is required by version 2 blocks.
-func standardCoinbaseScript(nextBlockHeight int32, extraNonce uint64) ([]byte, error) {
-	return txscript.NewScriptBuilder().AddInt64(int64(nextBlockHeight)).
+func standardCoinbaseScript(blockHeight int32, extraNonce uint64) ([]byte, error) {
+	return txscript.NewScriptBuilder().AddInt64(int64(blockdag.CoinbaseTxType)).
+		AddInt64(int64(blockHeight)).
 		AddInt64(int64(extraNonce)).Script()
+}
+
+func standardFeeTxScript(ancestorBlockHash *chainhash.Hash) ([]byte, error) {
+	return txscript.NewScriptBuilder().AddInt64(int64(blockdag.FeeTxType)).
+		AddData([]byte(ancestorBlockHash[:])). //puts an opcode before the data
+		Script()
 }
 
 // createCoinbaseTx returns a coinbase transaction paying an appropriate
@@ -125,6 +132,42 @@ func createCoinbaseTx(coinbaseScript []byte, nextBlockHeight int32,
 			tx.AddTxOut(&mineTo[i])
 		}
 	}
+	return soterutil.NewTx(tx), nil
+}
+
+func createFeeTx(fee int64, feeTxScript []byte, addr soterutil.Address) (*soterutil.Tx, error) {
+	// Create the script to pay to the provided payment address if one was
+	// specified.  Otherwise create a script that allows the coinbase to be
+	// redeemable by anyone.
+	var pkScript []byte
+	if addr != nil {
+		var err error
+		pkScript, err = txscript.PayToAddrScript(addr)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		scriptBuilder := txscript.NewScriptBuilder()
+		pkScript, err = scriptBuilder.AddOp(txscript.OP_TRUE).Script()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	tx := wire.NewMsgTx(wire.TxVersion)
+	tx.AddTxIn(&wire.TxIn{
+		// Coinbase transactions have no inputs, so previous outpoint is
+		// zero hash and max index.
+		PreviousOutPoint: *wire.NewOutPoint(&chainhash.Hash{},
+			wire.MaxPrevOutIndex),
+		SignatureScript: feeTxScript,
+		Sequence:        wire.MaxTxInSequenceNum,
+	})
+	tx.AddTxOut(&wire.TxOut{
+		Value:   fee ,
+		PkScript: pkScript,
+	})
 	return soterutil.NewTx(tx), nil
 }
 

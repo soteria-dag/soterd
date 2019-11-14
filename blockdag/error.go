@@ -79,9 +79,6 @@ const (
 	// lower than the required target difficultly.
 	ErrHighHash
 
-	// ErrCuckooFail indicates that the block does not pass cuckoo cycle verification
-	ErrCuckooFail
-
 	// ErrBadMerkleRoot indicates the calculated merkle root does not match
 	// the expected value.
 	ErrBadMerkleRoot
@@ -224,6 +221,24 @@ const (
 	// current chain tip. This is not a block validation rule, but is required
 	// for block proposals submitted via getblocktemplate RPC.
 	ErrPrevBlockNotBest
+
+	// ErrNoFeeTxs indicates block has no fee transaction, but should have based
+	// on its height.
+	ErrNoFeeTxs
+
+	// ErrNoAddressSig indicates PkScript has no addresses in it.
+	ErrNoAddressSig
+
+	// IncorrectFeeAmount indicates fee transaction has incorrect fee amount.
+	ErrIncorrectFeeAmount
+
+ 	// IncorrectFeePayee indicates the fee transaction is paid to the wrong party,
+ 	// should be to the block's miner.
+	ErrIncorrectFeePayee
+
+	// BadFeeTxAncestor indicates the fee transaction is for the wrong ancestor,
+	// where ancestor is based on block height and rewardWindowLength const.
+	ErrBadFeeTxAncestor
 )
 
 // Map of ErrorCode values back to their constant names for pretty printing.
@@ -238,7 +253,6 @@ var errorCodeStrings = map[ErrorCode]string{
 	ErrDifficultyTooLow:          "ErrDifficultyTooLow",
 	ErrUnexpectedDifficulty:      "ErrUnexpectedDifficulty",
 	ErrHighHash:                  "ErrHighHash",
-	ErrCuckooFail:                "ErrCuckooFail",
 	ErrBadMerkleRoot:             "ErrBadMerkleRoot",
 	ErrBadCheckpoint:             "ErrBadCheckpoint",
 	ErrForkTooOld:                "ErrForkTooOld",
@@ -272,6 +286,11 @@ var errorCodeStrings = map[ErrorCode]string{
 	ErrPreviousBlockUnknown:      "ErrPreviousBlockUnknown",
 	ErrInvalidAncestorBlock:      "ErrInvalidAncestorBlock",
 	ErrPrevBlockNotBest:          "ErrPrevBlockNotBest",
+	ErrNoFeeTxs:				  "ErrNoFeeTxs",
+	ErrNoAddressSig:              "ErrNoAddressSig",
+	ErrIncorrectFeeAmount:		  "ErrIncorrectFeeAmount",
+	ErrIncorrectFeePayee:         "ErrIncorrectFeePayee",
+	ErrBadFeeTxAncestor:          "ErrBadFeeTxAncestor",
 }
 
 // String returns the ErrorCode as a human-readable name.

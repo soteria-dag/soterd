@@ -29,7 +29,7 @@ const (
 // AccountBalanceNtfn defines the accountbalance JSON-RPC notification.
 type AccountBalanceNtfn struct {
 	Account   string
-	Balance   float64 // In SOTER
+	Balance   float64 // In SOTO
 	Confirmed bool    // Whether Balance is confirmed or unconfirmed.
 }
 

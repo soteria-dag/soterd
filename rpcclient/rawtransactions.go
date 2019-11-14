@@ -244,7 +244,7 @@ func (c *Client) CreateRawTransactionAsync(inputs []soterjson.TransactionInput,
 
 	convertedAmts := make(map[string]float64, len(amounts))
 	for addr, amount := range amounts {
-		convertedAmts[addr.String()] = amount.ToSOTER()
+		convertedAmts[addr.String()] = amount.ToSOTO()
 	}
 	cmd := soterjson.NewCreateRawTransactionCmd(inputs, convertedAmts, lockTime)
 	return c.sendCmd(cmd)

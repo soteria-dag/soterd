@@ -63,6 +63,8 @@ func (entry *UtxoEntry) isModified() bool {
 	return entry.packedFlags&tfModified == tfModified
 }
 
+//TODO: REWARD: check if we need a IsFeeTx function
+
 // IsCoinBase returns whether or not the output was contained in a coinbase
 // transaction.
 func (entry *UtxoEntry) IsCoinBase() bool {
@@ -207,6 +209,7 @@ func (view *UtxoViewpoint) AddTxOut(tx *soterutil.Tx, txOutIdx uint32, blockHeig
 	// is allowed so long as the previous transaction is fully spent.
 	prevOut := wire.OutPoint{Hash: *tx.Hash(), Index: txOutIdx}
 	txOut := tx.MsgTx().TxOut[txOutIdx]
+	//TODO: REWARD:: review what to pass into addTxOut
 	view.addTxOut(prevOut, txOut, IsCoinBase(tx), blockHeight)
 }
 
@@ -310,7 +313,7 @@ func (view *UtxoViewpoint) connectTransaction(tx *soterutil.Tx, blockHeight int3
 func (view *UtxoViewpoint) connectTransactionForSorting(tx *soterutil.Tx, blockHeight int32, stxos *[]SpentTxOut) error {
 
 	// Coinbase transactions don't have any inputs to spend.
-	if IsCoinBase(tx) {
+	if isSpecialTx(tx.MsgTx()) {
 		// Add the transaction's outputs as available utxos.
 		view.AddTxOuts(tx, blockHeight)
 		return nil
@@ -739,7 +742,7 @@ func (b *BlockDAG) FetchUtxoView(tx *soterutil.Tx) (*UtxoViewpoint, error) {
 		prevOut.Index = uint32(txOutIdx)
 		neededSet[prevOut] = struct{}{}
 	}
-	if !IsCoinBase(tx) {
+	if !isSpecialTx(tx.MsgTx()) {
 		for _, txIn := range tx.MsgTx().TxIn {
 			neededSet[txIn.PreviousOutPoint] = struct{}{}
 		}

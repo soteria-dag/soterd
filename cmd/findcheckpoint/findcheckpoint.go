@@ -7,7 +7,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"os"
 	"path/filepath"
 
@@ -159,7 +158,6 @@ func main() {
 		DB:          db,
 		ChainParams: activeNetParams,
 		TimeSource:  blockdag.NewMedianTime(),
-		Solver:       cuckoo.DefaultSolver(),
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize chain: %v\n", err)

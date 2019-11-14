@@ -14,11 +14,6 @@ import (
 const (
 	// The maximum size of the BlueSetCache
 	maxBlueSetCacheSize = 5000
-
-	// How far from a block that the getPast/getFuture operations should look,
-	// when determining sets like a node's anticone in the dag.
-	// This is currently only used for coloring.
-	edgeHorizon = 200
 )
 
 type BlueSetCache struct {
@@ -186,7 +181,7 @@ func calculateBlueSet(g *Graph, genesisNode *Node, k int, blueSetCache *BlueSetC
 	var tipToSet = make(map[*Node]*nodeSet)
 	var tips = g.getTips()
 	for _, tipBlock := range tips {
-		nodePast := g.getPastWithHorizon(tipBlock, edgeHorizon)
+		nodePast := g.getPast(tipBlock)
 
 		var pastBlueSet *nodeSet
 		if blueSetCache != nil && tipBlock.GetId() != "VIRTUAL" {
@@ -203,10 +198,10 @@ func calculateBlueSet(g *Graph, genesisNode *Node, k int, blueSetCache *BlueSetC
 			pastBlueSet.add(tipBlock)
 		}
 
-		anticone := g.getAnticoneWithHorizon(tipBlock, edgeHorizon)
+		anticone := g.getAnticone(tipBlock)
 
 		for _, node := range anticone.elements() {
-			anticoneC := g.getAnticoneWithHorizon(node, edgeHorizon)
+			anticoneC := g.getAnticone(node)
 			blueIntersect := anticoneC.intersection(pastBlueSet)
 			if blueIntersect.size() <= k {
 				pastBlueSet.add(node)

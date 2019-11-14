@@ -1,11 +1,9 @@
 soterd
 ====
 
-[![Build Status](https://travis-ci.com/soteria-dag/soterd.svg?branch=master)](https://travis-ci.com/soteria-dag/soterd)
-[![GoDoc](https://godoc.org/github.com/soteria-dag/soterd?status.svg)](https://godoc.org/github.com/soteria-dag/soterd)
+
 
 [![ISC License](http://img.shields.io/badge/license-ISC-blue.svg)](http://copyfree.org)
-[![Go Report Card](https://goreportcard.com/badge/github.com/soteria-dag/soterd)](https://goreportcard.com/report/soteria-dag/soterd)
 
 <br>
 

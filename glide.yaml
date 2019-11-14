@@ -1,4 +1,4 @@
-package: github.com/soterium/soterd
+package: github.com/soteria-dag/soterd
 import:
 - package: github.com/btcsuite/go-socks
   subpackages:
@@ -33,10 +33,3 @@ import:
   version: 9852fce5a172598e72d16f4306f0f17a53d94eb4
 - package: github.com/blang/semver
   version: ^3.6.1
-- package: github.com/Qitmeer/qitmeer-lib
-  subpackages:
-  - crypto/cuckoo
-  - common/hash
-- package: golang.org/x/sys
-  subpackages:
-  - cpu

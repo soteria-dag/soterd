@@ -10,6 +10,7 @@ package rpctest
 
 import (
 	"fmt"
+	"github.com/soteria-dag/soterd/blockdag"
 	"os"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func testSendOutputs(r *Harness, t *testing.T) {
 			t.Fatalf("unable to get new address: %v", err)
 		}
 
-		// Next, send amt SOTER to this address, spending from one of our mature
+		// Next, send amt SOTO to this address, spending from one of our mature
 		// coinbase outputs.
 		addrScript, err := txscript.PayToAddrScript(addr)
 		if err != nil {
@@ -56,6 +57,14 @@ func testSendOutputs(r *Harness, t *testing.T) {
 		}
 
 		minedTx := block.Transactions[1]
+		for _, tx := range block.Transactions {
+			if blockdag.IsCoinBaseTx(tx) || blockdag.IsFeeTxTx(tx) {
+				continue
+			}
+			minedTx = tx
+			break
+		}
+
 		txHash := minedTx.TxHash()
 		if txHash != *txid {
 			t.Fatalf("txid's don't match, %v vs %v", txHash, txid)
@@ -359,9 +368,14 @@ func testGenerateAndSubmitBlock(r *Harness, t *testing.T) {
 	// Ensure that all created transactions were included, and that the
 	// block version was properly set to the default.
 	numBlocksTxns := len(block.Transactions())
-	if numBlocksTxns != numTxns+1 {
+	numFeeTx := 0
+	if block.Height() > rewardWindowLength {
+		numFeeTx = 1
+	}
+	if numBlocksTxns != (numTxns+1+numFeeTx) {
+
 		t.Fatalf("block did not include all transactions: "+
-			"expected %v, got %v", numTxns+1, numBlocksTxns)
+			"expected %v, got %v at height %d", numTxns+1+numFeeTx, numBlocksTxns, block.Height())
 	}
 	blockVersion := block.MsgBlock().Header.Version
 	if blockVersion != BlockVersion {
@@ -430,9 +444,13 @@ func testGenerateAndSubmitBlockWithCustomCoinbaseOutputs(r *Harness,
 	// Ensure that all created transactions were included, and that the
 	// block version was properly set to the default.
 	numBlocksTxns := len(block.Transactions())
-	if numBlocksTxns != numTxns+1 {
+	numFeeTx := 0
+	if block.Height() > rewardWindowLength {
+		numFeeTx = 1
+	}
+	if numBlocksTxns != numTxns+1+numFeeTx {
 		t.Fatalf("block did not include all transactions: "+
-			"expected %v, got %v", numTxns+1, numBlocksTxns)
+			"expected %v, got %v", numTxns+1+numFeeTx, numBlocksTxns)
 	}
 	blockVersion := block.MsgBlock().Header.Version
 	if blockVersion != BlockVersion {
@@ -479,7 +497,7 @@ func testMemWalletReorg(r *Harness, t *testing.T) {
 	}
 	defer harness.TearDown()
 
-	// The internal wallet of this harness should now have 250 SOTER.
+	// The internal wallet of this harness should now have 250 SOTO.
 	expectedBalance := soterutil.Amount(250 * soterutil.NanoSoterPerSoter)
 	walletBalance := harness.ConfirmedBalance()
 	if expectedBalance != walletBalance {
@@ -497,7 +515,7 @@ func testMemWalletReorg(r *Harness, t *testing.T) {
 		t.Fatalf("unable to join node on blocks: %v", err)
 	}
 
-	// The original wallet should now have a balance of 0 SOTER as its entire
+	// The original wallet should now have a balance of 0 SOTO as its entire
 	// chain should have been decimated in favor of the main harness'
 	// chain.
 	expectedBalance = soterutil.Amount(0)
@@ -528,7 +546,7 @@ func testMemWalletLockedOutputs(r *Harness, t *testing.T) {
 		t.Fatalf("unable to create transaction: %v", err)
 	}
 
-	// The current wallet balance should now be at least 50 SOTER less
+	// The current wallet balance should now be at least 50 SOTO less
 	// (accounting for fees) than the period balance
 	currentBalance := r.ConfirmedBalance()
 	if !(currentBalance <= startingBalance-outputAmt) {
@@ -602,7 +620,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestHarness(t *testing.T) {
-	// We should have (numMatureOutputs * 50 SOTER) of mature unspendable
+	// We should have (numMatureOutputs * 50 SOTO) of mature unspendable
 	// outputs.
 	expectedBalance := soterutil.Amount(numMatureOutputs * 50 * soterutil.NanoSoterPerSoter)
 	harnessBalance := mainHarness.ConfirmedBalance()
@@ -617,10 +635,10 @@ func TestHarness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to execute getinfo on node: %v", err)
 	}
-	expectedChainHeight := numMatureOutputs + uint32(mainHarness.ActiveNet.CoinbaseMaturity)
-	if uint32(nodeInfo.Blocks) != expectedChainHeight {
-		t.Errorf("Chain height is %v, should be %v",
-			nodeInfo.Blocks, expectedChainHeight)
+	expectedBlockCount := numMatureOutputs + uint32(mainHarness.ActiveNet.CoinbaseMaturity) + 1
+	if uint32(nodeInfo.Blocks) != expectedBlockCount {
+		t.Errorf("Block count is %v, should be %v",
+			nodeInfo.Blocks, expectedBlockCount)
 	}
 
 	for _, testCase := range harnessTestCases {

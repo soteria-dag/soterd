@@ -14,13 +14,17 @@ import (
 
 	"github.com/soteria-dag/soterd/chaincfg"
 	"github.com/soteria-dag/soterd/chaincfg/chainhash"
-	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"github.com/soteria-dag/soterd/soterutil"
 	"github.com/soteria-dag/soterd/txscript"
 	"github.com/soteria-dag/soterd/wire"
 )
 
 const (
+
+	//TODO: REWARD
+	CoinbaseTxType = uint8(1)
+	FeeTxType = uint8(2)
+
 	// MaxTimeOffsetSeconds is the maximum number of seconds a block time
 	// is allowed to be ahead of the current time.  This is currently 2
 	// hours.
@@ -80,6 +84,30 @@ func ShouldHaveSerializedBlockHeight(header *wire.BlockHeader) bool {
 	return header.Version >= serializedHeightVersion
 }
 
+func isSpecialTx(msgTx *wire.MsgTx) bool {
+	// A special tx must only have one transaction input.
+	if len(msgTx.TxIn) != 1 {
+		return false
+	}
+
+	// The previous output of a special tx must have a max value index and
+	// a zero hash.
+	prevOut := &msgTx.TxIn[0].PreviousOutPoint
+	if prevOut.Index != math.MaxUint32 || prevOut.Hash != zeroHash {
+		return false
+	}
+
+	return true
+}
+
+func ExtractSpecialTxType(script []byte) uint8 {
+	if len(script) < 1 {
+		return 0
+	} else {
+		return uint8(script[0] - (txscript.OP_1 - 1))
+	}
+}
+
 // IsCoinBaseTx determines whether or not a transaction is a coinbase.  A coinbase
 // is a special transaction created by miners that has no inputs.  This is
 // represented in the block chain by a transaction with a single input that has
@@ -89,20 +117,19 @@ func ShouldHaveSerializedBlockHeight(header *wire.BlockHeader) bool {
 // This function only differs from IsCoinBase in that it works with a raw wire
 // transaction as opposed to a higher level util transaction.
 func IsCoinBaseTx(msgTx *wire.MsgTx) bool {
-	// A coin base must only have one transaction input.
-	if len(msgTx.TxIn) != 1 {
-		return false
+	if isSpecialTx(msgTx) {
+		// TODO:REWARD
+		// check pub script first byte to see if type is coinbase
+		sigScript := msgTx.TxIn[0].SignatureScript
+		txType := ExtractSpecialTxType(sigScript)
+		if txType == CoinbaseTxType {
+			return true
+		}
 	}
 
-	// The previous output of a coin base must have a max value index and
-	// a zero hash.
-	prevOut := &msgTx.TxIn[0].PreviousOutPoint
-	if prevOut.Index != math.MaxUint32 || prevOut.Hash != zeroHash {
-		return false
-	}
-
-	return true
+	return false
 }
+
 
 // IsCoinBase determines whether or not a transaction is a coinbase.  A coinbase
 // is a special transaction created by miners that has no inputs.  This is
@@ -114,6 +141,22 @@ func IsCoinBaseTx(msgTx *wire.MsgTx) bool {
 // level util transaction as opposed to a raw wire transaction.
 func IsCoinBase(tx *soterutil.Tx) bool {
 	return IsCoinBaseTx(tx.MsgTx())
+}
+
+func IsFeeTx(tx *soterutil.Tx) bool {
+	return IsFeeTxTx(tx.MsgTx())
+}
+
+func IsFeeTxTx(tx *wire.MsgTx) bool {
+	if isSpecialTx(tx) {
+		sigScript := tx.TxIn[0].SignatureScript
+		txType := ExtractSpecialTxType(sigScript)
+		if txType == FeeTxType {
+			return true
+		}
+	}
+
+	return false
 }
 
 // SequenceLockActive determines if a transaction's sequence locks have been
@@ -278,7 +321,7 @@ func CheckTransactionSanity(tx *soterutil.Tx) error {
 	}
 
 	// Coinbase script length must be between min and max length.
-	if IsCoinBase(tx) {
+	if isSpecialTx(tx.MsgTx()) {
 		slen := len(msgTx.TxIn[0].SignatureScript)
 		if slen < MinCoinbaseScriptLen || slen > MaxCoinbaseScriptLen {
 			str := fmt.Sprintf("coinbase transaction script length "+
@@ -308,8 +351,7 @@ func CheckTransactionSanity(tx *soterutil.Tx) error {
 // The flags modify the behavior of this function as follows:
 //  - BFNoPoWCheck: The check to ensure the block hash is less than the target
 //    difficulty is not performed.
-func checkProofOfWork(solver cuckoo.Solver, block *wire.MsgBlock, powLimit *big.Int, flags BehaviorFlags) error {
-	var header = block.Header
+func checkProofOfWork(header *wire.BlockHeader, powLimit *big.Int, flags BehaviorFlags) error {
 	// The target difficulty must be larger than zero.
 	target := CompactToBig(header.Bits)
 	if target.Sign() <= 0 {
@@ -325,18 +367,16 @@ func checkProofOfWork(solver cuckoo.Solver, block *wire.MsgBlock, powLimit *big.
 		return ruleError(ErrUnexpectedDifficulty, str)
 	}
 
-	// Cuckoo cycle verification must pass, unless the flag to avoid proof of work checks is set.
+	// The block hash must be less than the claimed target unless the flag
+	// to avoid proof of work checks is set.
 	if flags&BFNoPoWCheck != BFNoPoWCheck {
-		headerBytes, err := header.Bytes()
-		if err != nil {
-			str := fmt.Sprintf("cuckoo cycle verification failed: %s", err)
-			return ruleError(ErrCuckooFail, str)
-		}
-
-		err = solver.Verify(headerBytes, block.Header.Nonce, block.Verification.CycleNonces)
-		if err != nil {
-			str := fmt.Sprintf("cuckoo cycle verification failed: %s", err)
-			return ruleError(ErrCuckooFail, str)
+		// The block hash must be less than the claimed target.
+		hash := header.BlockHash()
+		hashNum := HashToBig(&hash)
+		if hashNum.Cmp(target) > 0 {
+			str := fmt.Sprintf("block hash of %064x is higher than "+
+				"expected max of %064x", hashNum, target)
+			return ruleError(ErrHighHash, str)
 		}
 	}
 
@@ -346,8 +386,8 @@ func checkProofOfWork(solver cuckoo.Solver, block *wire.MsgBlock, powLimit *big.
 // CheckProofOfWork ensures the block header bits which indicate the target
 // difficulty is in min/max range and that the block hash is less than the
 // target difficulty as claimed.
-func CheckProofOfWork(solver cuckoo.Solver, block *soterutil.Block, powLimit *big.Int) error {
-	return checkProofOfWork(solver, block.MsgBlock(), powLimit, BFNone)
+func CheckProofOfWork(block *soterutil.Block, powLimit *big.Int) error {
+	return checkProofOfWork(&block.MsgBlock().Header, powLimit, BFNone)
 }
 
 // CountSigOps returns the number of signature operations for all transaction
@@ -434,12 +474,11 @@ func CountP2SHSigOps(tx *soterutil.Tx, isCoinBaseTx bool, utxoView *UtxoViewpoin
 //
 // The flags do not modify the behavior of this function directly, however they
 // are needed to pass along to checkProofOfWork.
-func checkBlockHeaderSanity(solver cuckoo.Solver, block *wire.MsgBlock, powLimit *big.Int, timeSource MedianTimeSource, flags BehaviorFlags) error {
-	var header = block.Header
+func checkBlockHeaderSanity(header *wire.BlockHeader, powLimit *big.Int, timeSource MedianTimeSource, flags BehaviorFlags) error {
 	// Ensure the proof of work bits in the block header is in min/max range
 	// and the block hash is less than the target value described by the
 	// bits.
-	err := checkProofOfWork(solver, block, powLimit, flags)
+	err := checkProofOfWork(header, powLimit, flags)
 	if err != nil {
 		return err
 	}
@@ -472,10 +511,10 @@ func checkBlockHeaderSanity(solver cuckoo.Solver, block *wire.MsgBlock, powLimit
 //
 // The flags do not modify the behavior of this function directly, however they
 // are needed to pass along to checkBlockHeaderSanity.
-func checkBlockSanity(solver cuckoo.Solver, block *soterutil.Block, powLimit *big.Int, timeSource MedianTimeSource, flags BehaviorFlags) error {
+func checkBlockSanity(block *soterutil.Block, powLimit *big.Int, timeSource MedianTimeSource, flags BehaviorFlags) error {
 	msgBlock := block.MsgBlock()
 	header := &msgBlock.Header
-	err := checkBlockHeaderSanity(solver, block.MsgBlock(), powLimit, timeSource, flags)
+	err := checkBlockHeaderSanity(header, powLimit, timeSource, flags)
 	if err != nil {
 		return err
 	}
@@ -517,6 +556,24 @@ func checkBlockSanity(solver cuckoo.Solver, block *soterutil.Block, powLimit *bi
 			str := fmt.Sprintf("block contains second coinbase at "+
 				"index %d", i+1)
 			return ruleError(ErrMultipleCoinbases, str)
+		}
+	}
+
+	// REWARD:
+	// after coinbase, based on block height
+	// check if there are any fee txs
+	// there should be at least one if height > rewardWindowLength
+	if block.Height() > rewardWindowLength {
+		seenFeeTx := false
+		for _, tx := range transactions[1:] {
+			if IsFeeTx(tx) {
+				seenFeeTx = true
+			}
+		}
+		if !seenFeeTx {
+			str := fmt.Sprintf("block does not contain any fee transactions at height %d ",
+				block.Height())
+			return ruleError(ErrNoFeeTxs, str)
 		}
 	}
 
@@ -579,8 +636,8 @@ func checkBlockSanity(solver cuckoo.Solver, block *soterutil.Block, powLimit *bi
 
 // CheckBlockSanity performs some preliminary checks on a block to ensure it is
 // sane before continuing with block processing.  These checks are context free.
-func CheckBlockSanity(solver cuckoo.Solver, block *soterutil.Block, powLimit *big.Int, timeSource MedianTimeSource) error {
-	return checkBlockSanity(solver, block, powLimit, timeSource, BFNone)
+func CheckBlockSanity(block *soterutil.Block, powLimit *big.Int, timeSource MedianTimeSource) error {
+	return checkBlockSanity(block, powLimit, timeSource, BFNone)
 }
 
 // ExtractCoinbaseHeight attempts to extract the height of the block from the
@@ -588,7 +645,7 @@ func CheckBlockSanity(solver cuckoo.Solver, block *soterutil.Block, powLimit *bi
 // blocks of version 2 or later.  This was added as part of BIP0034.
 func ExtractCoinbaseHeight(coinbaseTx *soterutil.Tx) (int32, error) {
 	sigScript := coinbaseTx.MsgTx().TxIn[0].SignatureScript
-	if len(sigScript) < 1 {
+	if len(sigScript) < 2 {
 		str := "the coinbase signature script for blocks of " +
 			"version %d or greater must start with the " +
 			"length of the serialized block height"
@@ -596,9 +653,11 @@ func ExtractCoinbaseHeight(coinbaseTx *soterutil.Tx) (int32, error) {
 		return 0, ruleError(ErrMissingCoinbaseHeight, str)
 	}
 
+	//REWARD: format of SignatureScript changes to include tx type as first byte
+
 	// Detect the case when the block height is a small integer encoded with
 	// as single byte.
-	opcode := int(sigScript[0])
+	opcode := int(sigScript[1])
 	if opcode == txscript.OP_0 {
 		return 0, nil
 	}
@@ -608,8 +667,8 @@ func ExtractCoinbaseHeight(coinbaseTx *soterutil.Tx) (int32, error) {
 
 	// Otherwise, the opcode is the length of the following bytes which
 	// encode in the block height.
-	serializedLen := int(sigScript[0])
-	if len(sigScript[1:]) < serializedLen {
+	serializedLen := int(sigScript[1])
+	if len(sigScript[2:]) < serializedLen {
 		str := "the coinbase signature script for blocks of " +
 			"version %d or greater must start with the " +
 			"serialized block height"
@@ -618,7 +677,7 @@ func ExtractCoinbaseHeight(coinbaseTx *soterutil.Tx) (int32, error) {
 	}
 
 	serializedHeightBytes := make([]byte, 8)
-	copy(serializedHeightBytes, sigScript[1:serializedLen+1])
+	copy(serializedHeightBytes, sigScript[2:serializedLen+1])
 	serializedHeight := binary.LittleEndian.Uint64(serializedHeightBytes)
 
 	return int32(serializedHeight), nil
@@ -659,23 +718,17 @@ func (b *BlockDAG) checkBlockHeaderContext(header *wire.BlockHeader, prevNodes [
 		// find most recent parent
 		var recentTip *blockNode
 		var recentTipTime = time.Time{}.Unix() //TODO: what timestamp does this give?
-		var maxHeight int32
 		for _, prevNode := range prevNodes {
 			if prevNode.timestamp > recentTipTime {
 				recentTip = prevNode
 				recentTipTime = prevNode.timestamp
 			}
-
-			if prevNode.height > maxHeight {
-				maxHeight = prevNode.height
-			}
 		}
-
-		target, err := b.TargetDifficulty(maxHeight)
+		expectedDifficulty, err := b.calcNextRequiredDifficulty(recentTip,
+			header.Timestamp)
 		if err != nil {
 			return err
 		}
-		expectedDifficulty := BigToCompact(target)
 		blockDifficulty := header.Bits
 		if blockDifficulty != expectedDifficulty {
 			str := "block difficulty of %d is not the expected value of %d"
@@ -902,7 +955,7 @@ func (b *BlockDAG) checkBIP0030(node *blockNode, block *soterutil.Block, view *U
 func CheckTransactionInputs(tx *soterutil.Tx, txHeight int32, utxoView *UtxoViewpoint, chainParams *chaincfg.Params,
 	onConnectBlock bool) (int64, error) {
 	// Coinbase transactions have no inputs.
-	if IsCoinBase(tx) {
+	if isSpecialTx(tx.MsgTx()) {
 		return 0, nil
 	}
 
@@ -992,6 +1045,71 @@ func CheckTransactionInputs(tx *soterutil.Tx, txHeight int32, utxoView *UtxoView
 	// the inputs are >= the outputs.
 	txFeeInNanoSoter := totalNanoSoterIn - totalNanoSoterOut
 	return txFeeInNanoSoter, nil
+}
+
+func (b *BlockDAG) GetMinerPubKey(hash *chainhash.Hash) (soterutil.Address, error) {
+	block, err := b.BlockByHash(hash)
+	if err != nil {
+		return nil, err
+	}
+
+	// get coinbase
+	transactions := block.Transactions()
+	coinBase := transactions[0].MsgTx()
+	if !IsCoinBaseTx(coinBase) && block.Height() > 0 { //TODO(jenlouie): fix genesis
+		return nil, ruleError(ErrFirstTxNotCoinbase,
+			fmt.Sprintf("first transaction in " +
+			"block %v , height %d is not a coinbase", block.Hash(), block.Height()))
+	}
+
+	pkScript := coinBase.TxOut[0].PkScript
+
+	_, addrs, _, err := txscript.ExtractPkScriptAddrs(pkScript, b.chainParams)
+	if addrs == nil || len(addrs) == 0 {
+		return nil, nil
+	}
+
+	return addrs[0], nil
+}
+
+type FeeTxData struct {
+	Value    int64
+	Hash     *chainhash.Hash
+	Address  soterutil.Address
+}
+
+func (b *BlockDAG) getFeeTxData(tx *soterutil.Tx) (FeeTxData, error) {
+	data := FeeTxData{}
+
+	// get address - to whom this fee is paid
+	pkScript := tx.MsgTx().TxOut[0].PkScript
+	_, addrs, _, err := txscript.ExtractPkScriptAddrs(pkScript, b.chainParams)
+	if err != nil {
+		return data, err
+	}
+	if addrs == nil || len(addrs) == 0 {
+		data.Address = nil
+	} else {
+		data.Address = addrs[0]
+	}
+
+	// get value
+	data.Value = tx.MsgTx().TxOut[0].Value
+
+	// get block hash
+	feeScript := tx.MsgTx().TxIn[0].SignatureScript
+	// 1 byte of type
+	// then opcode
+	// then hash
+	hash := feeScript[2:]
+
+	data.Hash, err = chainhash.NewHash(hash)
+
+	if err != nil {
+		return data, err
+	}
+
+	return data, nil
 }
 
 // checkConnectBlock performs several checks to confirm connecting the passed
@@ -1158,6 +1276,73 @@ func (b *BlockDAG) checkConnectBlock(node *blockNode, block *soterutil.Block, vi
 		*/
 	}
 
+	//TODO: REWARD: somewhere check that fee tx are for the right ancestor
+	// check fee amount
+	// check paid to right public key
+
+	parentHashes := make([]chainhash.Hash, len(node.parents))
+	for i, parent := range node.parents {
+		parentHashes[i] = parent.hash
+	}
+
+	ancestors, err := b.getFeeAncestors(node.height, parentHashes)
+	ancestorMap := make(map[chainhash.Hash]struct{})
+	for _, ancestor := range ancestors {
+		ancestorMap[*ancestor] = struct{}{}
+	}
+
+	for _, tx := range transactions {
+		if IsFeeTx(tx) {
+			feeTxData, err := b.getFeeTxData(tx)
+			if err != nil {
+				return err
+			}
+
+			ancestorBlockHash := feeTxData.Hash
+			if _, exists := ancestorMap[*ancestorBlockHash]; exists {
+				ancestorBlock, err := b.BlockByHash(ancestorBlockHash)
+				if err != nil {
+					return err
+				}
+				// check fee amount
+				feeAmt, err := b.calculateFee(ancestorBlock)
+
+				if err != nil {
+					return err
+				}
+
+				if feeAmt != feeTxData.Value {
+					return ruleError(ErrIncorrectFeeAmount,
+						fmt.Sprintf("Incorrect fee amount in fee transaction, expecting %d, got %d",
+							feeAmt, feeTxData.Value))
+				}
+
+				// check paid to correct key
+				ancestorPubKey, err := b.GetMinerPubKey(ancestorBlockHash)
+				if err != nil {
+					return err
+				}
+
+				if feeTxData.Address != nil && ancestorPubKey.String() != feeTxData.Address.String() {
+					return ruleError(ErrIncorrectFeePayee,
+						fmt.Sprintf("Fee transaction paid to the wrong party, expected %v, got %v\n",
+							ancestorPubKey, feeTxData.Address))
+				}
+
+				delete(ancestorMap, *ancestorBlockHash)
+			} else {
+				str := fmt.Sprintf("Fee tx in block %v for unknown ancestor %v",
+					block.Hash(), ancestorBlockHash)
+				return ruleError(ErrBadFeeTxAncestor, str)
+			}
+		}
+	}
+
+	// not all expected ancestors in block
+	if len(ancestorMap) != 0 {
+		return ruleError(ErrBadFeeTxAncestor, "Missing fee transaction")
+	}
+
 	// The total output values of the coinbase transaction must not exceed
 	// the expected subsidy value plus total transaction fees gained from
 	// mining the block.  It is safe to ignore overflow and out of range
@@ -1167,8 +1352,9 @@ func (b *BlockDAG) checkConnectBlock(node *blockNode, block *soterutil.Block, vi
 	for _, txOut := range transactions[0].MsgTx().TxOut {
 		totalNanoSoterOut += txOut.Value
 	}
-	expectedNanoSoterOut := CalcBlockSubsidy(node.height, b.chainParams) +
-		totalFees
+	//TODO: REWARD: no longer the case when fees paid by another block, coinbase only contains block subsidy
+	expectedNanoSoterOut := CalcBlockSubsidy(node.height, b.chainParams) //+
+		//totalFees
 	if totalNanoSoterOut > expectedNanoSoterOut {
 		str := fmt.Sprintf("coinbase transaction for block pays %v "+
 			"which is more than expected value of %v",
@@ -1300,7 +1486,7 @@ func (b *BlockDAG) CheckConnectBlockTemplate(block *soterutil.Block) error {
 		return ruleError(ErrPrevBlockNotBest, str)
 	}
 
-	err := checkBlockSanity(b.Solver, block, b.chainParams.PowLimit, b.timeSource, flags)
+	err := checkBlockSanity(block, b.chainParams.PowLimit, b.timeSource, flags)
 	if err != nil {
 		return err
 	}

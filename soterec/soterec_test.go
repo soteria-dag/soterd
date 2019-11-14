@@ -569,6 +569,9 @@ func TestBaseMult(t *testing.T) {
 		if fmt.Sprintf("%X", x) != e.x || fmt.Sprintf("%X", y) != e.y {
 			t.Errorf("%d: bad output for k=%s: got (%X, %X), want (%s, %s)", i, e.k, x, y, e.x, e.y)
 		}
+		if testing.Short() && i > 5 {
+			break
+		}
 	}
 }
 
@@ -586,6 +589,9 @@ func TestBaseMultVerify(t *testing.T) {
 			xWant, yWant := s256.ScalarMult(s256.Gx, s256.Gy, data)
 			if x.Cmp(xWant) != 0 || y.Cmp(yWant) != 0 {
 				t.Errorf("%d: bad output for %X: got (%X, %X), want (%X, %X)", i, data, x, y, xWant, yWant)
+			}
+			if testing.Short() && i > 2 {
+				break
 			}
 		}
 	}

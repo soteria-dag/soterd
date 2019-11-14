@@ -34,12 +34,13 @@ Refer to the [Getting started with Docker](getting_started_docker.md) document f
 
 #### Requirements
 
-* [Go](http://golang.org) 1.13 or newer. (It may compile on earlier versions, but is tested on Go 1.13 and later)
-* [Git](https://git-scm.com/)
+[Go](http://golang.org) 1.11.1 or newer. (It may compile on earlier versions, but is tested on Go 1.11.1 and later)
+
+[Git](https://git-scm.com/)
 
 ##### Optional
 
-* [graphviz](https://graphviz.org/), for DAG rendering functionality
+[graphviz](https://graphviz.org/), for DAG rendering functionality
 
 #### Build and install steps
 

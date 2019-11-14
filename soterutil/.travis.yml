@@ -1,6 +1,7 @@
 language: go
 go:
-  - "1.13"
+  - "1.9.4"
+  - "1.10"
 sudo: false
 install:
   - go get -d -t -v ./...

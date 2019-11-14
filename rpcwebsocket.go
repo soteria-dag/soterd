@@ -832,7 +832,7 @@ func (m *wsNotificationManager) notifyForNewTx(clients map[chan struct{}]*wsClie
 		amount += txOut.Value
 	}
 
-	ntfn := soterjson.NewTxAcceptedNtfn(txHashStr, soterutil.Amount(amount).ToSOTER())
+	ntfn := soterjson.NewTxAcceptedNtfn(txHashStr, soterutil.Amount(amount).ToSOTO())
 	marshalledJSON, err := soterjson.MarshalCmd(nil, ntfn)
 	if err != nil {
 		rpcsLog.Errorf("Failed to marshal tx notification: %s", err.Error())
@@ -2157,7 +2157,7 @@ func rescanBlockFilter(filter *wsClientFilter, block *soterutil.Block, params *c
 		added := false
 
 		// Scan inputs if not a coinbase transaction.
-		if !blockdag.IsCoinBaseTx(msgTx) {
+		if !blockdag.IsCoinBaseTx(msgTx) && !blockdag.IsFeeTx(tx){
 			for _, input := range msgTx.TxIn {
 				if !filter.existsUnspentOutPoint(&input.PreviousOutPoint) {
 					continue

@@ -939,3 +939,80 @@ func (c *Client) GetCFilterHeader(blockHash *chainhash.Hash,
 	filterType wire.FilterType) (*wire.MsgCFHeaders, error) {
 	return c.GetCFilterHeaderAsync(blockHash, filterType).Receive()
 }
+
+type FutureGetBlockFeeResult chan *response
+
+// Receive waits for the response promised by the future and returns the raw
+// filter requested from the server given its block hash.
+func (r FutureGetBlockFeeResult) Receive() (int64, error) {
+	res, err := receiveFuture(r)
+	if err != nil {
+		return 0, err
+	}
+
+	// Unmarshal result as a string.
+	var fee int64
+	err = json.Unmarshal(res, &fee)
+	if err != nil {
+		return 0, err
+	}
+
+	return fee, nil
+}
+
+func (c *Client) GetBlockFeeAsync(blockHash *chainhash.Hash) FutureGetBlockFeeResult {
+	hash := ""
+	if blockHash != nil {
+		hash = blockHash.String()
+	}
+
+	cmd := soterjson.NewGetBlockFeeCmd(hash)
+	return c.sendCmd(cmd)
+}
+
+func (c *Client) GetBlockFee(blockHash *chainhash.Hash) (int64, error){
+	return c.GetBlockFeeAsync(blockHash).Receive()
+}
+
+type FutureGetBlockFeeAncestorsResult chan *response
+
+// Receive waits for the response promised by the future and returns the raw
+// filter requested from the server given its block hash.
+func (r FutureGetBlockFeeAncestorsResult) Receive() ([]*chainhash.Hash, error) {
+	res, err := receiveFuture(r)
+	if err != nil {
+		return nil, err
+	}
+
+	var result soterjson.GetBlockFeeAncestorsResult
+	err = json.Unmarshal(res, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	var hashes []*chainhash.Hash
+	for _, hashString := range result.Hashes {
+		hash, err := chainhash.NewHashFromStr(hashString)
+		if err != nil {
+			return nil, err
+		}
+
+		hashes = append(hashes, hash)
+	}
+
+	return hashes, nil
+}
+
+func (c *Client) GetBlockFeeAncestorsAsync(height int32, parentHashes []*chainhash.Hash) FutureGetBlockFeeAncestorsResult {
+	hashStrings := make([]string, len(parentHashes))
+	for i, hash := range parentHashes {
+		hashStrings[i] = hash.String()
+	}
+
+	cmd := soterjson.NewGetBlockFeeAncestorsCmd(height, hashStrings)
+	return c.sendCmd(cmd)
+}
+
+func (c *Client) GetBlockFeeAncestors(height int32, parentHashes []*chainhash.Hash) ([]*chainhash.Hash, error){
+	return c.GetBlockFeeAncestorsAsync(height, parentHashes).Receive()
+}

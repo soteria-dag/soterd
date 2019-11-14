@@ -58,3 +58,7 @@ type GetListenAddrsResult struct {
 type RenderDagResult struct {
 	Dot string `json:"dot"`
 }
+
+type GetBlockFeeAncestorsResult struct {
+	Hashes    []string    `json:"hashes"`
+}

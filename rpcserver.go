@@ -143,6 +143,8 @@ var rpcHandlersBeforeInit = map[string]commandHandler{
 	"getblock":           handleGetBlock,
 	"getblockchaininfo":  handleGetBlockChainInfo,
 	"getblockcount":      handleGetBlockCount,
+	"getblockfee":        handleGetBlockFee,
+	"getblockfeeancestors": handleGetBlockFeeAncestors,
 	"getblockhash":       handleGetBlockHash,
 	"getblockheader":     handleGetBlockHeader,
 	"getblocktemplate":   handleGetBlockTemplate,
@@ -734,7 +736,7 @@ func createVoutList(mtx *wire.MsgTx, chainParams *chaincfg.Params, filterAddrMap
 
 		var vout soterjson.Vout
 		vout.N = uint32(i)
-		vout.Value = soterutil.Amount(v.Value).ToSOTER()
+		vout.Value = soterutil.Amount(v.Value).ToSOTO()
 		vout.ScriptPubKey.Addresses = encodedAddrs
 		vout.ScriptPubKey.Asm = disbuf
 		vout.ScriptPubKey.Hex = hex.EncodeToString(v.PkScript)
@@ -2444,7 +2446,7 @@ func handleGetInfo(s *rpcServer, cmd interface{}, closeChan <-chan struct{}) (in
 		Proxy:           cfg.Proxy,
 		Difficulty:      getDifficultyRatio(best.Bits, s.cfg.ChainParams),
 		TestNet:         cfg.TestNet1,
-		RelayFee:        cfg.minRelayTxFee.ToSOTER(),
+		RelayFee:        cfg.minRelayTxFee.ToSOTO(),
 	}
 
 	return ret, nil
@@ -2895,7 +2897,7 @@ func handleGetTxOut(s *rpcServer, cmd interface{}, closeChan <-chan struct{}) (i
 	txOutReply := &soterjson.GetTxOutResult{
 		BestBlock:     bestBlockHash, // TODO(jenlouie): replace with tips?, what do they do with this value?
 		Confirmations: int64(confirmations),
-		Value:         soterutil.Amount(value).ToSOTER(),
+		Value:         soterutil.Amount(value).ToSOTO(),
 		ScriptPubKey: soterjson.ScriptPubKeyResult{
 			Asm:       disbuf,
 			Hex:       hex.EncodeToString(pkScript),
@@ -3168,7 +3170,7 @@ func createVinListPrevOut(s *rpcServer, mtx *wire.MsgTx, chainParams *chaincfg.P
 			vinListEntry := &vinList[len(vinList)-1]
 			vinListEntry.PrevOut = &soterjson.PrevOut{
 				Addresses: encodedAddrs,
-				Value:     soterutil.Amount(originTxOut.Value).ToSOTER(),
+				Value:     soterutil.Amount(originTxOut.Value).ToSOTO(),
 			}
 		}
 	}
@@ -3661,7 +3663,7 @@ func verifyChain(s *rpcServer, level, depth int32) error {
 		// Level 1 does basic chain sanity checks.
 		if level > 0 {
 			for _, block := range blocks {
-				err := blockdag.CheckBlockSanity(s.cfg.Chain.Solver, block,
+				err := blockdag.CheckBlockSanity(block,
 					s.cfg.ChainParams.PowLimit, s.cfg.TimeSource)
 				if err != nil {
 					rpcsLog.Errorf("Verify is unable to validate "+
@@ -4528,6 +4530,65 @@ func (s *rpcServer) handleBlockchainNotification(notification *blockdag.Notifica
 		// Notify registered websocket clients.
 		s.ntfnMgr.NotifyBlockDisconnected(block)
 	}
+}
+
+func handleGetBlockFee (s *rpcServer, cmd interface{}, closeChan <-chan struct{}) (interface{}, error) {
+	c := cmd.(*soterjson.GetBlockFeeCmd)
+
+	// Load the raw block bytes from the database.
+	hash, err := chainhash.NewHashFromStr(c.Hash)
+	if err != nil {
+		return nil, rpcDecodeHexError(c.Hash)
+	}
+
+	block, err := s.cfg.Chain.BlockByHash(hash)
+	if err != nil {
+		return nil, &soterjson.RPCError{
+			Code:    soterjson.ErrRPCBlockNotFound,
+			Message: "Block not found",
+		}
+	}
+
+	fee, err := s.cfg.Chain.CalculateFee(block)
+	if err != nil {
+		return nil, &soterjson.RPCError{
+			Code:    soterjson.ErrRPCBlockFee,
+			Message: "Error calculating block fee",
+		}
+	}
+
+	return fee, nil
+}
+
+func handleGetBlockFeeAncestors(s *rpcServer, cmd interface{}, closeChan <-chan struct{}) (interface{}, error) {
+	c := cmd.(*soterjson.GetBlockFeeAncestorsCmd)
+
+	hashes := make([]chainhash.Hash, 0)
+	for _, hashStr := range c.Hashes {
+		// Load the raw block bytes from the database.
+		hash, err := chainhash.NewHashFromStr(hashStr)
+		if err != nil {
+			return nil, rpcDecodeHexError(hashStr)
+		}
+		hashes = append(hashes, *hash)
+	}
+
+
+	parentHashes, err := s.cfg.Chain.GetFeeAncestors(c.Height, hashes)
+	if err != nil {
+		return nil, &soterjson.RPCError{
+			Code:    soterjson.ErrRPCBlockFeeAncestors,
+			Message: "Error calculating block fee ancestors",
+		}
+	}
+	ancestorStrHashes := make([]string, len(parentHashes))
+	for i, parentHash := range parentHashes {
+		ancestorStrHashes[i] = parentHash.String()
+	}
+
+	return &soterjson.GetBlockFeeAncestorsResult{
+		Hashes: ancestorStrHashes,
+	}, nil
 }
 
 func init() {

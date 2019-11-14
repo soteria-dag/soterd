@@ -174,6 +174,32 @@ type VersionCmd struct{}
 // github.com/decred/dcrd/dcrjson.
 func NewVersionCmd() *VersionCmd { return new(VersionCmd) }
 
+type GetBlockFeeCmd struct {
+	Hash string
+}
+
+// NewGetBlockFeeCmd returns a new instance which can be used to issue a getblockfee
+// JSON-RPC command.
+func NewGetBlockFeeCmd(hash string) *GetBlockFeeCmd {
+	return &GetBlockFeeCmd{
+		Hash:      hash,
+	}
+}
+
+type GetBlockFeeAncestorsCmd struct {
+	Hashes []string `json:"parentHashes"`
+	Height int32    `json:"height"`
+}
+
+// NewGetBlockFeeCmd returns a new instance which can be used to issue a getblockfee
+// JSON-RPC command.
+func NewGetBlockFeeAncestorsCmd(height int32, hashes []string) *GetBlockFeeAncestorsCmd {
+	return &GetBlockFeeAncestorsCmd{
+		Hashes:      hashes,
+		Height:      height,
+	}
+}
+
 func init() {
 	// No special flags for commands in this file.
 	flags := UsageFlag(0)
@@ -183,6 +209,8 @@ func init() {
 	MustRegisterCmd("generate", (*GenerateCmd)(nil), flags)
 	MustRegisterCmd("getaddrcache", (*GetAddrCacheCmd)(nil), flags)
 	MustRegisterCmd("getbestblock", (*GetBestBlockCmd)(nil), flags)
+	MustRegisterCmd("getblockfee", (*GetBlockFeeCmd)(nil), flags)
+	MustRegisterCmd("getblockfeeancestors", (*GetBlockFeeAncestorsCmd)(nil), flags)
 	MustRegisterCmd("getblockmetrics", (*GetBlockMetricsCmd)(nil), flags)
 	MustRegisterCmd("getcurrentnet", (*GetCurrentNetCmd)(nil), flags)
 	MustRegisterCmd("getdagcoloring", (*GetDAGColoringCmd)(nil), flags)

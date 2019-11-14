@@ -5,7 +5,7 @@
 #
 # cd ~/src/github.com/soteria-dag
 # docker build --tag soteria-dag/soterd:latest -f soterd/Dockerfile .
-FROM golang:1.13
+FROM golang:1.12.1
 
 LABEL description="Soteria DAG soterd image"
 

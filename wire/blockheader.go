@@ -51,15 +51,10 @@ func (h *BlockHeader) BlockHash() chainhash.Hash {
 	// transactions.  Ignore the error returns since there is no way the
 	// encode could fail except being out of memory which would cause a
 	// run-time panic.
-	encoded, _ := h.Bytes()
-
-	return chainhash.DoubleHashH(encoded)
-}
-
-func (h *BlockHeader) Bytes() ([]byte, error) {
 	buf := bytes.NewBuffer(make([]byte, 0, MaxBlockHeaderPayload))
-	err := writeBlockHeader(buf, 0, h)
-	return buf.Bytes(), err
+	_ = writeBlockHeader(buf, 0, h)
+
+	return chainhash.DoubleHashH(buf.Bytes())
 }
 
 // SotoDecode decodes r using the soter protocol encoding into the receiver.

@@ -8,7 +8,6 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"io"
 	"sync"
 	"time"
@@ -341,7 +340,6 @@ func newBlockImporter(db database.DB, r io.ReadSeeker) (*blockImporter, error) {
 		ChainParams:  activeNetParams,
 		TimeSource:   blockdag.NewMedianTime(),
 		IndexManager: indexManager,
-		Solver:       cuckoo.DefaultSolver(),
 	})
 	if err != nil {
 		return nil, err

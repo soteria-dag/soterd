@@ -13,7 +13,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"math"
 	"net"
 	"runtime"
@@ -2722,7 +2721,7 @@ func setupRPCListeners() ([]net.Listener, error) {
 // newServer returns a new soterd server configured to listen on addr for the
 // soter network type specified by chainParams.  Use start to begin accepting
 // connections from peers.
-func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Params, interrupt <-chan struct{}, solver cuckoo.Solver) (*server, error) {
+func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Params, interrupt <-chan struct{}) (*server, error) {
 	services := defaultServices
 	if cfg.NoPeerBloomFilters {
 		services &^= wire.SFNodeBloom
@@ -2828,7 +2827,6 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 		SigCache:     s.sigCache,
 		IndexManager: indexManager,
 		HashCache:    s.hashCache,
-		Solver:       solver,
 	})
 	if err != nil {
 		return nil, err
@@ -2925,7 +2923,6 @@ func newServer(listenAddrs []string, db database.DB, chainParams *chaincfg.Param
 	s.cpuMiner = cpuminer.New(&cpuminer.Config{
 		ChainParams:            chainParams,
 		BlockTemplateGenerator: blockTemplateGenerator,
-		Solver:                 solver,
 		MiningAddrs:            cfg.miningAddrs,
 		ProcessBlock:           s.syncManager.ProcessBlock,
 		ConnectedCount:         s.ConnectedCount,

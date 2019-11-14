@@ -303,7 +303,7 @@ func TestCheckTransactionStandard(t *testing.T) {
 		t.Fatalf("PayToAddrScript: unexpected error: %v", err)
 	}
 	dummyTxOut := wire.TxOut{
-		Value:    100000000, // 1 SOTER
+		Value:    100000000, // 1 SOTO
 		PkScript: dummyPkScript,
 	}
 

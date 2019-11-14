@@ -47,7 +47,7 @@ func (b *BlockDAG) maybeAcceptBlock(block *soterutil.Block, flags BehaviorFlags)
 		parentNodes = append(parentNodes, prevNode)
 	}
 
-	var maxHeight int32;
+	var maxHeight int32
 	for _, parent := range parentNodes {
 		if parent.height > maxHeight {
 			maxHeight = parent.height

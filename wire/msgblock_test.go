@@ -234,14 +234,10 @@ func TestBlockWireErrors(t *testing.T) {
 		{&blockOne, blockOneBytes, pver, BaseEncoding, 80, io.ErrShortWrite, io.EOF},
 		// Force error in parent sub-header parent count
 		{&blockOne, blockOneBytes, pver, BaseEncoding, 84, io.ErrShortWrite, io.EOF},
-		// Force error in verification sub-header version
-		{&blockOne, blockOneBytes, pver, BaseEncoding, 88, io.ErrShortWrite, io.EOF},
-		// Force error in verification sub-header CycleNonces count
-		{&blockOne, blockOneBytes, pver, BaseEncoding, 92, io.ErrShortWrite, io.EOF},
 		// Force error in transaction count.
-		{&blockOne, blockOneBytes, pver, BaseEncoding, 96, io.ErrShortWrite, io.EOF},
+		{&blockOne, blockOneBytes, pver, BaseEncoding, 88, io.ErrShortWrite, io.EOF},
 		// Force error in transactions.
-		{&blockOne, blockOneBytes, pver, BaseEncoding, 97, io.ErrShortWrite, io.EOF},
+		{&blockOne, blockOneBytes, pver, BaseEncoding, 89, io.ErrShortWrite, io.EOF},
 	}
 
 	t.Logf("Running %d tests", len(tests))
@@ -360,14 +356,10 @@ func TestBlockSerializeErrors(t *testing.T) {
 		{&blockOne, blockOneBytes, 80, io.ErrShortWrite, io.EOF},
 		// Force error in parent sub-header parent count
 		{&blockOne, blockOneBytes, 84, io.ErrShortWrite, io.EOF},
-		// Force error in verification sub-header version
-		{&blockOne, blockOneBytes, 88, io.ErrShortWrite, io.EOF},
-		// Force error in verification sub-header CycleNonces count
-		{&blockOne, blockOneBytes, 92, io.ErrShortWrite, io.EOF},
 		// Force error in transaction count.
-		{&blockOne, blockOneBytes, 96, io.ErrShortWrite, io.EOF},
+		{&blockOne, blockOneBytes, 88, io.ErrShortWrite, io.EOF},
 		// Force error in transactions.
-		{&blockOne, blockOneBytes, 97, io.ErrShortWrite, io.EOF},
+		{&blockOne, blockOneBytes, 89, io.ErrShortWrite, io.EOF},
 	}
 
 	t.Logf("Running %d tests", len(tests))
@@ -435,8 +427,6 @@ func TestBlockOverflowErrors(t *testing.T) {
 				0x01, 0xe3, 0x62, 0x99, // Nonce
 				0x01, 0x00, 0x00, 0x00, // Parent sub-header version 1
 				0x00, 0x00, 0x00, 0x00, // Parent sub-header size of parents array
-				0x01, 0x00, 0x00, 0x00, // Verification sub-header version 1
-				0x00, 0x00, 0x00, 0x00, // Verification sub-header size of CycleNonce array
 				0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 				0xff, // TxnCount
 			}, pver, BaseEncoding, &MessageError{},
@@ -486,7 +476,7 @@ func TestBlockSerializeSize(t *testing.T) {
 		size int       // Expected serialized size
 	}{
 		// Block with no transactions.
-		{noTxBlock, 97},
+		{noTxBlock, 89},
 
 		// First block in the mainnet block chain.
 		{&blockOne, len(blockOneBytes)},
@@ -528,11 +518,6 @@ var blockOne = MsgBlock{
 		Version: 1,
 		Size: 0,
 		Parents: []*Parent{},
-	},
-	Verification: VerificationSubHeader{
-		Version: 1,
-		Size: 0,
-		CycleNonces: []uint32{},
 	},
 	Transactions: []*MsgTx{
 		{
@@ -588,8 +573,6 @@ var blockOneBytes = []byte{
 	0x01, 0xe3, 0x62, 0x99, // Nonce
 	0x01, 0x00, 0x00, 0x00, // Parent sub-header version 1
 	0x00, 0x00, 0x00, 0x00, // Parent sub-header size of parents array
-	0x01, 0x00, 0x00, 0x00, // Verification sub-header version 1
-	0x00, 0x00, 0x00, 0x00, // Verification sub-header size of CycleNonce array
 	0x01,                   // TxnCount
 	0x01, 0x00, 0x00, 0x00, // Version
 	0x01, // Varint for number of transaction inputs
@@ -620,5 +603,5 @@ var blockOneBytes = []byte{
 
 // Transaction location information for block one transactions.
 var blockOneTxLocs = []TxLoc{
-	{TxStart: 97, TxLen: 134},
+	{TxStart: 89, TxLen: 134},
 }

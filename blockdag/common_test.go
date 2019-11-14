@@ -9,7 +9,6 @@ import (
 	"compress/bzip2"
 	"encoding/binary"
 	"fmt"
-	"github.com/soteria-dag/soterd/mining/cuckoo"
 	"io"
 	"os"
 	"path/filepath"
@@ -183,7 +182,6 @@ func chainSetup(dbName string, params *chaincfg.Params) (*BlockDAG, func(), erro
 		//Checkpoints: nil,
 		TimeSource: NewMedianTime(),
 		SigCache:   txscript.NewSigCache(1000),
-		Solver:     cuckoo.DefaultSolver(),
 	})
 	if err != nil {
 		teardown()
@@ -282,10 +280,9 @@ func newFakeChain(params *chaincfg.Params) *BlockDAG {
 	targetTimespan := int64(params.TargetTimespan / time.Millisecond)
 	targetTimePerBlock := int64(params.TargetTimePerBlock / time.Millisecond)
 	adjustmentFactor := params.RetargetAdjustmentFactor
-	dag := BlockDAG{
+	return &BlockDAG{
 		chainParams:         params,
 		timeSource:          NewMedianTime(),
-		Solver:              cuckoo.DefaultSolver(),
 		minRetargetTimespan: targetTimespan / adjustmentFactor,
 		maxRetargetTimespan: targetTimespan * adjustmentFactor,
 		blocksPerRetarget:   int64(targetTimespan / targetTimePerBlock),
@@ -297,11 +294,6 @@ func newFakeChain(params *chaincfg.Params) *BlockDAG {
 		warningCaches:       newThresholdCaches(vbNumBits),
 		deploymentCaches:    newThresholdCaches(chaincfg.DefinedDeployments),
 	}
-
-	dag.graph.AddNodeById(params.GenesisBlock.Header.BlockHash().String())
-	dag.dagSnapshot = newDAGState([]*blockNode{node}, 1)
-
-	return &dag
 }
 
 // newFakeNode creates a block node connected to the passed parent with the

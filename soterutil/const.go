@@ -6,10 +6,10 @@
 package soterutil
 
 const (
-	// NanoSoter is a billionth of 1 Soter (SOTER)
+	// NanoSoter is a billionth of 1 Soter (SOTO)
 	NanoSoter = 1e-9
 
-	// NanoSoterPerSoter is the number of nanoSoter in one soter token (1 SOTER).
+	// NanoSoterPerSoter is the number of nanoSoter in one soter token (1 SOTO).
 	NanoSoterPerSoter = 1e9
 
 	// MaxNanoSoter is the maximum transaction amount allowed in nanoSoter.
