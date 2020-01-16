@@ -1,0 +1,19 @@
+apiVersion: apps/v1 # for versions before 1.9.0 use apps/v1beta2
+kind: Deployment
+metadata:
+  name: soterd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: soterd
+  template:
+    metadata:
+      labels:
+        app: soterd
+    spec:
+      containers:
+      - name: soterd-container
+        image: minsoteria/soterd:firstry
+        command: ["soterd"]
+        args: ["--testnet", "--miningaddr=mrqvnRT17uBvozaaZXZJb2LSeWiWadx96N", "--debuglevel=debug"]
